@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eigen-form</title>
+<meta name="description" content="Mathematical design primitives: every visual element a rigorously defined mathematical object.">
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1.75rem; padding: 2rem 1.25rem;
+    background: #0a0a0f; color: #e8e6f0;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  canvas { width: min(70vw, 420px); height: auto; aspect-ratio: 1; }
+  h1 { font-size: 1.6rem; font-weight: 600; letter-spacing: 0.04em; }
+  p.tag { max-width: 34rem; text-align: center; line-height: 1.55; color: #b8b4c8; }
+  nav { display: flex; flex-wrap: wrap; gap: 1.25rem; justify-content: center; }
+  a { color: #a78bfa; text-decoration: none; border-bottom: 1px solid rgba(167,139,250,0.35); padding-bottom: 1px; }
+  a:hover { color: #c4b5fd; border-color: currentColor; }
+  footer { font-size: 0.8rem; color: #6b6880; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+  <canvas data-myrgic-mark width="1080" height="1080" data-period="6000" data-decay="7000" data-parallax="0.35"></canvas>
+  <h1>eigen-form</h1>
+  <p class="tag">
+    Mathematical design primitives. Every visual element is a rigorously
+    defined mathematical object, parameterized at the level of its governing
+    equations. The mark above is a (2,&thinsp;3) torus knot: a wavefront
+    tracing its orbit against a fading substrate, its crossings emerging from
+    the drawing process itself.
+  </p>
+  <nav>
+    <a href="examples/configurator.html">configurator</a>
+    <a href="examples/basic.html">basic example</a>
+    <a href="docs/api.md">api</a>
+    <a href="docs/construction.md">construction</a>
+    <a href="ROADMAP.md">roadmap</a>
+    <a href="https://github.com/myrgic/eigen-form">github</a>
+  </nav>
+  <footer>MIT &middot; Myrgic Labs</footer>
+  <script src="src/eigen-form.js"></script>
+</body>
+</html>
