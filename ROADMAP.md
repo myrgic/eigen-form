@@ -37,8 +37,9 @@ identically.
 
 - `dynamics/`: the parametrizations and the substrate model (deposit, decay,
   half-life). Pure functions of time and parameters. No canvas, no DOM.
-- `palette/`: gradients and color sampling, including perceptually uniform
-  cyclic maps alongside the brand bands.
+- `palette/`: gradients and color sampling — the canonical `spectrum`
+  band (fully configurable via panel parameters, not a menu of named
+  brand presets) alongside perceptually uniform cyclic maps for data.
 - `backends/`: canvas 2D first, then a headless raster backend that runs
   without a browser. Headless rendering enables golden-image regression
   tests: reference renders committed with hashes, so any change to output is

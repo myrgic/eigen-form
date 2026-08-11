@@ -50,8 +50,11 @@ identically (see Goldens, below):
   functions of parameters and time; no canvas, no DOM.
 - `src/dynamics/substrate.js`: the trail's deposit-and-decay fade
   accumulator, as pure state.
-- `src/palette/gradients.js`: the named gradient bands, hue/lightness
-  sampling along the closure cycle, and color-string parsing.
+- `src/palette/gradients.js`: the canonical `spectrum` gradient band,
+  hue/lightness sampling along the closure cycle, and color-string
+  parsing. The band itself is a fully configurable panel parameter
+  (`hueStart`/`hueEnd`/`sat`/`light`/`lightEnd`), not a menu of named
+  presets — see `docs/api.md`, "Gradients".
 - `src/backends/canvas2d.js`: every `ctx` call the engine makes, named.
   Agnostic to whether `ctx` is a real `CanvasRenderingContext2D` or the
   capture stand-in below; the same calls either paint pixels or get

@@ -47,13 +47,18 @@ prefixed.
 ## Hue is data or brand, never both
 
 Inherited from the roadmap, restated as the kit's one hard color rule.
-Chrome and marks take brand color: the accent, or a named band from
-`src/palette/gradients.js`. Measured quantities take perceptually
-honest maps: monotone ramps for magnitudes, uniform cyclic maps for
-phases (the cyclic maps ship with the phase-field family; until then
-the rule is stated, not faked). One figure never mixes the modes, and
-a plotted quantity never borrows `--accent`, `--ok`, `--warn`, or
-`--alert`.
+Chrome and marks take brand color: the accent, or the mark's color
+band — `hueStart`/`hueEnd`/`sat`/`light` panel parameters
+(`src/palette/gradients.js`), fully configurable and `spectrum`
+(`hueStart:0, hueEnd:360, sat:70, light:60`) by default rather than a
+menu of named brand presets. A locked or exported figure spec carries
+whatever band values were dialed in, clamped by construction — no
+special-casing for "was this a named preset." Measured quantities take
+perceptually honest maps: monotone ramps for magnitudes, uniform
+cyclic maps for phases (the cyclic maps ship with the phase-field
+family; until then the rule is stated, not faked). One figure never
+mixes the modes, and a plotted quantity never borrows `--accent`,
+`--ok`, `--warn`, or `--alert`.
 
 ## Control classes
 
