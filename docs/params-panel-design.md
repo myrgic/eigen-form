@@ -92,3 +92,41 @@ for sdk-pages and instrument-views.
   one theme contract. Anything fancier belongs to the page.
 - No two-way magic. The store is the single source of truth; the panel
   renders it; envelopes carry deltas. No hidden binding layer.
+
+## Lessons from the shader inspectors
+
+Source-level review of Unity's material editor and the avatar-shader
+inspectors built on it (Poiyomi's Thry editor, lilToon), distilled to
+what the panel adopts and what it deliberately rejects:
+
+- **Progressive disclosure is a per-parameter declaration, not a
+  global mode.** A param may declare `level: 'advanced'`; the panel
+  renders the simple surface by default with the full table one
+  disclosure away. State lives per page instance — never editor-wide
+  (lilToon stores its Simple/Advanced mode globally, and switching it
+  on one material changes every other material's inspector; a known
+  usability trap, rejected here).
+- **Disclosure and search are independent predicates** over the same
+  schema; a filter never mutates the disclosure level.
+- **Dependent parameters are declared edges.** When changing one param
+  must adjust another (a rendering-mode enum flipping blend state, in
+  shader terms), that coupling belongs in the schema as a declared
+  action, not in ad hoc panel code. Unity's drawer-attribute system
+  and Poiyomi's `on_value_actions` both converge here; ours stays a
+  closed set, per the non-goals.
+- **Compute units and display units are a declared pair.** Store and
+  compute in the natural unit (radians, normalized fractions); present
+  the friendly unit (degrees, percent) only at the control's render
+  boundary. lilToon does this inside each drawer; here it is a schema
+  field, so every renderer converts identically.
+- **A modifier key reveals the raw key.** Holding Alt shows each row's
+  underlying schema key instead of its label — a debugging affordance
+  that costs nothing and pays for itself the first time a preset and a
+  panel disagree.
+- **Convergent validation:** Unity's `PowerSlider` drawer is our
+  `scale` field with an arbitrary exponent; its Properties block is a
+  typed schema the default inspector renders with zero custom code —
+  the defineParams → renderPanel path, twenty years senior. The closed
+  type/scale sets remain the right call against Unity's open
+  reflection registry: that registry exists to serve thousands of
+  third-party shaders; this panel serves one lab.

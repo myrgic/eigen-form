@@ -102,3 +102,77 @@ declared tolerance and never trusted past it. Primitives should
 therefore be authored as kernel specs (operation, stencil, state,
 parameters) with the CPU reference as the semantics and any accelerated
 backend as a checked projection of it.
+
+## Presets, distinctly
+
+A preset and an export are different artifact classes and the contract
+keeps them apart:
+
+- A **preset** is a declaration that conforms a live lab store: a small
+  JSON document of values plus the schema hash of the store it targets.
+  Applying one is `hydrate()`, which refuses on schema-hash mismatch,
+  so a preset can never silently misconfigure the wrong simulation.
+  Application is **partial by construction**: a preset touches only the
+  keys it declares and leaves the rest of the live store as found.
+  Presets may also be **scoped to a group** (save or apply just the
+  `medium` section), which makes them composable: layer a field preset
+  under an agents preset. A preset has no independent existence; it
+  requires a lab with the SDK present.
+- An **export** is an image: the locked spec closed over its
+  dependencies. It bakes the values together with the SDK modules the
+  spec actually reaches, its own web manifest and service worker, and
+  the verification stamp, into a standalone installable PWA. It does
+  not ask the environment to conform; it ships the environment.
+
+## The lock boundary, refined
+
+The free list — which parameters stay live in an exported unit — has
+two tiers, declared at different times by different parties:
+
+1. **Schema-level** (author-time): a parameter declared view-only
+   (`viewOnly: true`) never enters the verification stamp; palette,
+   contour toggles, playback speed. The stamp is defined over
+   sim-affecting parameters only.
+2. **Per-export** (lock-time): the exporter may opt specific writable
+   parameters into remaining live, recorded in the exported spec's own
+   free list. Everything not freed is baked.
+
+One mechanism per intent. Locks are always explicit declarations;
+a lock is never inferred from observed agreement across live state.
+
+## The tree-shake rule
+
+What the export step may cut, stated with engine precedent (Unity's
+variant model): a **locked parameter tree-shakes like
+`shader_feature`** — code reachable only through values not taken may
+be stripped, because no replay can reach it. A **free parameter keeps
+every branch like `multi_compile`** — its full declared range must ship
+uncut, because the panel can hit any of it at runtime. Reachability is
+computed by walking the real import graph from the entry module, never
+a hand-maintained manifest. The export emits a provenance report:
+which parameter pulled in which module, and why. Exports are
+deduplicated by a config hash over baked values (free parameters
+contribute a marker, not a value), so re-exporting an identical
+configuration reuses the prior unit.
+
+## Prior-art notes: the avatar-shader lineage
+
+Poiyomi and lilToon (reviewed at source level) ship this lifecycle in
+production for Unity avatars, and the correspondence table above holds
+against their code. What their structure confirms, and what it warns:
+
+- Poiyomi's lock-in bakes properties to constants, strips dead passes,
+  and writes the result to a **new self-contained folder** referenced
+  by the material — the export-as-separate-artifact shape. Its
+  `Animated` per-material tags are the per-export free list; its
+  config-hash shader cache is the dedup above.
+- lilToon derives its shipped shaders from packed containers plus a
+  feature-flag header, scoped by what the build actually uses — the
+  reachability tree-shake, with a log naming which asset demanded
+  which feature.
+- The warning, from the same code: lilToon's optimizer **mutates the
+  shared live source in place** and restores it after the build. An
+  export must never touch the live lab; it writes a new directory or
+  it does not run. And both shaders accreted several overlapping
+  no-lock mechanisms over the years; this design keeps exactly one
+  mechanism per intent, on purpose.
