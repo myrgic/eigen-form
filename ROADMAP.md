@@ -91,14 +91,20 @@ they belong in a library. The recipe, per sim:
    original's hash and a list of what changed (typically: composed on
    library primitives, external dependencies vendored).
 
-Pilot: **welded fields**, chosen because it has the smallest parts list and
-contributes the most distinctive primitive, the **weld**: a first-class
-operator joining two field substrates along a shared boundary, so that
-sharing is a shared edge rather than a synced copy. Domain topology
-(closed, open, welded) becomes an explicit instrument choice on the field
-primitive, and a page can show the same field under each topology side by
-side. The physarum-family sims follow, since they share one deposit-decay
-field engine.
+Pilot: **welded fields**, chosen because it contributes the most
+distinctive primitive, the **weld**: a first-class operator coupling an
+agent population to several fields at once, where each coupling declares
+how the field is read (as a gradient, as a vector, or as a level), what
+it does to the agent (steer, align and advect, or rescale the agent's own
+parameters), and what the agent deposits back. The pilot sim welds three
+fields of different scale and semantics through one swarm: a fine trail
+read as a gradient, a coarse momentum field the agents themselves fill,
+and a hormone read as a level over parameter space. A correction for the
+record: an earlier revision of this section described the weld as joining
+two substrates along a shared boundary; that describes a different (also
+planned) topology operator, not this pilot. The description above comes
+from reading the source. The physarum-family sims follow, since they share
+the same deposit-decay field engine.
 
 ## v0.3 - the gallery
 
