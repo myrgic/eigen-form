@@ -31,14 +31,15 @@
         "derivesFrom": "sha256:33fc55f3b6b33d8a77ae7411e0cf61cc0aa742f7c8394892d7be9323152c336c",
         "changes": [
           "line 7: <script src=\"https://d3js.org/d3.v7.min.js\"></script> -> <link rel=\"manifest\" href=\"manifest.webmanifest\"> followed by <script src=\"vendor/d3.v7.min.js\"></script> (vendored d3 v7.9.0, sha256:f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539, at apps/ast_diffusion/vendor/d3.v7.min.js)",
-          "end of body, before </script>: added a service worker registration block (navigator.serviceWorker.register('sw.js')) so the standalone page is installable on its own, not only through the hub shell"
+          "end of body, before </script>: added a service worker registration block (navigator.serviceWorker.register('sw.js')) so the standalone page is installable on its own, not only through the hub shell",
+          "kit restyle: linked src/panel/tokens.css in <head>; every hardcoded hex in the <style> block and inline spans/buttons now reads a kit custom property (--bg/--panel/--line/--fg/--dim/--faint/--accent/--alert/--mono/--sans/--radius-1); page ground moved from #fafafa to the kit's graphite --bg (#050505)",
+          "decay fix: the Step Convolution handler's alpha/beta message-passing (around the 'Convolution (Message Passing)' comment) added each cascaded flow to its destination without ever subtracting it from its origin, so total field heat grew without bound every step regardless of the decay/evaporation param — decay was applied but structurally overwhelmed by this non-conservative duplication; fixed by subtracting each computed flow from its origin node's nextHeat alongside the existing addition to its destination, so decay is now the field's only source of dissipation and total heat provably shrinks (geometrically, at the decay ratio) once deposits stop",
+          "data color map: colorScale swapped from d3.interpolateYlOrRd to d3.interpolateHcl('#fff3b0', '#ff5a36') over the same [0,5] domain — the stock ramp's high end (~rgb(128,0,38), ~1.9:1 contrast against the new --bg) nearly disappeared into the dark ground; the replacement keeps the same warm 'heat' hue family (still a perceptually honest sequential magnitude map, never the chrome --accent/--ok/--warn/--alert) but stays legible (>6:1 contrast at the domain's hot end) across the full range on dark",
+          "sw.js: CACHE_NAME bumped from ast-diffusion-v1 to ast-diffusion-v2 so the cache-first service worker's activate handler evicts the stale-cached pre-restyle index.html for anyone who has already installed this app, instead of serving it forever"
         ]
       },
       "pwa": {
         "installable": true
-      },
-      "display": {
-        "background": "#fafafa"
       }
     },
     {
