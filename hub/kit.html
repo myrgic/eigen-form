@@ -63,7 +63,11 @@
     background: var(--bg); min-height: 300px; overflow: hidden;
   }
   .demo canvas { width: 100%; height: 300px; display: block; }
-  .demo .panel-slot { border: 1px solid var(--line); border-radius: var(--radius-3); overflow: hidden; height: 300px; }
+  /* overflow-y: auto (not hidden) — the hue group added a fourth
+     row of knobs (v0.3) that runs past a fixed 300px, and a page-owned
+     container is exactly where that scroll affordance belongs (kit
+     modules never grow their own container, docs/design-kit.md). */
+  .demo .panel-slot { border: 1px solid var(--line); border-radius: var(--radius-3); overflow-y: auto; height: 300px; }
   @media (max-width: 700px) {
     .demo { grid-template-columns: 1fr; }
     .demo .panel-slot { height: auto; max-height: 340px; }
@@ -164,10 +168,15 @@
 
 <section id="datacolor">
   <h2>palette · hue is data or brand, never both</h2>
-  <p class="note">Brand bands (sampled live from <span style="font-family:var(--mono)">src/palette/gradients.js</span>)
-  color marks and chrome. Measured quantities use perceptually honest maps: monotone ramps for
-  magnitudes, uniform cyclic maps for phases (the cyclic maps arrive with the phase-field family;
-  the ramp below is the shape of the rule, not a shipped map). One figure never mixes the two modes.</p>
+  <p class="note">The band is a fully configurable panel parameter — hueStart, hueEnd, saturation,
+  light — not a menu of named presets. <span style="font-family:var(--mono)">spectrum</span> (sampled
+  live from <span style="font-family:var(--mono)">src/palette/gradients.js</span>) is the sole named
+  preset and the default; the row below it is driven by the same hue knobs as the panel demo
+  above — drag hueStart/hueEnd there and this strip follows. A locked or exported figure spec
+  carries whatever band values were dialed in, clamped by construction. Measured quantities use
+  perceptually honest maps instead: monotone ramps for magnitudes, uniform cyclic maps for phases
+  (the cyclic maps arrive with the phase-field family; the ramp below is the shape of the rule,
+  not a shipped map). One figure never mixes the two modes.</p>
   <div class="strips" id="strips"></div>
 </section>
 
@@ -206,7 +215,14 @@ function renderSwatches() {
 }
 renderSwatches();
 
-/* ---- live panel demo: store drives a small deposit-decay stage ---- */
+/* ---- live panel demo: store drives a small deposit-decay stage ----
+   The hue group's defaults equal GRADIENTS.spectrum's own values
+   (hueStart:0, hueEnd:360, sat:70, light:60) — the band is spectrum
+   unless dragged away from it, never a menu of named brand presets
+   (docs/design-kit.md, "Hue is data or brand"). currentBand() folds
+   the four knobs into one gradient object; both the stage below and
+   the configurable strip in #datacolor read it live off this same
+   store. */
 const params = defineParams({
   rate:     { type: 'number', min: 0.2, max: 8, step: 0.1, default: 2.5,
               scale: 'log', label: 'Deposit rate', group: 'field' },
@@ -215,10 +231,25 @@ const params = defineParams({
               prereg: 0.96, provenance: 'kit specimen: a declared value renders locked' },
   angle:    { type: 'angle', min: 0, max: 360, unit: 'deg', default: 137.5,
               step: 0.5, label: 'Step angle', group: 'walker' },
-  band:     { type: 'select', options: Object.keys(GRADIENTS), default: 'cogos',
-              label: 'Brand band', group: 'view' },
+  hueStart: { type: 'angle', min: 0, max: 360, unit: 'deg', step: 1, default: 0,
+              label: 'hue start', group: 'hue' },
+  hueEnd:   { type: 'angle', min: 0, max: 360, unit: 'deg', step: 1, default: 360,
+              label: 'hue end', group: 'hue' },
+  sat:      { type: 'number', min: 0, max: 100, unit: '%', step: 1, default: 70,
+              label: 'saturation', group: 'hue' },
+  light:    { type: 'number', min: 0, max: 100, unit: '%', step: 1, default: 60,
+              label: 'light', group: 'hue' },
   trails:   { type: 'boolean', default: true, label: 'Show trails', group: 'view' },
 });
+
+function currentBand() {
+  return {
+    hueStart: params.get('hueStart'),
+    hueEnd:   params.get('hueEnd'),
+    sat:      params.get('sat'),
+    light:    params.get('light')
+  };
+}
 
 let phase = 0, frames = 0;
 const panelHandle = renderPanel(params, document.getElementById('panel-mount'), {
@@ -246,7 +277,7 @@ function tick() {
   ctx.fillRect(0, 0, w, h);
   ctx.globalAlpha = 1;
 
-  const g = GRADIENTS[params.get('band')] || GRADIENTS.spectrum;
+  const g = currentBand();
   const steps = Math.round(params.get('rate') * 4);
   const stepAngle = params.get('angle') * Math.PI / 180;
   const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.38;
@@ -266,8 +297,16 @@ function tick() {
 }
 requestAnimationFrame(tick);
 
-/* ---- gradient strips: brand bands live, data ramp as the rule's shape ---- */
+/* ---- gradient strips: the canonical spectrum band, the live
+   configurable band (same store as the panel demo above), and the
+   data ramp as the rule's shape ---- */
 const stripsEl = document.getElementById('strips');
+function paintBand(g2d, gradient) {
+  for (let x = 0; x < 512; x++) {
+    g2d.fillStyle = colorStyle(colorFor(x / 512, 1, gradient));
+    g2d.fillRect(x, 0, 1, 1);
+  }
+}
 function strip(tag, painter) {
   const row = document.createElement('div');
   row.className = 'strip-row';
@@ -277,20 +316,23 @@ function strip(tag, painter) {
   row.innerHTML = '<span class="tag">' + tag + '</span>';
   row.appendChild(c);
   stripsEl.appendChild(row);
+  return c;
 }
-for (const name of ['spectrum', 'cogos', 'mod3', 'research', 'madder']) {
-  strip('brand · ' + name, (g2d) => {
-    for (let x = 0; x < 512; x++) {
-      g2d.fillStyle = colorStyle(colorFor(x / 512, 1, GRADIENTS[name]));
-      g2d.fillRect(x, 0, 1, 1);
-    }
-  });
-}
+strip('spectrum', (g2d) => paintBand(g2d, GRADIENTS.spectrum));
+const configurableStrip = strip('configurable · drag hueStart/hueEnd', (g2d) => paintBand(g2d, currentBand()));
 strip('data · magnitude', (g2d) => {
   for (let x = 0; x < 512; x++) {
     const l = 8 + (x / 512) * 84;
     g2d.fillStyle = 'hsl(260 12% ' + l.toFixed(1) + '%)';
     g2d.fillRect(x, 0, 1, 1);
+  }
+});
+// The configurable strip is a read view onto the same store the panel
+// demo's stage already subscribes to — no second subscription needed
+// beyond repainting the strip's own canvas when a hue knob moves.
+params.subscribe((key) => {
+  if (key === 'hueStart' || key === 'hueEnd' || key === 'sat' || key === 'light') {
+    paintBand(configurableStrip.getContext('2d'), currentBand());
   }
 });
 
