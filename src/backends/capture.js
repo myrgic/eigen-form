@@ -15,7 +15,8 @@
    meaningful to the renderer) before it's recorded. String values
    (fillStyle, globalCompositeOperation, ...) are recorded as-is — the
    engine already formats those with fixed decimal precision itself
-   (see colorStyle's toFixed calls), so they're stable without help.
+   (see colorStyle's toFixed calls in palette/gradients.js), so they're
+   stable without help.
 
    Implemented as a Proxy rather than a hardcoded method allowlist: any
    property read that hasn't been set becomes a recorded method call, any
@@ -24,12 +25,15 @@
    just the handful of calls the current torus-knot engine happens to
    make — future backends/families can grow their canvas usage without
    this file needing to know about it in advance.
+
+   Node-only: uses node:crypto for hashing, so this file is a test/tool
+   dependency (see tools/golden.js), never imported by the browser-facing
+   assembly (src/eigen-form.js).
    ===================================================================== */
-'use strict';
 
-const { createHash } = require('node:crypto');
+import { createHash } from 'node:crypto';
 
-const PRECISION = 6;
+export const PRECISION = 6;
 
 function round(value) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return value;
@@ -46,7 +50,7 @@ function roundArgs(args) {
  * stand-in to hand to the engine, `ops` is the live ordered op list, and
  * `opsHash()` returns the sha256 (hex) of the JSON-serialized op stream.
  */
-function createCaptureContext() {
+export function createCaptureContext() {
   const ops = [];
   const state = Object.create(null);
 
@@ -74,4 +78,4 @@ function createCaptureContext() {
   return { ctx, ops, opsHash, precision: PRECISION };
 }
 
-module.exports = { createCaptureContext, PRECISION };
+export default { createCaptureContext, PRECISION };
