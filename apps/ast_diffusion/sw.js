@@ -2,7 +2,7 @@
 // Registered from this app's own index.html (see app.json provenance.changes),
 // scoped to this directory by default (no explicit scope option), so it can
 // never intercept requests for other apps or the hub shell.
-const CACHE_NAME = 'ast-diffusion-v1';
+const CACHE_NAME = 'ast-diffusion-v2';
 const ASSETS = [
   './index.html',
   './manifest.webmanifest',

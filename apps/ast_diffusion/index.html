@@ -5,23 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AST Topological Convolution Kernel</title>
     <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="../../src/panel/tokens.css">
     <script src="vendor/d3.v7.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; background: #fafafa; color: #333; font-family: sans-serif; overflow: hidden; display: flex; height: 100vh; }
-        #sidebar { width: 320px; background: #fff; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #ddd; box-shadow: 2px 0 5px rgba(0,0,0,0.05); z-index: 10; }
-        #canvas-container { flex: 1; position: relative; background: #f0f0f0; }
-        h2 { margin: 0 0 5px 0; font-size: 18px; color: #2563eb; }
+        :root { color-scheme: dark; }
+        body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); overflow: hidden; display: flex; height: 100vh; }
+        #sidebar { width: 320px; background: var(--panel); padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid var(--line); z-index: 10; }
+        #canvas-container { flex: 1; position: relative; background: var(--bg); }
+        h2 { margin: 0 0 5px 0; font-size: 18px; color: var(--accent); }
         .control-group { display: flex; flex-direction: column; gap: 5px; }
-        label { font-size: 13px; color: #555; display: flex; justify-content: space-between; font-weight: bold; }
-        input[type=range] { width: 100%; }
-        p.desc { font-size: 12px; color: #666; line-height: 1.4; margin: 0; padding-bottom: 10px; border-bottom: 1px solid #eee; }
-        button { padding: 10px; background: #2563eb; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
-        button:hover { background: #1d4ed8; }
-        
-        .node-circle { stroke: #fff; stroke-width: 2px; transition: fill 0.3s, r 0.3s; cursor: pointer; }
-        .node-circle:hover { stroke: #000; }
-        .link-path { fill: none; stroke: #999; stroke-width: 2px; }
-        .node-label { font-size: 12px; font-family: monospace; pointer-events: none; text-anchor: middle; dy: 25; }
+        label { font-size: 13px; color: var(--dim); display: flex; justify-content: space-between; font-weight: bold; }
+        input[type=range] { width: 100%; accent-color: var(--accent); }
+        p.desc { font-size: 12px; color: var(--dim); line-height: 1.4; margin: 0; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+        button { padding: 10px; background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius-1); cursor: pointer; font-weight: bold; transition: filter 0.2s; }
+        button:hover { filter: brightness(1.15); }
+        #btn-reset { background: var(--alert); color: var(--bg); }
+
+        .node-circle { stroke: var(--bg); stroke-width: 2px; transition: fill 0.3s, r 0.3s; cursor: pointer; }
+        .node-circle:hover { stroke: var(--fg); }
+        .link-path { fill: none; stroke: var(--dim); stroke-width: 2px; }
+        .node-label { font-size: 12px; font-family: var(--mono); fill: var(--fg); pointer-events: none; text-anchor: middle; dy: 25; }
     </style>
 </head>
 <body>
@@ -33,22 +36,22 @@
     <div class="control-group">
         <label>Upstream Cascade (α) <span id="val-alpha">0.6</span></label>
         <input type="range" id="ctrl-alpha" min="0" max="1" step="0.05" value="0.6">
-        <span style="font-size: 11px; color:#888;">Flows AGAINST import arrows (fixing breaks).</span>
+        <span style="font-size: 11px; color:var(--faint);">Flows AGAINST import arrows (fixing breaks).</span>
     </div>
-    
+
     <div class="control-group">
         <label>Downstream Cascade (β) <span id="val-beta">0.1</span></label>
         <input type="range" id="ctrl-beta" min="0" max="1" step="0.05" value="0.1">
-        <span style="font-size: 11px; color:#888;">Flows WITH import arrows (priming context).</span>
+        <span style="font-size: 11px; color:var(--faint);">Flows WITH import arrows (priming context).</span>
     </div>
-    
+
     <div class="control-group">
         <label>Decay / Evaporation (T) <span id="val-decay">0.9</span></label>
         <input type="range" id="ctrl-decay" min="0.5" max="1" step="0.05" value="0.9">
     </div>
 
     <button id="btn-step" style="margin-top:10px;">Step Convolution (t+1)</button>
-    <button id="btn-reset" style="background:#ef4444;">Clear All Heat</button>
+    <button id="btn-reset">Clear All Heat</button>
 </div>
 
 <div id="canvas-container"></div>
@@ -106,7 +109,7 @@
         .attr('refX', 22).attr('refY', 0)
         .attr('markerWidth', 6).attr('markerHeight', 6)
         .attr('orient', 'auto')
-        .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', '#999');
+        .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', 'var(--dim)');
 
     const g = svg.append('g');
 
@@ -118,7 +121,13 @@
     const nodeGroup = g.selectAll(".node")
         .data(nodes).enter().append("g");
 
-    const colorScale = d3.scaleSequential(d3.interpolateYlOrRd).domain([0, 5]);
+    // Sequential magnitude ramp (measured quantity, never the chrome accent —
+    // docs/design-kit.md, "Hue is data or brand"). The stock d3.interpolateYlOrRd
+    // darkens toward a maroon (~rgb(128,0,38), ~1.9:1 contrast) at the top of the
+    // domain, which nearly vanishes into the kit's near-black ground (--bg
+    // #050505); this anchors the same warm-hue "heat" ramp between a pale straw
+    // and a bright orange-red so every value in [0, 5] stays legible on dark.
+    const colorScale = d3.scaleSequential(d3.interpolateHcl('#fff3b0', '#ff5a36')).domain([0, 5]);
 
     const nodeCircle = nodeGroup.append("circle")
         .attr("class", "node-circle")
