@@ -69,3 +69,36 @@ the declared changes.
    the welded-fields family migration.
 4. The deterministic math module is its own contained work item and
    the gate for calling any unit tier-2.
+
+## The shader correspondence
+
+These units are, almost literally, shaders in practice. The dictionary,
+stated once so the architecture can lean on it:
+
+| this design            | the shader world                          |
+|------------------------|-------------------------------------------|
+| dynamics kernel        | the shader program                         |
+| defineParams schema    | the properties block                       |
+| panel                  | the material inspector                     |
+| locked figure spec     | a material: program plus bound values      |
+| exported unit          | the asset bundle                           |
+| param-set envelope     | setting a uniform across the boundary      |
+| shell                  | the engine editor                          |
+
+The correspondence is technical, not decorative: field grids are
+floating-point textures, the diffuse-and-decay pass is the classic
+separable blur, deposit is additive blending, and the agent families are
+routinely implemented as GPU compute in practice. One divergence must be
+respected: agent deposit is scatter, not gather, so the GPU expression
+of these kernels is compute (storage buffers, atomics), not fragment
+shading.
+
+The deep consequence: GPU parallelism breaks bit-determinism by default
+(atomic ordering, reduction order), which collides with the verification
+stamp. The resolution is the twin pattern: the CPU path is the reference
+instrument, bit-identical and stamp-verified; a GPU path, when it
+arrives, is the fast projection, verified against the reference within a
+declared tolerance and never trusted past it. Primitives should
+therefore be authored as kernel specs (operation, stencil, state,
+parameters) with the CPU reference as the semantics and any accelerated
+backend as a checked projection of it.
