@@ -13,7 +13,7 @@
     "golden:check": "node tools/golden.js --check",
     "lab:build": "node tools/lab_build.js --write",
     "lab:check": "node tools/lab_build.js --check",
-    "test": "node tests/params.js",
+    "test": "node tests/params.js && node tests/engine.js",
     "check": "npm run test && npm run golden:check && npm run lab:check"
   }
 }

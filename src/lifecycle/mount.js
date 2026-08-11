@@ -62,27 +62,52 @@ export function observeVisibility(el, { onEnter, onExit }) {
   return observer;
 }
 
+// Parses a data-attribute as a float/int, assigning it into opts only
+// when the parse actually produced a finite number. `if (d.xxx)` alone
+// only gates on the raw string being non-empty — a malformed value (a
+// stray "undefined" from an unset template variable, a typo'd unit like
+// "ms") parses to NaN, which is truthy-adjacent enough to sail past that
+// gate and then past createTrefoilMark's own `!= null` default checks,
+// permanently poisoning the mark (NaN phases never recover). Falls back
+// to createTrefoilMark's own default by simply not setting the key, same
+// as an absent attribute; warns once so a malformed value isn't silently
+// invisible.
+function setFiniteAttr(opts, key, raw, parse) {
+  if (!raw) return;
+  const v = parse(raw);
+  if (Number.isFinite(v)) {
+    opts[key] = v;
+  } else if (typeof console !== 'undefined') {
+    console.warn(`eigen-form: data attribute for "${key}" ("${raw}") did not parse to a finite number, ignoring`);
+  }
+}
+
 // Data-attribute driven auto-init: finds every
 // canvas[data-myrgic-mark], builds an opts object from its dataset, and
 // calls create(canvasEl, opts) for each. `create` is
 // createTrefoilMark itself — this function's only job is the DOM query
-// and readiness wiring.
+// and readiness wiring. A canvas that already has a controller (from an
+// earlier autoInit pass, or an imperative createTrefoilMark call on the
+// same element) is handled by createTrefoilMark's own dedup guard
+// (src/eigen-form.js, MARK_KEY) — calling create() again here just
+// retrieves the existing controller rather than constructing a second
+// one, so re-running run() is always safe.
 export function autoInit(create) {
   function run() {
     document.querySelectorAll('canvas[data-myrgic-mark]').forEach((c) => {
       const opts = {};
       const d = c.dataset;
       if (d.emergence === 'true') opts.emergence = true;
-      if (d.period)      opts.period      = parseFloat(d.period);
-      if (d.scale)       opts.scale       = parseFloat(d.scale);
-      if (d.ballRadius)  opts.ballRadius  = parseFloat(d.ballRadius);
-      if (d.strokeWidth) opts.strokeWidth = parseFloat(d.strokeWidth);
-      if (d.decay)       opts.decay       = parseFloat(d.decay);
-      if (d.precession)  opts.precession  = parseFloat(d.precession);
-      if (d.parallax)    opts.parallax    = parseFloat(d.parallax);
+      setFiniteAttr(opts, 'period',      d.period,      parseFloat);
+      setFiniteAttr(opts, 'scale',       d.scale,       parseFloat);
+      setFiniteAttr(opts, 'ballRadius',  d.ballRadius,  parseFloat);
+      setFiniteAttr(opts, 'strokeWidth', d.strokeWidth, parseFloat);
+      setFiniteAttr(opts, 'decay',       d.decay,       parseFloat);
+      setFiniteAttr(opts, 'precession',  d.precession,  parseFloat);
+      setFiniteAttr(opts, 'parallax',    d.parallax,    parseFloat);
       if (d.gradient)    opts.gradient    = d.gradient;
-      if (d.p)           opts.p           = parseInt(d.p, 10);
-      if (d.q)           opts.q           = parseInt(d.q, 10);
+      setFiniteAttr(opts, 'p', d.p, (s) => parseInt(s, 10));
+      setFiniteAttr(opts, 'q', d.q, (s) => parseInt(s, 10));
       create(c, opts);
     });
   }

@@ -90,26 +90,54 @@ import * as figureSpec from './figure-spec.js';
 
 const LOGICAL = 480;
 
+// Guards against a canvas ending up with two uncontrolled controllers
+// (GH #1: HMR replacing this module without a page reload, a duplicate
+// <script> resolving to the same file under a different specifier, or a
+// page that declares data-myrgic-mark AND also calls createTrefoilMark
+// imperatively on the same element). Stashed directly on the canvas
+// element rather than a module-scoped WeakMap, so the guard survives a
+// swap of this module's own instance — the DOM node persists across
+// that, a fresh module's WeakMap wouldn't. A second createTrefoilMark
+// call on an already-controlled canvas returns the SAME controller
+// instead of constructing another; controller.stop() clears the slot,
+// so the stop()-then-recreate pattern every rebuild()-style page in
+// this repo already uses (apps/mark, examples/configurator.html) keeps
+// working.
+const MARK_KEY = '__eigenFormMark';
+
+// A caller-supplied option that fails to parse to a finite number (e.g.
+// mount.js's parseFloat of a malformed data-attribute, or NaN passed
+// directly) must not sail through and poison the phase integration:
+// FINAL_OMEGA = 2π/NaN is NaN, and once a phase accumulator goes NaN it
+// never recovers — `NaN + x = NaN` forever, so the mark silently goes
+// blank with no error. Falls back to the given default whenever the
+// value isn't a finite number, same as an option that was never passed.
+function finiteOr(value, fallback) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
 function createTrefoilMark(canvas, opts) {
   canvas = mount.resolveCanvasElement(canvas);
   if (!canvas) return null;
+  if (canvas[MARK_KEY]) return canvas[MARK_KEY];
+
   opts = opts || {};
 
   const ctx = canvas2d.get2DContext(canvas);
-  const W = canvas.width, H = canvas.height;
-  canvas2d.initTransform(ctx, W, H, LOGICAL);
+  let lastW = canvas.width, lastH = canvas.height;
+  canvas2d.initTransform(ctx, lastW, lastH, LOGICAL);
 
   // ---- Tunable parameters (mutable via returned controller) ----
   const params = {
-    p:           opts.p           != null ? opts.p           : 2,
-    q:           opts.q           != null ? opts.q           : 3,
-    scale:       opts.scale       != null ? opts.scale       : 215,
-    period:      opts.period      != null ? opts.period      : 3000,
-    ballRadius:  opts.ballRadius  != null ? opts.ballRadius  : 18,
-    strokeWidth: opts.strokeWidth != null ? opts.strokeWidth : null,
-    decay:       opts.decay       != null ? opts.decay       : 6000,
-    precession:  opts.precession  != null ? opts.precession  : 0,
-    parallax:    opts.parallax    != null ? opts.parallax    : 0,
+    p:           finiteOr(opts.p, 2),
+    q:           finiteOr(opts.q, 3),
+    scale:       finiteOr(opts.scale, 215),
+    period:      finiteOr(opts.period, 3000),
+    ballRadius:  finiteOr(opts.ballRadius, 18),
+    strokeWidth: finiteOr(opts.strokeWidth, null),
+    decay:       finiteOr(opts.decay, 6000),
+    precession:  finiteOr(opts.precession, 0),
+    parallax:    finiteOr(opts.parallax, 0),
     gradient:    resolveGradient(opts.gradient)
   };
   const showEmergence = !!opts.emergence;
@@ -126,6 +154,21 @@ function createTrefoilMark(canvas, opts) {
   let fadeDtAccum = 0;
 
   function drawFrame(t, dt, period) {
+    // Self-heal the transform if the canvas's own backing-store size has
+    // changed since it was last applied. Assigning canvas.width/height
+    // — even a host's own responsive/DPR resize handler reassigning it
+    // to a new value, a first-class pattern elsewhere in this repo
+    // (apps/physarum, apps/boid_drafting, apps/welded_fields) — resets
+    // the 2D context's transform to identity per the canvas spec, with
+    // no event this library is otherwise told about. Comparing against
+    // the size last applied, every frame, means the desync self-corrects
+    // on the very next frame instead of persisting indefinitely.
+    if (canvas.width !== lastW || canvas.height !== lastH) {
+      lastW = canvas.width;
+      lastH = canvas.height;
+      canvas2d.initTransform(ctx, lastW, lastH, LOGICAL);
+    }
+
     const T = torusKnot.phases(period);
     const HUE_START_MS = T.settle[0];
     const TRAIL_START_MS = T.settle[1];
@@ -284,7 +327,7 @@ function createTrefoilMark(canvas, opts) {
   }
 
   // Controller
-  return {
+  const controller = {
     params,
     setParam(k, v) {
       if (k === 'gradient') params.gradient = resolveGradient(v);
@@ -294,12 +337,19 @@ function createTrefoilMark(canvas, opts) {
     stop() {
       stop();
       if (observer) { observer.disconnect(); observer = null; }
+      // Release the dedup slot (see MARK_KEY above) so a subsequent
+      // createTrefoilMark call on this canvas — the stop()-then-recreate
+      // pattern rebuild()-style pages use — gets a fresh controller
+      // rather than this now-stopped one back.
+      if (canvas[MARK_KEY] === controller) delete canvas[MARK_KEY];
     },
     get time() { return virtualTime; },
     // New in v0.1 (ROADMAP design principle 5, "figures can answer for
     // themselves") — not part of the v0.0.2 contract, purely additive.
     exportSpec() { return figureSpec.exportSpec(params, { GRADIENTS }); }
   };
+  canvas[MARK_KEY] = controller;
+  return controller;
 }
 
 // ---- Auto-init from data attrs ----
