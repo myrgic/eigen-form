@@ -393,7 +393,13 @@ document.querySelectorAll('.grad').forEach(b => {
 });
 updateStrip();
 
-// Substrate swatches + custom picker
+// Substrate swatches + custom picker. This sets the *host* stage's own
+// background, not anything on the mark — the engine owns no
+// background/reference color at any layer (see docs/api.md, "The host
+// owns the ground"). The canvas is always transparent; picking a swatch
+// here just demonstrates compositing it over an arbitrary ground, the
+// same as any other host page would with its own CSS.
+const stageEl = document.querySelector('.stage');
 const BG_PRESETS = ['#0a0a0f', '#000000', '#13131a', '#1a1a22', '#2a2533', '#f6f4ef', '#ffffff'];
 const bgWrap = document.getElementById('bg-swatches');
 BG_PRESETS.forEach(hex => {
@@ -402,7 +408,7 @@ BG_PRESETS.forEach(hex => {
   b.style.border = '1px solid var(--border)';
   b.dataset.bg = hex;
   b.addEventListener('click', () => {
-    applyLive('bg', hex);
+    stageEl.style.background = hex;
     document.getElementById('bg-custom').value = hex;
     document.getElementById('v-bg').textContent = hex;
   });
@@ -410,9 +416,10 @@ BG_PRESETS.forEach(hex => {
 });
 document.getElementById('bg-custom').addEventListener('input', e => {
   const v = e.target.value;
-  applyLive('bg', v);
+  stageEl.style.background = v;
   document.getElementById('v-bg').textContent = v;
 });
+stageEl.style.background = BG_PRESETS[0];
 
 // Replay — full rebuild with emergence
 document.getElementById('replay').addEventListener('click', () => {
