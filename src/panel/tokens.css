@@ -22,14 +22,18 @@
  */
 
 :root {
-  /* palette, taken verbatim from welded_fields */
-  --bg: #07060b;
-  --panel: #100d18;
-  --line: #241d33;
-  --fg: #e8e3f2;
-  --dim: #9a92ae;
-  --faint: #655c7a;
-  --accent: #a78bfa;
+  /* palette: "graphite" — the operator's ruling of 2026-08-11. True
+   * black-adjacent ground and NEUTRAL grays, so the accent is the only
+   * chromatic voice on the page. Supersedes the violet-tinted darks
+   * originally mined from welded_fields (that page keeps its own copy,
+   * frozen bytes). */
+  --bg: #050505;
+  --panel: #121214;
+  --line: #26262a;
+  --fg: #eeeeef;
+  --dim: #a0a0a4;
+  --faint: #636367;
+  --accent: #b794ff;
 
   /* type stacks */
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
