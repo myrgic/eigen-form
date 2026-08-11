@@ -167,14 +167,22 @@
             const target = typeof l.target === 'string' ? nodes.find(n=>n.id===l.target) : l.target;
 
             // Alpha: Upstream Cascade (Heat flows backwards up the import arrow)
-            // Normalized by inDegree to prevent explosion if a file is imported many times
+            // Normalized by inDegree to prevent explosion if a file is imported many times.
+            // Conservative: the flow is subtracted from its origin (target) as well as
+            // added to its destination (source) — a transfer, not a duplication — so decay
+            // is the field's only source of dissipation instead of being swamped by an
+            // uncompensated cascade (see docs/lab-design.md changes[] entry on this app).
             if (target.heat > 0.05) {
-                nextHeat[source.id] += (target.heat * params.alpha) / (inDegree[target.id] || 1);
+                const flow = (target.heat * params.alpha) / (inDegree[target.id] || 1);
+                nextHeat[source.id] += flow;
+                nextHeat[target.id] -= flow;
             }
 
             // Beta: Downstream Cascade (Heat flows forwards with the import arrow)
             if (source.heat > 0.05) {
-                nextHeat[target.id] += (source.heat * params.beta) / (outDegree[source.id] || 1);
+                const flow = (source.heat * params.beta) / (outDegree[source.id] || 1);
+                nextHeat[target.id] += flow;
+                nextHeat[source.id] -= flow;
             }
         });
 
