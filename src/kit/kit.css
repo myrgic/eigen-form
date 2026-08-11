@@ -1,0 +1,113 @@
+/* src/kit/kit.css — the lab's shared chrome primitives, as an SDK
+   module. Companion to src/panel/ (the generated control surface):
+   panel.css styles what renderPanel() creates; this file styles the
+   chrome every OTHER surface keeps re-deriving — badges, hash spans,
+   tabs, cards. Promoted from hub/index.html's local styles, where each
+   of these shapes first appeared (kind badges, click-to-copy hashes,
+   the tab row, the provenance box), per the rule of three: the hub was
+   the first consumer, the kit specimen page is the second, and the
+   instrument-views arriving with the refine-067 work are the third.
+
+   The same module principles as panel.css apply:
+
+   - Container, never position. Nothing below sets position, top/left,
+     or z-index. Where a badge row or tab row sits is the consuming
+     page's layout decision.
+   - Theme is custom-property flow-through. Every color, font, and
+     spacing value is var(--...) into src/panel/tokens.css or whatever
+     token set the page declares under the same names. Recoloring is
+     done by overriding properties, never rules.
+   - Class namespace: module structure lives under the .ef- prefix;
+     bare custom properties are the theme surface. (tokens.css's
+     unprefixed .grp/.hd/.read primitives predate this rule and stay
+     as mined legacy; new chrome starts here, prefixed.)
+
+   hub/index.html still carries its own local copies of these shapes;
+   migrating the shell onto this file is a declared follow-up, kept out
+   of the kit's own commit so the two changes stay separately
+   revertable. */
+
+/* --- Badge: a small mono chip that names what a thing IS. ------------
+   Kind variants say which lab contract an app is under; state variants
+   say how an adjudication stands. Kind and state are different
+   statements and may appear side by side, but one badge is never both. */
+.ef-badge {
+  display: inline-block;
+  font: 10.5px var(--mono);
+  letter-spacing: .04em;
+  color: var(--dim);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 3px 8px;
+  border-radius: var(--radius-1);
+  white-space: nowrap;
+}
+.ef-badge-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+/* kind variants (identity) */
+.ef-badge.frozen     { color: var(--faint); }
+.ef-badge.sdk        { color: var(--accent); border-color: var(--accent); }
+.ef-badge.instrument { color: var(--fg); border-color: var(--faint); }
+
+/* state variants (adjudication) — semantic tier from tokens.css */
+.ef-badge.ok      { color: var(--ok); border-color: var(--ok); }
+.ef-badge.pending { color: var(--warn); border-color: var(--warn); }
+.ef-badge.alert   { color: var(--alert); border-color: var(--alert); }
+
+/* --- Hash: a content address shown inline. ---------------------------
+   Middle-truncated by the consumer (the kit ships the style, not the
+   truncation; see hub/index.html's truncateHash for the canonical
+   8+…+6 shape), full value in the title attribute, click-to-copy with
+   a brief .copied confirmation swap. */
+.ef-hash {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-bottom: 1px dotted var(--faint);
+}
+.ef-hash:hover { border-bottom-color: var(--dim); }
+.ef-hash.copied { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* --- Tab: one entry in a single-row, sideways-scrolling strip. -------
+   The active tab takes its tint from --tab-accent when the consumer
+   sets one (per-app display.accent), falling back to the theme accent.
+   The row is the consumer's flex container; .ef-tab-row is the shape
+   the hub uses. */
+.ef-tab-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+  overflow-x: auto;
+}
+.ef-tab {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  padding: 7px 12px;
+  border-radius: var(--radius-3);
+  font-size: 12.5px;
+  font-family: var(--sans);
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+}
+.ef-tab:hover { border-color: var(--faint); }
+.ef-tab.active {
+  background: color-mix(in srgb, var(--tab-accent, var(--accent)) 28%, var(--panel));
+  border-color: var(--tab-accent, var(--accent));
+  color: var(--fg);
+}
+
+/* --- Card: the bordered panel-ground box. ----------------------------
+   The provenance block's shape, generalized: anything that groups a few
+   lines of secondary detail against the panel ground. */
+.ef-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  padding: var(--space-3);
+  font-size: 11px;
+  color: var(--dim);
+  line-height: 1.6;
+}
+.ef-card b { color: var(--fg); }

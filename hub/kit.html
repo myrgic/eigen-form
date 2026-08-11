@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eigen-form design kit</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../src/panel/tokens.css">
+<link rel="stylesheet" href="../src/panel/panel.css">
+<link rel="stylesheet" href="../src/kit/kit.css">
+<meta name="theme-color" content="#07060b">
+<style>
+  /* This page is the kit's specimen sheet, and it plays by the kit's own
+     rules: every color, font, and spacing value below is a var(--...)
+     into the same three stylesheets any lab page links. The only styles
+     this page owns are LAYOUT (where things sit), which is exactly the
+     one thing the module principle says a consuming page owns.
+
+     Honesty mechanism: the palette swatches are not hardcoded — the
+     script reads each custom property off the live computed style, so
+     this sheet cannot drift from tokens.css without showing the drift. */
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--sans); font-size: 13px;
+    padding: 28px clamp(16px, 5vw, 56px) 80px;
+    max-width: 980px; margin-inline: auto;
+  }
+  header { margin-bottom: 8px; }
+  header h1 { margin: 0 0 4px; font-size: 18px; font-weight: 650; }
+  header p { margin: 0; color: var(--dim); line-height: 1.5; max-width: 60ch; }
+  header a { color: var(--accent); }
+
+  section { margin-top: 40px; }
+  section > h2 {
+    font: 600 10.5px/1 var(--mono); letter-spacing: .13em;
+    text-transform: uppercase; color: var(--faint);
+    padding-bottom: 6px; border-bottom: 1px solid var(--line);
+    margin: 0 0 14px;
+  }
+  section > p.note { color: var(--dim); line-height: 1.55; max-width: 68ch; margin: 0 0 16px; }
+
+  /* swatch grid */
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .swatch { border: 1px solid var(--line); border-radius: var(--radius-2); overflow: hidden; }
+  .swatch .chip { height: 44px; }
+  .swatch .meta { padding: 7px 9px; font: 10.5px var(--mono); background: var(--panel); }
+  .swatch .meta .name { color: var(--fg); }
+  .swatch .meta .val { color: var(--faint); }
+
+  /* type + scale specimens */
+  .spec-row { display: grid; grid-template-columns: 130px 1fr; gap: 12px; align-items: baseline; padding: 6px 0; }
+  .spec-row .tag { font: 10.5px var(--mono); color: var(--faint); }
+  .bar { height: 10px; background: var(--accent); border-radius: 2px; opacity: .85; }
+  .rad { width: 40px; height: 24px; border: 1px solid var(--accent); background: var(--panel); }
+
+  /* demo stage: panel demo sits in a container the PAGE owns */
+  .demo { display: grid; grid-template-columns: 1fr 300px; gap: 16px; align-items: start; }
+  .demo .stage {
+    border: 1px solid var(--line); border-radius: var(--radius-3);
+    background: var(--bg); min-height: 300px; overflow: hidden;
+  }
+  .demo canvas { width: 100%; height: 300px; display: block; }
+  .demo .panel-slot { border: 1px solid var(--line); border-radius: var(--radius-3); overflow: hidden; height: 300px; }
+  @media (max-width: 700px) {
+    .demo { grid-template-columns: 1fr; }
+    .demo .panel-slot { height: auto; max-height: 340px; }
+  }
+
+  /* gradient strips */
+  .strips { display: flex; flex-direction: column; gap: 10px; }
+  .strip-row { display: grid; grid-template-columns: 130px 1fr; gap: 12px; align-items: center; }
+  .strip-row .tag { font: 10.5px var(--mono); color: var(--faint); }
+  .strip { height: 22px; border-radius: var(--radius-1); border: 1px solid var(--line); width: 100%; display: block; }
+
+  /* theme flip */
+  .themes { display: flex; gap: 8px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>eigen-form design kit</h1>
+  <p>The lab's visual language, demonstrated by itself. Everything on this
+  sheet is rendered from <span class="ef-hash" title="src/panel/tokens.css">tokens.css</span>,
+  <span class="ef-hash" title="src/panel/panel.css">panel.css</span> and
+  <span class="ef-hash" title="src/kit/kit.css">kit.css</span> — the same three
+  files any lab page links. Contract: <a href="../docs/design-kit.md">docs/design-kit.md</a>.</p>
+</header>
+
+<section id="palette">
+  <h2>tokens · palette</h2>
+  <p class="note">Ground, chrome, and state. Swatch values are read off the live
+  computed style at load, so this sheet cannot silently drift from the token file.
+  The theme buttons at the bottom repaint every module on this page by overriding
+  custom properties only — no rule anywhere is touched.</p>
+  <div class="swatches" id="swatches"></div>
+</section>
+
+<section id="type">
+  <h2>tokens · type &amp; scale</h2>
+  <div class="spec-row"><span class="tag">--sans 13px</span><span>Prose, labels, descriptions. The quiet voice.</span></div>
+  <div class="spec-row"><span class="tag">--mono 11.5px</span><span style="font: 11.5px var(--mono); font-variant-numeric: tabular-nums;">readouts: 0.9400 · 60° · sha256:9f2a41c8…d41e07</span></div>
+  <div class="spec-row"><span class="tag">small-caps head</span><span style="font: 600 9.5px/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; color: var(--faint);">grouped section header</span></div>
+  <div class="spec-row"><span class="tag">--space-1…6</span>
+    <span style="display:flex; gap:8px; align-items:center;">
+      <span class="bar" style="width:4px"></span><span class="bar" style="width:8px"></span>
+      <span class="bar" style="width:12px"></span><span class="bar" style="width:16px"></span>
+      <span class="bar" style="width:20px"></span><span class="bar" style="width:24px"></span>
+    </span></div>
+  <div class="spec-row"><span class="tag">--radius-1…3</span>
+    <span style="display:flex; gap:8px; align-items:center;">
+      <span class="rad" style="border-radius:var(--radius-1)"></span>
+      <span class="rad" style="border-radius:var(--radius-2)"></span>
+      <span class="rad" style="border-radius:var(--radius-3)"></span>
+    </span></div>
+</section>
+
+<section id="chrome">
+  <h2>kit · chrome</h2>
+  <p class="note">Badges say what a thing <em>is</em> (kind) or how an adjudication
+  <em>stands</em> (state) — one badge is never both. Hashes middle-truncate, carry the
+  full value in the title, and copy on click. Tabs tint from a per-app accent.</p>
+
+  <div class="ef-badge-row" style="margin-bottom: 12px;">
+    <span class="ef-badge frozen">frozen, derives from <span class="ef-hash" data-full="sha256:e0c3a5b1d94f7828c6b21a90f3de5147a2c8b96e01d4732f8a5c1e6b9d20f483" title="sha256:e0c3a5b1d94f7828c6b21a90f3de5147a2c8b96e01d4732f8a5c1e6b9d20f483">sha256:e0c3a5b1…20f483</span></span>
+    <span class="ef-badge sdk">built on eigen-form 0.2.0</span>
+    <span class="ef-badge instrument">instrument-view</span>
+  </div>
+  <div class="ef-badge-row" style="margin-bottom: 16px;">
+    <span class="ef-badge ok">confirmed</span>
+    <span class="ef-badge pending">pending adjudication</span>
+    <span class="ef-badge alert">refuted</span>
+    <span class="ef-badge">deviations: none</span>
+  </div>
+
+  <div class="ef-tab-row" style="margin-bottom: 16px;" id="demo-tabs">
+    <button class="ef-tab active">welded fields</button>
+    <button class="ef-tab" style="--tab-accent:#34d399">stigmergy</button>
+    <button class="ef-tab" style="--tab-accent:#fbbf24">the mark</button>
+    <button class="ef-tab">smoke rings</button>
+  </div>
+
+  <div class="ef-card" style="max-width: 420px;">
+    <b>provenance</b><br>
+    built on eigen-form@0.2.0 605cd69<br>
+    native to the library, no frozen original to derive from
+  </div>
+</section>
+
+<section id="controls">
+  <h2>panel · the three control classes</h2>
+  <p class="note">A live <span style="font-family:var(--mono)">defineParams</span> store rendered by
+  <span style="font-family:var(--mono)">renderPanel</span> into a container this page owns.
+  Knobs are writable; the gauge reads the running field; the preregistered decay renders
+  its declaration and a lock — no input element exists for it, by construction.
+  Drag the knobs: the stage is driven by the same store.</p>
+  <div class="demo">
+    <div class="stage"><canvas id="stage-canvas"></canvas></div>
+    <div class="panel-slot"><div id="panel-mount"></div></div>
+  </div>
+</section>
+
+<section id="datacolor">
+  <h2>palette · hue is data or brand, never both</h2>
+  <p class="note">Brand bands (sampled live from <span style="font-family:var(--mono)">src/palette/gradients.js</span>)
+  color marks and chrome. Measured quantities use perceptually honest maps: monotone ramps for
+  magnitudes, uniform cyclic maps for phases (the cyclic maps arrive with the phase-field family;
+  the ramp below is the shape of the rule, not a shipped map). One figure never mixes the two modes.</p>
+  <div class="strips" id="strips"></div>
+</section>
+
+<section id="themes">
+  <h2>theming · custom-property flow-through</h2>
+  <p class="note">Each button overrides token properties on this document's root and
+  nothing else. Every module above — panel, badges, tabs, swatches, stage — follows,
+  which is the whole theming contract: reflow the layout, rewire the theme, never
+  fork the modules.</p>
+  <div class="themes">
+    <button class="ef-tab active" data-theme="void">void (default)</button>
+    <button class="ef-tab" data-theme="ink">ink &amp; madder</button>
+    <button class="ef-tab" data-theme="tide">tide</button>
+  </div>
+</section>
+
+<script type="module">
+import { defineParams } from '../src/params/define.js';
+import { renderPanel } from '../src/panel/render.js';
+import { GRADIENTS, colorFor, colorStyle } from '../src/palette/gradients.js';
+
+/* ---- palette swatches, read live off the computed style ---- */
+const TOKENS = ['--bg','--panel','--line','--fg','--dim','--faint','--accent','--ok','--warn','--alert'];
+const swatchesEl = document.getElementById('swatches');
+function renderSwatches() {
+  const cs = getComputedStyle(document.documentElement);
+  swatchesEl.innerHTML = '';
+  for (const t of TOKENS) {
+    const val = cs.getPropertyValue(t).trim();
+    const d = document.createElement('div');
+    d.className = 'swatch';
+    d.innerHTML = '<div class="chip" style="background:var(' + t + ')"></div>' +
+      '<div class="meta"><div class="name">' + t + '</div><div class="val">' + val + '</div></div>';
+    swatchesEl.appendChild(d);
+  }
+}
+renderSwatches();
+
+/* ---- live panel demo: store drives a small deposit-decay stage ---- */
+const params = defineParams({
+  rate:     { type: 'number', min: 0.2, max: 8, step: 0.1, default: 2.5,
+              scale: 'log', label: 'Deposit rate', group: 'field' },
+  decay:    { type: 'number', min: 0.9, max: 0.999, step: 0.001, default: 0.96,
+              scale: 'log-complement', label: 'Decay', group: 'field',
+              prereg: 0.96, provenance: 'kit specimen: a declared value renders locked' },
+  angle:    { type: 'angle', min: 0, max: 360, unit: 'deg', default: 137.5,
+              step: 0.5, label: 'Step angle', group: 'walker' },
+  band:     { type: 'select', options: Object.keys(GRADIENTS), default: 'cogos',
+              label: 'Brand band', group: 'view' },
+  trails:   { type: 'boolean', default: true, label: 'Show trails', group: 'view' },
+});
+
+let phase = 0, frames = 0;
+const panelHandle = renderPanel(params, document.getElementById('panel-mount'), {
+  gauges: [
+    { label: 'phase', group: 'walker', read: () => (phase % 1).toFixed(3) },
+    { label: 'frames', group: 'walker', read: () => String(frames) },
+  ],
+});
+
+const canvas = document.getElementById('stage-canvas');
+const ctx = canvas.getContext('2d');
+function fit() {
+  const r = canvas.getBoundingClientRect();
+  canvas.width = Math.max(1, Math.round(r.width * devicePixelRatio));
+  canvas.height = Math.max(1, Math.round(r.height * devicePixelRatio));
+}
+fit(); addEventListener('resize', fit);
+
+function tick() {
+  const w = canvas.width, h = canvas.height;
+  const decay = params.get('decay');
+  // process-honest fade: the trail is decayed, never repainted
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  ctx.globalAlpha = params.get('trails') ? (1 - decay) * 6 : 1;
+  ctx.fillRect(0, 0, w, h);
+  ctx.globalAlpha = 1;
+
+  const g = GRADIENTS[params.get('band')] || GRADIENTS.spectrum;
+  const steps = Math.round(params.get('rate') * 4);
+  const stepAngle = params.get('angle') * Math.PI / 180;
+  const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.38;
+  for (let i = 0; i < steps; i++) {
+    phase += 0.0021;
+    const a = phase * 2 * Math.PI * 3 + i * stepAngle;
+    const r = R * (0.55 + 0.45 * Math.sin(phase * 2 * Math.PI * 2 + i));
+    const c = colorFor(phase % 1, 1, g);
+    ctx.fillStyle = colorStyle(c, 0.9);
+    ctx.beginPath();
+    ctx.arc(cx + r * Math.cos(a), cy + r * Math.sin(a), 2.2 * devicePixelRatio, 0, 7);
+    ctx.fill();
+  }
+  frames++;
+  if (frames % 10 === 0) panelHandle.refresh();
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* ---- gradient strips: brand bands live, data ramp as the rule's shape ---- */
+const stripsEl = document.getElementById('strips');
+function strip(tag, painter) {
+  const row = document.createElement('div');
+  row.className = 'strip-row';
+  const c = document.createElement('canvas');
+  c.className = 'strip'; c.width = 512; c.height = 1;
+  painter(c.getContext('2d'));
+  row.innerHTML = '<span class="tag">' + tag + '</span>';
+  row.appendChild(c);
+  stripsEl.appendChild(row);
+}
+for (const name of ['spectrum', 'cogos', 'mod3', 'research', 'madder']) {
+  strip('brand · ' + name, (g2d) => {
+    for (let x = 0; x < 512; x++) {
+      g2d.fillStyle = colorStyle(colorFor(x / 512, 1, GRADIENTS[name]));
+      g2d.fillRect(x, 0, 1, 1);
+    }
+  });
+}
+strip('data · magnitude', (g2d) => {
+  for (let x = 0; x < 512; x++) {
+    const l = 8 + (x / 512) * 84;
+    g2d.fillStyle = 'hsl(260 12% ' + l.toFixed(1) + '%)';
+    g2d.fillRect(x, 0, 1, 1);
+  }
+});
+
+/* ---- click-to-copy on every hash span ---- */
+document.querySelectorAll('.ef-hash[data-full]').forEach((el) => {
+  el.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(el.dataset.full); } catch { return; }
+    const prev = el.textContent;
+    el.classList.add('copied'); el.textContent = 'copied';
+    setTimeout(() => { el.classList.remove('copied'); el.textContent = prev; }, 900);
+  });
+});
+
+/* ---- demo tabs are decorative but honest: they switch ---- */
+const demoTabs = document.getElementById('demo-tabs');
+demoTabs.addEventListener('click', (e) => {
+  const b = e.target.closest('.ef-tab'); if (!b) return;
+  [...demoTabs.children].forEach((t) => t.classList.toggle('active', t === b));
+});
+
+/* ---- theme flip: overrides properties on :root, nothing else ---- */
+const THEMES = {
+  void: {},   // the token file's own values; reset restores by removal
+  ink: {
+    '--bg': '#f6f1e7', '--panel': '#efe7d8', '--line': '#d8cdb8',
+    '--fg': '#2a2320', '--dim': '#6b5f52', '--faint': '#998a76',
+    '--accent': '#c4483e', '--ok': '#3f7d4e', '--warn': '#a66a1e', '--alert': '#b03530',
+  },
+  tide: {
+    '--bg': '#040b0a', '--panel': '#0a1614', '--line': '#16302c',
+    '--fg': '#e0f0ec', '--dim': '#8fb0a8', '--faint': '#5a7d75',
+    '--accent': '#2dd4bf', '--ok': '#a3e635', '--warn': '#fbbf24', '--alert': '#fb7185',
+  },
+};
+const themesEl = document.getElementById('themes').querySelector('.themes') || document.querySelector('.themes');
+themesEl.addEventListener('click', (e) => {
+  const b = e.target.closest('.ef-tab'); if (!b) return;
+  [...themesEl.children].forEach((t) => t.classList.toggle('active', t === b));
+  const root = document.documentElement;
+  for (const k of Object.keys(THEMES.ink)) root.style.removeProperty(k);
+  const theme = THEMES[b.dataset.theme] || {};
+  for (const [k, v] of Object.entries(theme)) root.style.setProperty(k, v);
+  root.style.colorScheme = b.dataset.theme === 'ink' ? 'light' : 'dark';
+  renderSwatches();
+});
+</script>
+</body>
+</html>

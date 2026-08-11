@@ -148,6 +148,7 @@ eigen-form is the first library in a planned family of mathematical design primi
 - `docs/construction.md` — torus knot math, hue parallax, substrate residue, compositing
 - `docs/params-panel-design.md` — declared knobs, one control surface: `defineParams`, the three control classes (knobs/gauges/locks), the shell's typed envelope
 - `docs/lab-design.md` — the lab's declarative app contract: `app.json`, the `tools/lab_build.js` reconciler, sandbox policy by kind
+- `docs/design-kit.md` — the visual language: tokens, chrome primitives, theming by custom-property flow-through; live specimen at `hub/kit.html`
 
 ## License
 

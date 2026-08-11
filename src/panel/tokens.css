@@ -47,6 +47,18 @@
   --radius-1: 4px;
   --radius-2: 6px;
   --radius-3: 8px;
+
+  /* Semantic state tier (design-kit addition, v0.2): the three colors a
+   * page may use to say something about STATE rather than identity.
+   * Consumers: verdict chips on instrument-views (confirmed / pending /
+   * refuted), deviation callouts, gauges in alarm. These are chrome
+   * colors, not data colors — a plotted quantity never borrows them
+   * (docs/design-kit.md, "Hue is data or brand"). Chosen in the same
+   * lightness family as --accent so all four sit at equal weight on the
+   * dark ground. */
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --alert: #f87171;
 }
 
 /* Grouped small-caps section header, matching welded_fields' .grp/.hd. */
