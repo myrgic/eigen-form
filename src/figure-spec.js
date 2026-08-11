@@ -77,3 +77,22 @@ export function fromSpec(spec) {
   }
   return { ...spec.params };
 }
+
+// =====================================================================
+// v0.2 addition (docs/params-panel-design.md, "defineParams"): a spec
+// can additionally carry a src/params/define.js store's schema hash and
+// current values, alongside the torus-knot `params` field above. Purely
+// additive — exportSpec()/fromSpec() above are unchanged, and a spec
+// built without a params store round-trips exactly as it always has.
+// `store` here is whatever defineParams(schema) returned; only its
+// serialize() contract is used, so this stays decoupled from any one
+// schema shape.
+// =====================================================================
+
+export function withParamsStore(spec, store) {
+  return { ...spec, paramsStore: store.serialize() };
+}
+
+export function paramsStoreOf(spec) {
+  return (spec && spec.paramsStore) || null;
+}
