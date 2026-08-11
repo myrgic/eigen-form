@@ -1,0 +1,12 @@
+{
+  "id": "mark",
+  "title": "The Mark",
+  "description": "The (2,3) torus knot traced live against a fading substrate.",
+  "version": "1.0.0",
+  "kind": "sdk-page",
+  "entry": "index.html",
+  "provenance": { "builtOn": "eigen-form@0.1.0 491c440" },
+  "sdk": { "eigen-form": ">=0.1.0" },
+  "capabilities": { "emits": [], "accepts": [] },
+  "pwa": { "installable": false }
+}

@@ -47,6 +47,19 @@
       }
     },
     {
+      "id": "mark",
+      "title": "The Mark",
+      "description": "The (2,3) torus knot traced live against a fading substrate.",
+      "path": "../apps/mark/index.html",
+      "kind": "sdk-page",
+      "provenance": {
+        "builtOn": "eigen-form@0.1.0 491c440"
+      },
+      "pwa": {
+        "installable": false
+      }
+    },
+    {
       "id": "physarum",
       "title": "Physarum Stigmergy Simulation",
       "description": "Particles leave trails in a pixel grid and steer toward the highest concentration ahead of them as it diffuses and decays.",

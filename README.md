@@ -109,11 +109,18 @@ Three rules hold the contract together, detailed in `docs/lab-design.md`:
    library's op-stream goldens and the lab's provenance check, before
    publishing to Pages.
 
-Status: six apps are live under `apps/`, five byte-identical to their
-frozen originals and one (the AST diffusion study) vendoring its single
-external dependency. Every app's provenance hash is checked against
-`goldens/originals.txt` and the hub's registry on every push, so `main`
-can't drift from what it claims to serve.
+Status: seven apps are live under `apps/` (`node tools/lab_build.js
+--write` derives `hub/registry.json`, and its app count is the source of
+truth for this line). Six are frozen goldens: five byte-identical to
+their originals, one (the AST diffusion study) vendoring its single
+external dependency. The seventh, `mark`, is the lab's first native
+`sdk-page`: no frozen original, built straight against the library and
+provenanced by the `eigen-form` version it was built on
+(`docs/lab-design.md`, "app.json"). Every app's provenance is checked,
+by hash against `goldens/originals.txt` for the frozen goldens or by
+version against this checkout's `package.json` for the native page, and
+the hub's registry is checked against the app manifests, on every push,
+so `main` can't drift from what it claims to serve.
 
 ## Vision
 

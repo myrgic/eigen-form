@@ -87,41 +87,75 @@ guessed at now.
 }
 ```
 
+A native `sdk-page` (one born to the library, no frozen original to point
+back at) declares `provenance` differently:
+
+```json
+{
+  "provenance": { "builtOn": "eigen-form@0.1.0 491c440" },
+  "sdk": { "eigen-form": ">=0.1.0" }
+}
+```
+
 - **kind** is the lab's whole taxonomy. `frozen-golden`: a byte-preserved
   copy of an original page, provenance hash mandatory, changes list
   exactly what differs (normally nothing, or a single vendored-dependency
-  line). `sdk-page`: a thin page composed on eigen-form primitives,
-  licensed by an equivalence proof against the original it re-expresses.
+  line). `sdk-page`: a thin page composed on eigen-form primitives. Two
+  ways to arrive there carry two different provenance shapes (below):
+  migrated (an existing frozen page re-expressed on the library, licensed
+  by an equivalence proof against the original) and native (a page
+  written straight against the library, nothing to re-express). Today's
+  first native `sdk-page` is `apps/mark`, the trefoil configurator.
   `instrument-view`: a page bound to a published dataset it carries in
   its own `data/` directory, manifest and hashes included, so the figure
   can always answer where its numbers came from.
-- **provenance.derivesFrom** is always a content hash, never a path.
-  Hashes travel across repository boundaries; paths do not. That
-  property is why the six day-one apps' provenance hashes needed no
-  rewriting when the lab moved into this repository: they still point at
-  the same frozen originals, wherever those originals live.
+- **provenance** carries exactly one of two fields, never both and never
+  neither. Which one an app uses follows directly from whether it has an
+  original to point back at:
+  - **derivesFrom**: for a page that re-expresses something that already
+    existed outside this repository: every `frozen-golden` app, and any
+    `sdk-page` that migrates one. Always a content hash, never a path.
+    Hashes travel across repository boundaries; paths do not. That
+    property is why the six day-one apps' provenance hashes needed no
+    rewriting when the lab moved into this repository: they still point
+    at the same frozen originals, wherever those originals live. The
+    hash must be present in `goldens/originals.txt`.
+  - **builtOn**: for a page with no frozen original, a native
+    `sdk-page`, born to this library rather than migrated into it. The
+    "equivalence proof against the original" the older wording of this
+    contract demanded doesn't apply here; there is no original. What a
+    native page can honestly claim instead is which version of the
+    library it was built on: `"eigen-form@<semver> <short-commit>"`. The
+    reconciler checks the semver segment against this checkout's own
+    `package.json` version, exactly, not a range, since `builtOn`
+    states what was actually true when the page was authored. A native
+    page whose `builtOn` names a version older than the checkout's
+    current `package.json` version fails `--check`: the claim has gone
+    stale and needs re-authoring against the version actually shipping.
+    The commit segment is lineage, not re-verified against git HEAD (an
+    app.json's own commit isn't knowable until after it's committed).
 - **provenance.entryHash** (contract clarification, added when the first
   `frozen-golden` apps with declared changes landed): required whenever
-  `provenance.changes` is non-empty. A frozen-golden's original file
-  lives outside this repository, so the reconciler cannot diff the entry
-  against it to confirm the changes list is exhaustive. `entryHash` pins
-  the entry file's own content hash at the moment the changes were
-  declared and verified by hand; the reconciler then only has to confirm
-  the entry still hashes to that value, catching any edit made after the
-  changes list was written without re-auditing it. Byte-identical apps
-  (`changes: []`) don't need it: their entry hash must equal
-  `derivesFrom` directly.
-- **sdk** is optional. It names the version of the `eigen-form` library
-  an `sdk-page` builds on. A `frozen-golden` app builds on nothing but
-  its own frozen bytes, so it omits the field entirely; the reconciler
-  treats a present `sdk` field on a `frozen-golden` app as a validation
-  error. No `sdk-page` app exists yet, so this constraint is unexercised:
-  the reconciler's version check today reads a `hub/vendor/eigen-form.json`
-  manifest that this tree does not have, a leftover of the
-  vendored-copy design the standalone lab shipped with. Direct
-  ES-module import (see above) asks a different provenance question,
-  which `src/` version, not which vendored copy, and that question stays
-  open until the first `sdk-page` migration forces an answer.
+  a `derivesFrom` provenance's `changes` is non-empty. A frozen-golden's
+  original file lives outside this repository, so the reconciler cannot
+  diff the entry against it to confirm the changes list is exhaustive.
+  `entryHash` pins the entry file's own content hash at the moment the
+  changes were declared and verified by hand; the reconciler then only
+  has to confirm the entry still hashes to that value, catching any edit
+  made after the changes list was written without re-auditing it.
+  Byte-identical apps (`changes: []`) don't need it: their entry hash
+  must equal `derivesFrom` directly. `builtOn` provenance has no
+  `changes` or `entryHash` at all: there is no original to diff
+  against, so the concept doesn't apply.
+- **sdk** is required for `kind: sdk-page` (both migrated and native) and
+  names the version of the `eigen-form` library the page builds on. A
+  `frozen-golden` app builds on nothing but its own frozen bytes, so it
+  omits the field entirely; the reconciler treats a present `sdk` field
+  on a `frozen-golden` app as a validation error. The version check
+  reads this checkout's own `package.json`, not a vendored copy: `apps/`
+  imports the library's ES module directly (see "Consuming the library"
+  above), so there is no vendored snapshot to check against, only the
+  question of which `src/` version this tree currently is.
 - **capabilities** is the dormant socket for app-to-app messaging:
   typed envelopes on declared edges, brokered by the shell. Empty today;
   declared from day one so that wiring apps together later is an
@@ -131,9 +165,18 @@ guessed at now.
 
 `tools/lab_build.js` enumerates `apps/*/app.json` and:
 
-1. **Validates**: schema; entry file exists; provenance hash present in
-   `goldens/originals.txt`; SDK constraint satisfiable (see above,
-   presently unexercised); capabilities well-formed.
+1. **Validates**: schema; entry file exists; provenance shape (exactly
+   one of `derivesFrom` or `builtOn`) with a `derivesFrom` hash present
+   in `goldens/originals.txt` or a `builtOn` version matching this
+   checkout's `package.json`; SDK constraint satisfiable for every
+   `sdk-page`; capabilities well-formed. Failure modes worth naming
+   because they're easy to hit while authoring a native app: a
+   `builtOn` string in the wrong shape (`--check` demands
+   `eigen-form@<semver> <short-commit>` exactly); a `builtOn` version
+   that doesn't match `package.json` (stale claim, most often from
+   bumping the library version and forgetting the apps that name it);
+   `derivesFrom` and `builtOn` both present or both absent (the
+   reconciler refuses to guess which provenance story is true).
 2. **Derives** `hub/registry.json` deterministically (sorted, stable,
    content only from manifests).
 3. In `--check` mode, fails if the committed registry differs from the

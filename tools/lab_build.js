@@ -17,6 +17,7 @@ const APPS_DIR = path.join(ROOT, 'apps');
 const HUB_DIR = path.join(ROOT, 'hub');
 const GOLDENS_FILE = path.join(ROOT, 'goldens', 'originals.txt');
 const REGISTRY_FILE = path.join(HUB_DIR, 'registry.json');
+const PACKAGE_FILE = path.join(ROOT, 'package.json');
 
 const VALID_KINDS = new Set(['frozen-golden', 'sdk-page', 'instrument-view']);
 
@@ -60,15 +61,28 @@ function satisfiesRange(range, version) {
   return true;
 }
 
-function readVendoredEigenFormVersion() {
-  const vendorManifest = path.join(HUB_DIR, 'vendor', 'eigen-form.json');
-  if (!fs.existsSync(vendorManifest)) return null;
+// The repo's own package.json version, not a vendored copy. sdk-page apps
+// import the library's ES module directly (docs/lab-design.md, "Consuming
+// the library"); there is no vendored snapshot to read a version from, so
+// the reconciler checks the sdk constraint and a native app's provenance
+// against the version this checkout itself declares.
+function readPackageVersion() {
+  if (!fs.existsSync(PACKAGE_FILE)) return null;
   try {
-    return JSON.parse(fs.readFileSync(vendorManifest, 'utf8')).version || null;
+    return JSON.parse(fs.readFileSync(PACKAGE_FILE, 'utf8')).version || null;
   } catch {
     return null;
   }
 }
+
+// provenance.builtOn shape: "eigen-form@<semver> <short-commit>". The
+// version must equal this checkout's package.json version exactly (not a
+// range: builtOn names the version the page was actually authored
+// against). The commit is informational lineage, not re-verified against
+// git HEAD: an app.json's own commit isn't known until after it's
+// committed, so checking it against HEAD would be unsatisfiable by
+// construction. Format only: 7-40 lowercase hex characters.
+const BUILT_ON_RE = /^eigen-form@(\d+\.\d+\.\d+)\s+([0-9a-f]{7,40})$/i;
 
 function validateApp(id, goldenHashes) {
   const appDir = path.join(APPS_DIR, id);
@@ -116,52 +130,84 @@ function validateApp(id, goldenHashes) {
   }
 
   // --- provenance ---
+  // Two shapes, exactly one required. derivesFrom: this app re-expresses
+  // (byte-identical or migrated) a frozen original that exists outside
+  // this repository; the hash is the only thing tying it back. builtOn:
+  // this app was born native to the library, has no frozen original to
+  // derive from, and instead names the eigen-form version it was built
+  // against (docs/lab-design.md, "app.json"). A frozen-golden app is
+  // always the derivesFrom shape (it IS the frozen bytes); a native
+  // sdk-page is always builtOn; a migrated sdk-page uses derivesFrom.
   const prov = manifest.provenance || {};
-  if (!prov.derivesFrom || !/^sha256:[0-9a-f]{64}$/i.test(prov.derivesFrom)) {
-    fail(`${id}: provenance.derivesFrom must be "sha256:<64 hex chars>"`);
-    return manifest;
-  }
-  const derivesHash = prov.derivesFrom.slice('sha256:'.length).toLowerCase();
-  if (!goldenHashes.has(derivesHash)) {
-    fail(`${id}: provenance.derivesFrom hash ${derivesHash} is not present in goldens/originals.txt`);
-  }
-  if (!Array.isArray(prov.changes)) {
-    fail(`${id}: provenance.changes must be an array`);
+  const hasDerivesFrom = Object.prototype.hasOwnProperty.call(prov, 'derivesFrom');
+  const hasBuiltOn = Object.prototype.hasOwnProperty.call(prov, 'builtOn');
+  if (hasDerivesFrom === hasBuiltOn) {
+    fail(`${id}: provenance must have exactly one of "derivesFrom" (migrated) or "builtOn" (native), not ${hasDerivesFrom ? 'both' : 'neither'}`);
     return manifest;
   }
 
-  const actualHash = sha256(entryPath);
-  if (prov.changes.length === 0) {
-    // Byte-identical claim: the entry's own hash must equal derivesFrom.
-    if (actualHash !== derivesHash) {
-      fail(`${id}: changes is empty (byte-identical claim) but entry hash ${actualHash} != derivesFrom ${derivesHash}`);
+  if (hasDerivesFrom) {
+    if (!prov.derivesFrom || !/^sha256:[0-9a-f]{64}$/i.test(prov.derivesFrom)) {
+      fail(`${id}: provenance.derivesFrom must be "sha256:<64 hex chars>"`);
+      return manifest;
+    }
+    const derivesHash = prov.derivesFrom.slice('sha256:'.length).toLowerCase();
+    if (!goldenHashes.has(derivesHash)) {
+      fail(`${id}: provenance.derivesFrom hash ${derivesHash} is not present in goldens/originals.txt`);
+    }
+    if (!Array.isArray(prov.changes)) {
+      fail(`${id}: provenance.changes must be an array`);
+      return manifest;
+    }
+
+    const actualHash = sha256(entryPath);
+    if (prov.changes.length === 0) {
+      // Byte-identical claim: the entry's own hash must equal derivesFrom.
+      if (actualHash !== derivesHash) {
+        fail(`${id}: changes is empty (byte-identical claim) but entry hash ${actualHash} != derivesFrom ${derivesHash}`);
+      }
+    } else {
+      // Changed app: entryHash must be recorded (we can't diff against the
+      // private original from inside this repo) and must match the actual
+      // entry file, so an undeclared edit after the fact is caught.
+      if (!prov.entryHash || !/^sha256:[0-9a-f]{64}$/i.test(prov.entryHash)) {
+        fail(`${id}: provenance.changes is non-empty but provenance.entryHash is missing or malformed`);
+      } else {
+        const wantEntryHash = prov.entryHash.slice('sha256:'.length).toLowerCase();
+        if (actualHash !== wantEntryHash) {
+          fail(`${id}: entry hash ${actualHash} != recorded provenance.entryHash ${wantEntryHash}`);
+        }
+      }
     }
   } else {
-    // Changed app: entryHash must be recorded (we can't diff against the
-    // private original from inside this repo) and must match the actual
-    // entry file, so an undeclared edit after the fact is caught.
-    if (!prov.entryHash || !/^sha256:[0-9a-f]{64}$/i.test(prov.entryHash)) {
-      fail(`${id}: provenance.changes is non-empty but provenance.entryHash is missing or malformed`);
+    // builtOn: native sdk-page, licensed by the library version it was
+    // composed on rather than by an equivalence proof against an original.
+    const raw = String(prov.builtOn || '').trim();
+    const m = BUILT_ON_RE.exec(raw);
+    if (!m) {
+      fail(`${id}: provenance.builtOn must match "eigen-form@<semver> <short-commit>", got ${JSON.stringify(prov.builtOn)}`);
     } else {
-      const wantEntryHash = prov.entryHash.slice('sha256:'.length).toLowerCase();
-      if (actualHash !== wantEntryHash) {
-        fail(`${id}: entry hash ${actualHash} != recorded provenance.entryHash ${wantEntryHash}`);
+      const packageVersion = readPackageVersion();
+      if (!packageVersion) {
+        fail(`${id}: provenance.builtOn given but this checkout's package.json version could not be read`);
+      } else if (m[1] !== packageVersion) {
+        fail(`${id}: provenance.builtOn names eigen-form@${m[1]} but this checkout's package.json is at ${packageVersion}; a native app's builtOn must track the current library version`);
       }
     }
   }
 
-  // --- sdk constraint (only meaningful for sdk-page today) ---
+  // --- sdk constraint (required for sdk-page) ---
   if (manifest.kind === 'sdk-page') {
     if (!manifest.sdk || typeof manifest.sdk !== 'object') {
       fail(`${id}: kind is sdk-page but app.json has no sdk field`);
     } else {
-      const vendoredVersion = readVendoredEigenFormVersion();
+      const packageVersion = readPackageVersion();
       for (const [lib, range] of Object.entries(manifest.sdk)) {
         if (lib !== 'eigen-form') continue;
-        if (!vendoredVersion) {
-          fail(`${id}: sdk requires eigen-form ${range} but hub/vendor/eigen-form.json is missing`);
-        } else if (!satisfiesRange(range, vendoredVersion)) {
-          fail(`${id}: sdk requires eigen-form ${range} but vendored version is ${vendoredVersion}`);
+        if (!packageVersion) {
+          fail(`${id}: sdk requires eigen-form ${range} but this checkout's package.json version could not be read`);
+        } else if (!satisfiesRange(range, packageVersion)) {
+          fail(`${id}: sdk requires eigen-form ${range} but this checkout's package.json version is ${packageVersion}`);
         }
       }
     }
@@ -181,10 +227,9 @@ function deriveRegistry(entries) {
       description: m.description,
       path: `../apps/${m.id}/${m.entry}`,
       kind: m.kind,
-      provenance: {
-        derivesFrom: m.provenance.derivesFrom,
-        changes: m.provenance.changes
-      },
+      provenance: 'derivesFrom' in m.provenance
+        ? { derivesFrom: m.provenance.derivesFrom, changes: m.provenance.changes }
+        : { builtOn: m.provenance.builtOn },
       pwa: { installable: !!(m.pwa && m.pwa.installable) }
     }));
 

@@ -80,14 +80,22 @@
   const apps = registry.apps || [];
 
   function renderDetail(app) {
-    const changes = (app.provenance.changes && app.provenance.changes.length)
-      ? app.provenance.changes.map((c) => '<div>&middot; ' + c + '</div>').join('')
-      : '<div>&middot; none (byte-identical)</div>';
+    let provenanceHtml;
+    if (app.provenance.derivesFrom) {
+      const changes = (app.provenance.changes && app.provenance.changes.length)
+        ? app.provenance.changes.map((c) => '<div>&middot; ' + c + '</div>').join('')
+        : '<div>&middot; none (byte-identical)</div>';
+      provenanceHtml =
+        '<b>derives from</b><br>' + app.provenance.derivesFrom +
+        '<br><br><b>changes</b><br>' + changes;
+    } else {
+      provenanceHtml = '<b>built on</b><br>' + app.provenance.builtOn +
+        '<br><br>native to the library, no frozen original to derive from';
+    }
     detailEl.innerHTML =
       '<h2>' + app.title + '</h2>' +
       '<p class="description">' + app.description + '</p>' +
-      '<div class="provenance"><b>derives from</b><br>' + app.provenance.derivesFrom +
-      '<br><br><b>changes</b><br>' + changes + '</div>' +
+      '<div class="provenance">' + provenanceHtml + '</div>' +
       '<a class="popout" href="' + app.path + '" target="_blank" rel="noopener">Open app directly &rarr;</a>';
   }
 
