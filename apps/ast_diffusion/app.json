@@ -14,5 +14,6 @@
     "entryHash": "sha256:2a6c1db3a6f1e707d9bd88b4ea941cdf716e1199ff8833250ac58e5968595398"
   },
   "capabilities": { "emits": [], "accepts": [] },
-  "pwa": { "installable": true }
+  "pwa": { "installable": true },
+  "display": { "background": "#fafafa" }
 }

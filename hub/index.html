@@ -6,49 +6,105 @@
 <title>the eigen-form lab</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#0e0e12">
+<link rel="stylesheet" href="tokens.css">
+<meta name="theme-color" content="#07060b">
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   body {
     margin: 0; height: 100vh; display: flex; flex-direction: column;
-    background: #0e0e12; color: #e6e6ea;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--sans);
   }
-  header { padding: 14px 20px 10px; border-bottom: 1px solid #26262e; }
+  header { padding: 14px 20px 10px; border-bottom: 1px solid var(--line); }
   header h1 { margin: 0 0 2px; font-size: 16px; font-weight: 650; }
-  header p { margin: 0; font-size: 12px; color: #8a8a96; }
+  header p { margin: 0; font-size: 12px; color: var(--dim); }
+
+  /* Tab row: always a single horizontally scrollable row, never wraps.
+     Also the desktop scale fix, per docs/lab-design.md's shell section:
+     a growing app count grows sideways, not into more vertical rows. */
   #tabs {
-    display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 20px;
-    border-bottom: 1px solid #26262e; overflow-x: auto;
+    display: flex; flex-wrap: nowrap; gap: 8px; padding: 10px 20px;
+    border-bottom: 1px solid var(--line); overflow-x: auto;
   }
   .tab {
-    background: #1a1a20; border: 1px solid #2c2c36; color: #cfcfd8;
-    padding: 7px 12px; border-radius: 8px; font-size: 12.5px; cursor: pointer;
-    white-space: nowrap;
+    background: var(--panel); border: 1px solid var(--line); color: var(--dim);
+    padding: 7px 12px; border-radius: var(--radius-3); font-size: 12.5px; cursor: pointer;
+    white-space: nowrap; flex: none;
   }
-  .tab:hover { border-color: #4a4a5a; }
-  .tab.active { background: #2b2b6e; border-color: #4c4cc9; color: #fff; }
+  .tab:hover { border-color: var(--faint); }
+  .tab.active { background: color-mix(in srgb, var(--tab-accent, var(--accent)) 28%, var(--panel)); border-color: var(--tab-accent, var(--accent)); color: var(--fg); }
+
   #stage { flex: 1; display: flex; min-height: 0; }
   #detail {
     width: 300px; flex: 0 0 300px; padding: 16px 18px; overflow-y: auto;
-    border-right: 1px solid #26262e;
+    border-right: 1px solid var(--line);
   }
-  #detail h2 { margin: 0 0 8px; font-size: 15px; }
-  #detail p.description { font-size: 13px; color: #b5b5c0; line-height: 1.5; margin: 0 0 14px; }
+  #detail h2 { margin: 0 0 8px; font-size: 15px; color: var(--detail-accent, var(--fg)); }
+  #detail p.description { font-size: 13px; color: var(--dim); line-height: 1.5; margin: 0 0 12px; }
+
+  /* Kind badges (frozen / built-on-sdk), fix #3. */
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+  .badge {
+    font: 10.5px var(--mono); letter-spacing: .04em; color: var(--dim);
+    background: var(--panel); border: 1px solid var(--line);
+    padding: 3px 8px; border-radius: var(--radius-1);
+  }
+  .badge.frozen { color: var(--faint); }
+  .badge.sdk { color: var(--accent); border-color: var(--accent); }
+
+  /* Provenance + changes disclosure, fix #5: real <details> markup at all
+     sizes, closed by default; opened programmatically at desktop widths
+     (see openProvenanceForViewport below) rather than wrapped or gated
+     entirely behind a media query, since the same DOM has to serve both
+     a "closed panel a mobile visitor taps open" and "panel that's simply
+     open on a desktop-wide detail column" without two render paths. */
+  #detail details.provenance-block { margin: 0 0 14px; }
+  #detail details.provenance-block > summary {
+    cursor: pointer; font-size: 11.5px; color: var(--dim);
+    padding: 6px 0; user-select: none;
+  }
+  #detail details.provenance-block > summary:hover { color: var(--fg); }
   #detail .provenance {
-    font-size: 11px; color: #8a8a96; line-height: 1.6; word-break: break-all;
-    background: #16161c; border: 1px solid #26262e; border-radius: 6px; padding: 10px;
+    font-size: 11px; color: var(--dim); line-height: 1.6; word-break: break-all;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-2); padding: 10px;
+    margin-top: 6px;
   }
-  #detail .provenance b { color: #cfcfd8; }
+  #detail .provenance b { color: var(--fg); }
+
+  /* Hash display, fix #4: middle-truncated, full value in the title
+     attribute, click-to-copy with a brief confirmation swap. */
+  .hash {
+    font: inherit; color: inherit; cursor: pointer;
+    border-bottom: 1px dotted var(--faint);
+  }
+  .hash:hover { border-bottom-color: var(--dim); }
+  .hash.copied { color: var(--accent); border-bottom-color: var(--accent); }
+
   #detail a.popout {
-    display: inline-block; margin-top: 14px; font-size: 12.5px; color: #9ba8ff;
-    text-decoration: none; border: 1px solid #2c2c36; padding: 6px 10px; border-radius: 6px;
+    display: inline-block; margin-top: 4px; font-size: 12.5px; color: var(--accent);
+    text-decoration: none; border: 1px solid var(--line); padding: 6px 10px; border-radius: var(--radius-2);
   }
-  #detail a.popout:hover { border-color: #4c4cc9; }
-  #frame-wrap { flex: 1; min-width: 0; background: #000; }
+  #detail a.popout:hover { border-color: var(--accent); }
+
+  /* Iframe surround: fix #6. Falls back to the token bg; selectApp()
+     overrides this per app when display.background is declared. */
+  #frame-wrap { flex: 1; min-width: 0; background: var(--bg); }
   iframe { width: 100%; height: 100%; border: 0; display: block; }
-  #empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #6a6a76; font-size: 13px; }
+  #empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--faint); font-size: 13px; }
+
+  /* Mobile layout, fix #5: iframe first, detail second (title/description
+     visible, provenance collapsed), stage stacks instead of splitting
+     into columns. 700px is this lab's one mobile breakpoint; MOBILE_MQ
+     below mirrors it for the JS side of the same rule. */
+  @media (max-width: 700px) {
+    #stage { flex-direction: column; }
+    #frame-wrap { order: 1; flex: 1 1 55vh; min-height: 240px; }
+    #detail {
+      order: 2; width: 100%; flex: 1 1 auto;
+      border-right: none; border-top: 1px solid var(--line);
+    }
+  }
 </style>
 </head>
 <body>
@@ -66,6 +122,13 @@
   const tabsEl = document.getElementById('tabs');
   const detailEl = document.getElementById('detail');
   const frameWrap = document.getElementById('frame-wrap');
+  const stageEl = document.getElementById('stage');
+
+  // Mirrors the @media (max-width: 700px) rule above: the one place both
+  // the CSS and the JS side of the mobile breakpoint are allowed to drift
+  // apart is if someone edits one without the other, so it's named once
+  // here rather than inlined at each call site.
+  const MOBILE_MQ = window.matchMedia('(max-width: 700px)');
 
   let registry;
   try {
@@ -79,32 +142,125 @@
 
   const apps = registry.apps || [];
 
-  function renderDetail(app) {
-    let provenanceHtml;
+  // Hash display, fix #4: first 8 + last 6 chars, full value in title,
+  // click-to-copy. Shared by derivesFrom and entryHash. The d3 vendor
+  // hash inside ast_diffusion's `changes` prose is deliberately left
+  // full-length rather than truncated inline: that hash sits mid-sentence
+  // ("vendored d3 v7.9.0, sha256:..., at apps/..."), and swapping it for
+  // a truncated span there would garble the sentence structure around it
+  // for no real gain, since the prose already carries the file path as
+  // the primary pointer. Judgment call, stated here per the brief.
+  function truncateHash(full) {
+    if (full.length <= 8 + 6 + 1) return full;
+    return full.slice(0, 8) + '…' + full.slice(-6);
+  }
+
+  function hashSpanHtml(prefixedHash) {
+    // prefixedHash like "sha256:<hex>"; keep the "sha256:" prefix visible,
+    // truncate only the hex body.
+    const m = /^(sha256:)([0-9a-f]+)$/i.exec(prefixedHash);
+    const prefix = m ? m[1] : '';
+    const hex = m ? m[2] : prefixedHash;
+    const shown = prefix + truncateHash(hex);
+    const esc = prefixedHash.replace(/"/g, '&quot;');
+    return '<span class="hash" data-full="' + esc + '" title="' + esc + '">' + shown + '</span>';
+  }
+
+  function wireHashCopy(root) {
+    root.querySelectorAll('.hash').forEach((el) => {
+      el.addEventListener('click', async () => {
+        const full = el.dataset.full;
+        try {
+          await navigator.clipboard.writeText(full);
+        } catch {
+          // Clipboard API can be denied (sandboxed context, no permission);
+          // the click-to-copy affordance degrades to a no-op rather than
+          // throwing, the title attribute still carries the full hash.
+          return;
+        }
+        const prevText = el.textContent;
+        el.classList.add('copied');
+        el.textContent = 'copied';
+        setTimeout(() => {
+          el.classList.remove('copied');
+          el.textContent = prevText;
+        }, 900);
+      });
+    });
+  }
+
+  // Kind badges, fix #3.
+  function badgesHtml(app) {
+    if (app.kind === 'frozen-golden') {
+      const hash = app.provenance.derivesFrom || '';
+      return '<div class="badges"><span class="badge frozen">frozen, derives from ' +
+        hashSpanHtml(hash) + '</span></div>';
+    }
+    if (app.kind === 'sdk-page') {
+      const built = app.provenance.builtOn || '';
+      const m = /^eigen-form@(\d+\.\d+\.\d+)/.exec(built);
+      const version = m ? m[1] : built;
+      return '<div class="badges"><span class="badge sdk">built on eigen-form ' + version + '</span></div>';
+    }
+    // instrument-view: no app of this kind exists yet; fall through to no
+    // badge rather than guess at a shape for an unimplemented kind.
+    return '';
+  }
+
+  function provenanceHtml(app) {
     if (app.provenance.derivesFrom) {
       const changes = (app.provenance.changes && app.provenance.changes.length)
         ? app.provenance.changes.map((c) => '<div>&middot; ' + c + '</div>').join('')
         : '<div>&middot; none (byte-identical)</div>';
-      provenanceHtml =
-        '<b>derives from</b><br>' + app.provenance.derivesFrom +
+      return '<b>derives from</b><br>' + hashSpanHtml(app.provenance.derivesFrom) +
         '<br><br><b>changes</b><br>' + changes;
-    } else {
-      provenanceHtml = '<b>built on</b><br>' + app.provenance.builtOn +
-        '<br><br>native to the library, no frozen original to derive from';
     }
+    return '<b>built on</b><br>' + app.provenance.builtOn +
+      '<br><br>native to the library, no frozen original to derive from';
+  }
+
+  function renderDetail(app) {
+    detailEl.style.removeProperty('--detail-accent');
+    if (app.display && app.display.accent) {
+      detailEl.style.setProperty('--detail-accent', app.display.accent);
+    }
+
     detailEl.innerHTML =
       '<h2>' + app.title + '</h2>' +
       '<p class="description">' + app.description + '</p>' +
-      '<div class="provenance">' + provenanceHtml + '</div>' +
+      badgesHtml(app) +
+      '<details class="provenance-block"><summary>Provenance and changes</summary>' +
+      '<div class="provenance">' + provenanceHtml(app) + '</div></details>' +
       '<a class="popout" href="' + app.path + '" target="_blank" rel="noopener">Open app directly &rarr;</a>';
+
+    const details = detailEl.querySelector('details.provenance-block');
+    // Closed by default (native <details> behavior) is the mobile shape.
+    // At desktop widths the panel has room to just show this, so it opens
+    // itself; it stays a real disclosure either way, a desktop visitor can
+    // still collapse it.
+    details.open = !MOBILE_MQ.matches;
+
+    wireHashCopy(detailEl);
   }
+
+  let currentAppId = null;
 
   function selectApp(id) {
     const app = apps.find((a) => a.id === id);
     if (!app) return;
-    [...tabsEl.children].forEach((t) => t.classList.toggle('active', t.dataset.id === id));
+    currentAppId = id;
+    [...tabsEl.children].forEach((t) => {
+      const active = t.dataset.id === id;
+      t.classList.toggle('active', active);
+      if (active && t.dataset.accent) t.style.setProperty('--tab-accent', t.dataset.accent);
+    });
     renderDetail(app);
     frameWrap.innerHTML = '';
+    // Iframe surround, fix #6: the app's declared letterbox color if it
+    // has one, otherwise the shell's own bg token.
+    frameWrap.style.background = (app.display && app.display.background)
+      ? app.display.background
+      : 'var(--bg)';
     const iframe = document.createElement('iframe');
     iframe.src = app.path;
     iframe.sandbox = 'allow-scripts';
@@ -116,10 +272,21 @@
     const tab = document.createElement('button');
     tab.className = 'tab';
     tab.dataset.id = app.id;
+    if (app.display && app.display.accent) tab.dataset.accent = app.display.accent;
     tab.textContent = app.title;
     tab.addEventListener('click', () => selectApp(app.id));
     tabsEl.appendChild(tab);
     if (i === 0) selectApp(app.id);
+  });
+
+  // Re-render the detail panel's disclosure state when the viewport
+  // crosses the mobile breakpoint, so resizing (or rotating) doesn't
+  // strand the panel in the wrong shape until the next tab click.
+  MOBILE_MQ.addEventListener('change', () => {
+    if (currentAppId) {
+      const app = apps.find((a) => a.id === currentAppId);
+      if (app) renderDetail(app);
+    }
   });
 
   // The shell is installable on its own, scoped to hub/ root via sw.js's own

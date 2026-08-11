@@ -1,0 +1,59 @@
+/* hub/tokens.css: the lab's visual-language tokens.
+ *
+ * Codified, not invented: these custom properties are mined directly from
+ * apps/welded_fields/index.html's :root block, the de facto token source
+ * named in docs/params-panel-design.md ("One visual language"). That page
+ * predates this file; this file just gives the same palette, spacing, and
+ * control primitives a name every other page in the lab can share instead
+ * of re-deriving them by eye. See docs/params-panel-design.md for the
+ * design rationale (dark ground, single accent, monospace readouts,
+ * grouped small-caps headers) this file codifies.
+ *
+ * Consumed by hub/index.html today. An app is free to link this file too,
+ * but nothing requires it: frozen-golden apps are preserved bytes and stay
+ * exempt by definition (docs/params-panel-design.md, "Shell integration").
+ */
+
+:root {
+  /* palette, taken verbatim from welded_fields */
+  --bg: #07060b;
+  --panel: #100d18;
+  --line: #241d33;
+  --fg: #e8e3f2;
+  --dim: #9a92ae;
+  --faint: #655c7a;
+  --accent: #a78bfa;
+
+  /* type stacks */
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+
+  /* spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* radii */
+  --radius-1: 4px;
+  --radius-2: 6px;
+  --radius-3: 8px;
+}
+
+/* Grouped small-caps section header, matching welded_fields' .grp/.hd. */
+.grp { display: flex; flex-direction: column; gap: 9px; }
+.grp > .hd {
+  font: 600 9.5px/1 var(--mono);
+  letter-spacing: .13em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Monospace label/value readout row, matching welded_fields' .read. */
+.read { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font: 11.5px var(--mono); }
+.read .k { color: var(--faint); }
+.read .v { color: var(--fg); text-align: right; }

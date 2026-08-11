@@ -87,6 +87,38 @@ guessed at now.
 }
 ```
 
+An optional `display` block carries shell presentation hints:
+
+```json
+{ "display": { "order": 1, "accent": "#a78bfa", "background": "#0a0a0f" } }
+```
+
+- **order**: an integer. The reconciler sorts the registry by
+  `(display.order ?? 999, id)`, so an app that declares no `display` block
+  (or a `display` block without `order`) sorts alphabetically by id after
+  every app that does declare one. Lower sorts first.
+- **accent**: a CSS color the shell may use to theme that app's tab and
+  detail view.
+- **background**: a CSS color the shell surrounds that app's iframe with
+  (the letterbox color), useful for a light-page app so the shell doesn't
+  frame it in dark chrome that clashes on load. Defaults to the shell's
+  own `--bg` token when absent.
+
+All three keys are optional and independent; declare only the ones that
+matter for a given app. The reconciler checks `order` is an integer and
+that `accent`/`background`, when present, are syntactically plausible CSS
+colors (a basic shape check: `#rgb`/`#rgba`/`#rrggbb`/`#rrggbbaa` hex, an
+`rgb()`/`rgba()`/`hsl()`/`hsla()` function call, or a bare alphabetic
+token standing in for a CSS color keyword). It does not validate that the
+color resolves to anything, only that it isn't obviously malformed.
+`display`, when present, passes through to `hub/registry.json` unchanged
+except for whichever keys were actually declared.
+
+Editing `app.json` of a `frozen-golden` app to add or change its
+`display` block is allowed: the manifest is lab metadata, not frozen sim
+content. Only the entry file's bytes (`entryHash` / `derivesFrom`) are
+frozen; nothing in the `display` block touches them.
+
 A native `sdk-page` (one born to the library, no frozen original to point
 back at) declares `provenance` differently:
 
@@ -176,9 +208,11 @@ back at) declares `provenance` differently:
    that doesn't match `package.json` (stale claim, most often from
    bumping the library version and forgetting the apps that name it);
    `derivesFrom` and `builtOn` both present or both absent (the
-   reconciler refuses to guess which provenance story is true).
-2. **Derives** `hub/registry.json` deterministically (sorted, stable,
-   content only from manifests).
+   reconciler refuses to guess which provenance story is true); a
+   `display.order` that isn't an integer, or a `display.accent` /
+   `display.background` that isn't a syntactically plausible CSS color.
+2. **Derives** `hub/registry.json` deterministically (sorted by
+   `(display.order ?? 999, id)`, stable, content only from manifests).
 3. In `--check` mode, fails if the committed registry differs from the
    derived one. In `--write` mode, regenerates it.
 

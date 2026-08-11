@@ -8,5 +8,6 @@
   "provenance": { "builtOn": "eigen-form@0.1.0 491c440" },
   "sdk": { "eigen-form": ">=0.1.0" },
   "capabilities": { "emits": [], "accepts": [] },
-  "pwa": { "installable": false }
+  "pwa": { "installable": false },
+  "display": { "order": 1, "accent": "#9ba8ff" }
 }
