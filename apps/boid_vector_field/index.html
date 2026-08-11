@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boid Vector Field Simulator</title>
+    <style>
+        body { margin: 0; padding: 0; background: #111; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; height: 100vh; }
+        #sidebar { width: 300px; background: #222; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #444; overflow-y: auto; }
+        #canvas-container { flex: 1; position: relative; }
+        canvas { display: block; width: 100%; height: 100%; }
+        h2 { margin: 0 0 10px 0; font-size: 18px; color: #4fa0ff; }
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-size: 13px; color: #ccc; display: flex; justify-content: space-between; }
+        input[type=range] { width: 100%; }
+        p.desc { font-size: 12px; color: #888; line-height: 1.4; margin: 0; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>Vector Field Boids</h2>
+    <p class="desc">Agents (boids) navigate a dynamic underlying flow field generated via continuous noise. They experience advection (being pushed) and rheotaxis (sensing flow).</p>
+    
+    <div class="control-group">
+        <label>Flow Strength <span id="val-flow">1.0</span></label>
+        <input type="range" id="ctrl-flow" min="0" max="3" step="0.1" value="1.0">
+    </div>
+    <div class="control-group">
+        <label>Noise Scale (Eddy Size) <span id="val-scale">0.005</span></label>
+        <input type="range" id="ctrl-scale" min="0.001" max="0.02" step="0.001" value="0.005">
+    </div>
+    <div class="control-group">
+        <label>Show Flow Field <input type="checkbox" id="ctrl-show" checked></label>
+    </div>
+    
+    <hr style="border:0; border-top:1px solid #444; margin: 10px 0;">
+    
+    <div class="control-group">
+        <label>Cohesion <span id="val-coh">0.5</span></label>
+        <input type="range" id="ctrl-coh" min="0" max="2" step="0.1" value="0.5">
+    </div>
+    <div class="control-group">
+        <label>Separation <span id="val-sep">1.5</span></label>
+        <input type="range" id="ctrl-sep" min="0" max="3" step="0.1" value="1.5">
+    </div>
+</div>
+
+<div id="canvas-container">
+    <canvas id="sim-canvas"></canvas>
+</div>
+
+<script>
+    // Extremely lightweight, crude pseudo-noise for standalone usage
+    // In production, use a proper Simplex/Perlin noise library
+    const PseudoNoise = {
+        seed: Math.random() * 100,
+        hash(x, y, z) {
+            let h = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + this.seed) * 43758.5453;
+            return h - Math.floor(h);
+        },
+        get(x, y, z) {
+            const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+            const xf = x - xi, yf = y - yi, zf = z - zi;
+            // Smoothstep
+            const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf), w = zf * zf * (3 - 2 * zf);
+            
+            const v1 = this.hash(xi, yi, zi); const v2 = this.hash(xi+1, yi, zi);
+            const v3 = this.hash(xi, yi+1, zi); const v4 = this.hash(xi+1, yi+1, zi);
+            const v5 = this.hash(xi, yi, zi+1); const v6 = this.hash(xi+1, yi, zi+1);
+            const v7 = this.hash(xi, yi+1, zi+1); const v8 = this.hash(xi+1, yi+1, zi+1);
+            
+            const i1 = v1 + u*(v2-v1), i2 = v3 + u*(v4-v3);
+            const i3 = v5 + u*(v6-v5), i4 = v7 + u*(v8-v7);
+            const f1 = i1 + v*(i2-i1), f2 = i3 + v*(i4-i3);
+            return (f1 + w*(f2-f1)) * 2 - 1; // Return -1 to 1
+        }
+    };
+
+    const canvas = document.getElementById('sim-canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+
+    const params = { flowStrength: 1.0, noiseScale: 0.005, showField: true, coh: 0.5, sep: 1.5 };
+    
+    // Bind controls
+    ['flow', 'scale', 'coh', 'sep'].forEach(k => {
+        const id = k === 'scale' ? k : k.substring(0,3);
+        const el = document.getElementById(`ctrl-${k}`);
+        el.addEventListener('input', e => { 
+            params[k === 'flow' ? 'flowStrength' : k === 'scale' ? 'noiseScale' : k] = parseFloat(e.target.value); 
+            document.getElementById(`val-${k}`).textContent = e.target.value; 
+        });
+    });
+    document.getElementById('ctrl-show').addEventListener('change', e => params.showField = e.target.checked);
+
+    let boids = [];
+    const numBoids = 150;
+    const gridRes = 30;
+    let time = 0;
+
+    function resize() {
+        width = canvas.clientWidth; height = canvas.clientHeight;
+        canvas.width = width; canvas.height = height;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    for(let i=0; i<numBoids; i++) {
+        boids.push({
+            x: Math.random() * width, y: Math.random() * height,
+            vx: Math.random() * 2 - 1, vy: Math.random() * 2 - 1
+        });
+    }
+
+    function getFieldVector(x, y) {
+        // Sample noise to get a smooth, continuous angle
+        const angle = PseudoNoise.get(x * params.noiseScale, y * params.noiseScale, time) * Math.PI * 2;
+        return { vx: Math.cos(angle), vy: Math.sin(angle) };
+    }
+
+    function animate() {
+        time += 0.005; // Advance Z-axis of noise to shift currents
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, width, height);
+
+        // Render Field
+        if (params.showField) {
+            ctx.strokeStyle = 'rgba(79, 160, 255, 0.15)';
+            ctx.lineWidth = 1.5;
+            for (let x = 0; x < width; x += gridRes) {
+                for (let y = 0; y < height; y += gridRes) {
+                    const f = getFieldVector(x, y);
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x + f.vx * 15, y + f.vy * 15);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // Boid Update
+        const maxSpeed = 3;
+        const maxForce = 0.1;
+
+        for (let b of boids) {
+            let steerC = { x: 0, y: 0 };
+            let steerS = { x: 0, y: 0 };
+            let count = 0;
+
+            // Flocking
+            for (let other of boids) {
+                if (b === other) continue;
+                let dx = other.x - b.x; let dy = other.y - b.y;
+                let dSq = dx*dx + dy*dy;
+                if (dSq < 2500) { // Radius 50
+                    let d = Math.sqrt(dSq);
+                    steerC.x += other.x; steerC.y += other.y;
+                    if (d < 20) {
+                        steerS.x -= dx/d; steerS.y -= dy/d;
+                    }
+                    count++;
+                }
+            }
+
+            if (count > 0) {
+                steerC.x = (steerC.x / count) - b.x; steerC.y = (steerC.y / count) - b.y;
+            }
+
+            // Environmental Force (Advection & Rheotaxis)
+            const field = getFieldVector(b.x, b.y);
+            
+            // Apply weighted steering
+            b.vx += steerC.x * maxForce * params.coh + steerS.x * maxForce * params.sep + field.vx * maxForce * params.flowStrength;
+            b.vy += steerC.y * maxForce * params.coh + steerS.y * maxForce * params.sep + field.vy * maxForce * params.flowStrength;
+
+            // Speed Limit
+            const speed = Math.hypot(b.vx, b.vy);
+            if (speed > maxSpeed) {
+                b.vx = (b.vx / speed) * maxSpeed; b.vy = (b.vy / speed) * maxSpeed;
+            }
+
+            b.x += b.vx; b.y += b.vy;
+
+            // Wrap
+            if (b.x < 0) b.x = width; if (b.x > width) b.x = 0;
+            if (b.y < 0) b.y = height; if (b.y > height) b.y = 0;
+
+            // Render
+            ctx.fillStyle = '#fff';
+            const angle = Math.atan2(b.vy, b.vx);
+            ctx.save();
+            ctx.translate(b.x, b.y);
+            ctx.rotate(angle);
+            ctx.beginPath();
+            ctx.moveTo(6, 0); ctx.lineTo(-4, 3); ctx.lineTo(-4, -3);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+        requestAnimationFrame(animate);
+    }
+    animate();
+</script>
+</body>
+</html>

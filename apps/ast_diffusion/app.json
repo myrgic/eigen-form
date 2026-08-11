@@ -1,0 +1,18 @@
+{
+  "id": "ast_diffusion",
+  "title": "AST Topological Convolution Kernel",
+  "description": "A directed acyclic graph representing code, where clicking a node injects heat that a convolution kernel diffuses asymmetrically.",
+  "version": "1.0.0",
+  "kind": "frozen-golden",
+  "entry": "index.html",
+  "provenance": {
+    "derivesFrom": "sha256:33fc55f3b6b33d8a77ae7411e0cf61cc0aa742f7c8394892d7be9323152c336c",
+    "changes": [
+      "line 7: <script src=\"https://d3js.org/d3.v7.min.js\"></script> -> <link rel=\"manifest\" href=\"manifest.webmanifest\"> followed by <script src=\"vendor/d3.v7.min.js\"></script> (vendored d3 v7.9.0, sha256:f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539, at apps/ast_diffusion/vendor/d3.v7.min.js)",
+      "end of body, before </script>: added a service worker registration block (navigator.serviceWorker.register('sw.js')) so the standalone page is installable on its own, not only through the hub shell"
+    ],
+    "entryHash": "sha256:2a6c1db3a6f1e707d9bd88b4ea941cdf716e1199ff8833250ac58e5968595398"
+  },
+  "capabilities": { "emits": [], "accepts": [] },
+  "pwa": { "installable": true }
+}

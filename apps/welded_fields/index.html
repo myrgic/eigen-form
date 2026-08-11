@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Welded Fields — Stigmergy + Advection</title>
+<style>
+  :root{
+    --bg:#07060b; --panel:#100d18; --line:#241d33; --fg:#e8e3f2; --dim:#9a92ae; --faint:#655c7a;
+    --accent:#a78bfa; --trail:#6ee7b7; --warn:#fbbf24; --bad:#f87171;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);display:flex;height:100vh;overflow:hidden;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+  #panel{width:290px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+         padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;scrollbar-width:thin}
+  #stage{flex:1;position:relative;min-width:0}
+  canvas#sim{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
+  canvas#over{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+
+  h1{margin:0;font-size:15px;font-weight:650;color:var(--accent);letter-spacing:-.01em}
+  h1 small{display:block;font-weight:400;font-size:11px;color:var(--faint);letter-spacing:0;margin-top:3px}
+  .grp{display:flex;flex-direction:column;gap:9px}
+  .grp>.hd{font:600 9.5px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--faint);
+           padding-bottom:5px;border-bottom:1px solid var(--line)}
+  .ctl{display:flex;flex-direction:column;gap:3px}
+  .ctl label{display:flex;justify-content:space-between;font-size:11.5px;color:var(--dim)}
+  .ctl label b{font:11px var(--mono);color:var(--fg);font-weight:500}
+  input[type=range]{width:100%;accent-color:var(--accent);height:16px}
+  .row{display:flex;gap:14px;align-items:center;font-size:11.5px;color:var(--dim)}
+  .row input{accent-color:var(--accent)}
+  button{width:100%;padding:8px;border:1px solid var(--line);border-radius:5px;background:#1a1526;
+         color:var(--fg);font:inherit;font-size:12px;cursor:pointer}
+  button:hover{background:#241d33;border-color:#3a3050}
+
+  .read{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font:11.5px var(--mono)}
+  .read .k{color:var(--faint)}
+  .read .v{color:var(--fg);text-align:right}
+  .read .v.big{font-size:15px;font-weight:700;color:var(--trail)}
+  .read .v.warn{color:var(--warn)} .read .v.bad{color:var(--bad)}
+  #spark{width:100%;height:44px;display:block;background:#0b0912;border:1px solid var(--line);border-radius:4px}
+  .note{font-size:10.5px;line-height:1.45;color:var(--faint);margin:0}
+  .note b{color:var(--dim);font-weight:600}
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <h1>Welded Fields<small>stigmergic trail × procedural advection, one grid</small></h1>
+
+  <div class="grp">
+    <div class="hd">Agents</div>
+    <!-- 60/20 (wide sensors, small turns) is the operator's regime: stable
+         shapes that keep evolving, rather than the jitterier canonical 22.5/45 -->
+    <div class="ctl"><label>Sensor angle <b id="v-sa">60°</b></label>
+      <input type="range" id="sa" min="5" max="90" step="1" value="60"></div>
+    <div class="ctl"><label>Rotation angle <b id="v-ra">18°</b></label>
+      <input type="range" id="ra" min="5" max="90" step="1" value="18"></div>
+    <div class="ctl"><label>Sensor distance <b id="v-so">5</b></label>
+      <input type="range" id="so" min="1" max="30" step="1" value="5"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Medium</div>
+    <div class="ctl"><label>Evaporation <b id="v-dec">0.990</b></label>
+      <input type="range" id="dec" min="0.900" max="0.999" step="0.001" value="0.990"></div>
+    <div class="ctl"><label>Deposit <b id="v-dep">25</b></label>
+      <input type="range" id="dep" min="1" max="60" step="1" value="25"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Field</div>
+    <div class="ctl"><label>Advection (transport) <b id="v-adv">0.02</b></label>
+      <input type="range" id="adv" min="0" max="2" step="0.02" value="0.02"></div>
+    <div class="ctl"><label>Alignment (rheotaxis) <b id="v-ali">0.02</b></label>
+      <input type="range" id="ali" min="0" max="1" step="0.01" value="0.02"></div>
+    <div class="ctl"><label>Self-field · mass <b id="v-mass">1.00</b></label>
+      <input type="range" id="mass" min="0" max="2" step="0.02" value="1"></div>
+    <div class="ctl"><label>Momentum decay <b id="v-mdec">0.940</b></label>
+      <input type="range" id="mdec" min="0.700" max="0.995" step="0.005" value="0.940"></div>
+    <div class="ctl"><label>Noise gain · exogenous <b id="v-ng">0.00</b></label>
+      <input type="range" id="ng" min="0" max="2" step="0.02" value="0"></div>
+    <div class="ctl"><label>Noise scale <b id="v-ns">0.0060</b></label>
+      <input type="range" id="ns" min="0.001" max="0.03" step="0.001" value="0.006"></div>
+    <div class="ctl"><label>Drift rate <b id="v-dr">0.0050</b></label>
+      <input type="range" id="dr" min="0" max="0.05" step="0.0005" value="0.005"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Hormone</div>
+    <div class="ctl"><label>Release <b id="v-hrel">0.00</b></label>
+      <input type="range" id="hrel" min="0" max="2" step="0.02" value="0"></div>
+    <div class="ctl"><label>Hormone decay <b id="v-hdec">0.997</b></label>
+      <input type="range" id="hdec" min="0.950" max="0.9995" step="0.0005" value="0.997"></div>
+    <div class="ctl"><label>→ sensor angle <b id="v-hsa">0.00</b></label>
+      <input type="range" id="hsa" min="-1" max="1" step="0.02" value="0"></div>
+    <div class="ctl"><label>→ rotation angle <b id="v-hra">0.00</b></label>
+      <input type="range" id="hra" min="-1" max="1" step="0.02" value="0"></div>
+    <div class="ctl"><label>→ trail τ (weather) <b id="v-hdc">0.00</b></label>
+      <input type="range" id="hdc" min="-1" max="1" step="0.02" value="0"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">View</div>
+    <div class="row"><label><input type="checkbox" id="showField" checked> field</label>
+      <label><input type="checkbox" id="showMask"> mask</label></div>
+    <div class="row"><label><input type="checkbox" id="showContour" checked> contours</label>
+      <label><input type="checkbox" id="dimTrail"> dim trail</label>
+      <label><input type="checkbox" id="showHorm"> hormone</label></div>
+    <div class="ctl"><label>Mask coverage <b id="v-thr">8%</b></label>
+      <input type="range" id="thr" min="1" max="40" step="1" value="8"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Topology</div>
+    <div class="read">
+      <span class="k">voids (β₁)</span><span class="v big" id="r-b1">–</span>
+      <span class="k">components (β₀)</span><span class="v" id="r-b0">–</span>
+      <span class="k">coverage</span><span class="v" id="r-cov">–</span>
+    </div>
+    <canvas id="spark"></canvas>
+    <p class="note">β₁ = β₀ − χ, Euler χ by bit-quads on the thresholded field. Verified against known shapes.</p>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Timescales</div>
+    <div class="read">
+      <span class="k">trail τ½</span><span class="v" id="r-th">–</span>
+      <span class="k">momentum τ½</span><span class="v" id="r-tm">–</span>
+      <span class="k">ratio mom/trail</span><span class="v" id="r-mratio">–</span>
+      <span class="k">noise τ (exogenous)</span><span class="v" id="r-tf">–</span>
+      <span class="k">ratio noise/trail</span><span class="v" id="r-ratio">–</span>
+      <span class="k">fps</span><span class="v" id="r-fps">–</span>
+    </div>
+    <p class="note"><b>Closed loop:</b> with Noise gain at 0 nothing outside the simulation drives anything — the field is entirely agent-deposited momentum. The controlling ratio becomes <b>momentum τ½ / trail τ½</b>, a timescale the system owns, rather than an external clock.</p>
+  </div>
+
+  <button id="reset">Reset particles</button>
+</div>
+
+<div id="stage"><canvas id="sim"></canvas><canvas id="over"></canvas></div>
+
+<script>
+/* ------------------------------------------------------------------ *
+ * Value noise: procedural, zero storage. Evaluated per agent per
+ * frame rather than cached, to keep the "no stored field" property
+ * the design actually claims.
+ * ------------------------------------------------------------------ */
+const Noise = {
+  seed: Math.random()*100,
+  hash(x,y,z){ const h=Math.sin(x*12.9898+y*78.233+z*37.719+this.seed)*43758.5453; return h-Math.floor(h); },
+  get(x,y,z){
+    const xi=Math.floor(x), yi=Math.floor(y), zi=Math.floor(z);
+    const xf=x-xi, yf=y-yi, zf=z-zi;
+    const u=xf*xf*(3-2*xf), v=yf*yf*(3-2*yf), w=zf*zf*(3-2*zf);
+    const h=this.hash.bind(this);
+    const v1=h(xi,yi,zi),     v2=h(xi+1,yi,zi),   v3=h(xi,yi+1,zi),   v4=h(xi+1,yi+1,zi);
+    const v5=h(xi,yi,zi+1),   v6=h(xi+1,yi,zi+1), v7=h(xi,yi+1,zi+1), v8=h(xi+1,yi+1,zi+1);
+    const i1=v1+u*(v2-v1), i2=v3+u*(v4-v3), i3=v5+u*(v6-v5), i4=v7+u*(v8-v7);
+    const f1=i1+v*(i2-i1), f2=i3+v*(i4-i3);
+    return (f1+w*(f2-f1))*2-1;
+  }
+};
+
+const cv  = document.getElementById('sim');
+const ctx = cv.getContext('2d', { willReadFrequently:true });
+const sparkC = document.getElementById('spark');
+const sparkX = sparkC.getContext('2d');
+
+const ov   = document.getElementById('over');
+const octx = ov.getContext('2d');
+
+const SCALE = 2;
+let W, H, grid, tmp, img, mask;
+let parts = [], N = 9000, time = 0, frame = 0;
+const hist = [];                       // declared before reset() runs (TDZ)
+
+/* coarse pooled copy of the trail, for contouring. Marching squares over the
+   full raster would be ~3M cell visits per frame across 7 levels; pooling by
+   CS first drops that ~10x and smooths the isolines, which is what makes them
+   read as topography rather than pixel noise. */
+const CS = 3;
+let cW, cH, coarse;
+
+/* Endogenous vector field. Agents deposit mass x velocity into a coarse grid
+   which diffuses and decays like the trail does, then steer by what they and
+   their neighbours left. With noise gain at 0 this closes the second loop:
+   nothing outside the simulation drives anything, and every structure on
+   screen is generated by agents interacting with their own traces.
+   Coarser than the trail on purpose - a wake spreads over a larger scale than
+   a pheromone track, and it keeps the extra two diffusion passes cheap. */
+const MS = 8;
+let mW, mH, momX, momY, mtX, mtY, momRef = 1;
+
+/* Hormone. Structurally different from the trail, not just another one:
+   the trail is read as a GRADIENT and steers (a field over state space);
+   the hormone is read as a LEVEL and rescales gains (a field over parameter
+   space). It carries no direction. Diffused hard and decayed slowly so it
+   spreads much wider and lasts much longer than either pheromone field,
+   which is what makes it a regional modulator rather than a signal. */
+let horm, htmp, hormRef = 1;
+
+/* Defaults are the operator's measured settings, not canonical Jones:
+   wide sensors, small turns, short lookahead — stable shapes that keep
+   evolving rather than the jitterier 22.5/45 mesh. */
+const P = { sa:60*Math.PI/180, ra:18*Math.PI/180, so:5, step:1,
+            dec:0.99, dep:25, adv:0.02, ali:0.02, ns:0.006, dr:0.005, thr:0.08,
+            mass:1, mdec:0.94, ng:0,
+            hrel:0, hdec:0.997, hsa:0, hra:0, hdc:0,
+            showField:true, showMask:false, contour:true, dim:false, showHorm:false };
+
+/* ---- controls ---- */
+const bind = (id, key, fmt, xf) => {
+  const el = document.getElementById(id), out = document.getElementById('v-'+id);
+  const apply = () => { const raw = parseFloat(el.value);
+    P[key] = xf ? xf(raw) : raw; out.textContent = fmt(raw); };
+  el.addEventListener('input', apply); apply();
+};
+bind('sa','sa', v=>v+'°', v=>v*Math.PI/180);
+bind('ra','ra', v=>v+'°', v=>v*Math.PI/180);
+bind('so','so', v=>String(v));
+bind('dec','dec',v=>v.toFixed(3));
+bind('dep','dep',v=>String(v));
+bind('adv','adv',v=>v.toFixed(2));
+bind('ali','ali',v=>v.toFixed(2));
+bind('hrel','hrel',v=>v.toFixed(2));
+bind('hdec','hdec',v=>v.toFixed(4));
+bind('hsa','hsa',  v=>v.toFixed(2));
+bind('hra','hra',  v=>v.toFixed(2));
+bind('hdc','hdc',  v=>v.toFixed(2));
+bind('mass','mass',v=>v.toFixed(2));
+bind('mdec','mdec',v=>v.toFixed(3));
+bind('ng','ng',  v=>v.toFixed(2));
+bind('ns','ns', v=>v.toFixed(4));
+bind('dr','dr', v=>v.toFixed(4));
+bind('thr','thr',v=>v+'%', v=>v/100);
+document.getElementById('showField').addEventListener('change',e=>P.showField=e.target.checked);
+document.getElementById('showMask') .addEventListener('change',e=>P.showMask =e.target.checked);
+document.getElementById('showContour').addEventListener('change',e=>P.contour=e.target.checked);
+document.getElementById('dimTrail').addEventListener('change',e=>P.dim=e.target.checked);
+document.getElementById('showHorm').addEventListener('change',e=>P.showHorm=e.target.checked);
+document.getElementById('reset').addEventListener('click', reset);
+
+/* ---- setup ---- */
+function reset(){
+  const st = document.getElementById('stage');
+  W = Math.max(64, Math.floor(st.clientWidth  / SCALE));
+  H = Math.max(64, Math.floor(st.clientHeight / SCALE));
+  cv.width = W; cv.height = H;
+  const DPR = Math.min(window.devicePixelRatio||1, 2);
+  ov.width = Math.round(st.clientWidth*DPR); ov.height = Math.round(st.clientHeight*DPR);
+  octx.setTransform(DPR,0,0,DPR,0,0);
+  grid = new Float32Array(W*H);
+  tmp  = new Float32Array(W*H);
+  mask = new Uint8Array(W*H);
+  cW = Math.floor(W/CS); cH = Math.floor(H/CS);
+  coarse = new Float32Array(cW*cH);
+  mW = Math.max(4,Math.floor(W/MS)); mH = Math.max(4,Math.floor(H/MS));
+  momX = new Float32Array(mW*mH); momY = new Float32Array(mW*mH);
+  mtX  = new Float32Array(mW*mH); mtY  = new Float32Array(mW*mH);
+  horm = new Float32Array(mW*mH); htmp = new Float32Array(mW*mH);
+  momRef = 1; hormRef = 1;
+  img  = ctx.createImageData(W,H);          // reallocated with the grid, unlike the original
+  parts = new Array(N);
+  const cx=W/2, cy=H/2, R=Math.min(W,H)/4;
+  for(let i=0;i<N;i++){
+    const r=Math.sqrt(Math.random())*R, th=Math.random()*Math.PI*2;
+    parts[i] = { x:cx+r*Math.cos(th), y:cy+r*Math.sin(th), a:Math.random()*Math.PI*2 };
+  }
+  hist.length = 0;
+}
+window.addEventListener('resize', reset);
+reset();
+
+/* ---- fields ------------------------------------------------------------
+   Two sources, summed with independent gains:
+     exogenous  - procedural noise, a function of (x,y,t) and nothing else
+     endogenous - momentum the agents themselves deposited
+   Set noise gain to 0 and the simulation has no external input at all.      */
+
+function diffuseDecayMom(){                    // separable box mean on a torus, then decay
+  for(let y=0;y<mH;y++){
+    const r=y*mW;
+    for(let x=0;x<mW;x++){
+      const l=x===0?r+mW-1:r+x-1, rt=x===mW-1?r:r+x+1;
+      mtX[r+x]=(momX[l]+momX[r+x]+momX[rt])/3;
+      mtY[r+x]=(momY[l]+momY[r+x]+momY[rt])/3;
+    }
+  }
+  const d=P.mdec;
+  let acc=0;
+  for(let y=0;y<mH;y++){
+    const up=(y===0?mH-1:y-1)*mW, dn=(y===mH-1?0:y+1)*mW, r=y*mW;
+    for(let x=0;x<mW;x++){
+      const vx=((mtX[up+x]+mtX[r+x]+mtX[dn+x])/3)*d;
+      const vy=((mtY[up+x]+mtY[r+x]+mtY[dn+x])/3)*d;
+      momX[r+x]=vx; momY[r+x]=vy;
+      acc+=Math.hypot(vx,vy);
+    }
+  }
+  // running mean magnitude, so field influence is scale-free and the gains
+  // mean the same thing regardless of agent count or deposit size
+  const mean=acc/(mW*mH);
+  momRef += ((mean>1e-9?mean:1e-9)-momRef)*0.05;
+}
+
+/* Hormone: several diffusion passes per frame so it spreads regionally,
+   then a slow decay. Read as a level, never as a gradient. */
+function diffuseDecayHorm(){
+  for(let pass=0; pass<3; pass++){
+    for(let y=0;y<mH;y++){
+      const r=y*mW;
+      for(let x=0;x<mW;x++){
+        const l=x===0?r+mW-1:r+x-1, rt=x===mW-1?r:r+x+1;
+        htmp[r+x]=(horm[l]+horm[r+x]+horm[rt])/3;
+      }
+    }
+    for(let y=0;y<mH;y++){
+      const up=(y===0?mH-1:y-1)*mW, dn=(y===mH-1?0:y+1)*mW, r=y*mW;
+      for(let x=0;x<mW;x++) horm[r+x]=(htmp[up+x]+htmp[r+x]+htmp[dn+x])/3;
+    }
+  }
+  const d=P.hdec; let acc=0;
+  for(let i=0;i<horm.length;i++){ const v=horm[i]*d; horm[i]=v; acc+=v; }
+  const mean=acc/horm.length;
+  hormRef += ((mean>1e-9?mean:1e-9)-hormRef)*0.05;
+}
+/* level in units of the field mean: 1.0 = typical, >1 = hot region */
+function hormAt(x,y){
+  if(P.hrel<=0) return 1;
+  const i=((Math.floor(y/MS)%mH)+mH)%mH*mW + (((Math.floor(x/MS)%mW)+mW)%mW);
+  return horm[i]/hormRef;
+}
+
+function sampleMom(x,y,out){                   // bilinear on the torus
+  const fx=x/MS-0.5, fy=y/MS-0.5;
+  let i0=Math.floor(fx), j0=Math.floor(fy);
+  const tx=fx-i0, ty=fy-j0;
+  i0=((i0%mW)+mW)%mW; j0=((j0%mH)+mH)%mH;
+  const i1=(i0+1)%mW, j1=(j0+1)%mH;
+  const a=j0*mW, b=j1*mW;
+  const w00=(1-tx)*(1-ty), w10=tx*(1-ty), w01=(1-tx)*ty, w11=tx*ty;
+  out[0]=momX[a+i0]*w00+momX[a+i1]*w10+momX[b+i0]*w01+momX[b+i1]*w11;
+  out[1]=momY[a+i0]*w00+momY[a+i1]*w10+momY[b+i0]*w01+momY[b+i1]*w11;
+}
+
+const _m=[0,0];
+/* Combined field at a point -> [dirX, dirY, weight]. Weight is bounded in
+   [0,1] so a strong flow pushes harder than a weak one without the coupling
+   ever running away. */
+function fieldAt(x,y,out){
+  let fx=0, fy=0;
+  if(P.ng>0){ const a=Noise.get(x*P.ns,y*P.ns,time)*Math.PI*2;
+              fx+=Math.cos(a)*P.ng; fy+=Math.sin(a)*P.ng; }
+  if(P.mass>0){ sampleMom(x,y,_m);
+                const s=P.mass/momRef; fx+=_m[0]*s; fy+=_m[1]*s; }
+  const m=Math.hypot(fx,fy);
+  if(m<1e-9){ out[0]=0; out[1]=0; out[2]=0; return; }
+  out[0]=fx/m; out[1]=fy/m; out[2]=m<1?m:1;
+}
+
+/* ---- diffusion: separable 3x3 box mean on a torus, then decay ----
+   Wrapping matches the agents' wrap, so the trail field and the space
+   the agents move on are the same domain (the original disagreed),
+   and every cell has exactly 9 neighbours so the /9 is honest.        */
+function diffuseDecay(){
+  for(let y=0;y<H;y++){
+    const r=y*W;
+    for(let x=0;x<W;x++){
+      const l = x===0     ? r+W-1 : r+x-1;
+      const rt= x===W-1   ? r     : r+x+1;
+      tmp[r+x] = (grid[l]+grid[r+x]+grid[rt])/3;
+    }
+  }
+  const d=P.dec, hdc=P.hdc, mod = (P.hrel>0 && hdc!==0);
+  for(let y=0;y<H;y++){
+    const up=((y===0?H-1:y-1))*W, dn=((y===H-1?0:y+1))*W, r=y*W;
+    if(!mod){
+      for(let x=0;x<W;x++) grid[r+x] = ((tmp[up+x]+tmp[r+x]+tmp[dn+x])/3)*d;
+    } else {
+      /* per-cell decay: this is the tau(x) "weather" field, but released by
+         the agents rather than imposed. Clamped below 1 so it can never
+         become a source. */
+      const hr=((Math.floor(y/MS)%mH)+mH)%mH*mW;
+      for(let x=0;x<W;x++){
+        const h=horm[hr + (((Math.floor(x/MS)%mW)+mW)%mW)]/hormRef;
+        let dl = d * (1 + hdc*(h-1));
+        if(dl>0.9995) dl=0.9995; else if(dl<0.5) dl=0.5;
+        grid[r+x] = ((tmp[up+x]+tmp[r+x]+tmp[dn+x])/3)*dl;
+      }
+    }
+  }
+}
+
+/* ---- agents ---- */
+const wrap = (v,m) => v<0 ? v+m : (v>=m ? v-m : v);
+function angDiff(t,c){ let d=(t-c)%(Math.PI*2); if(d>Math.PI)d-=Math.PI*2; if(d<-Math.PI)d+=Math.PI*2; return d; }
+
+const _f=[0,0,0];
+function stepAgents(){
+  const so=P.so, dep=P.dep, adv=P.adv, ali=P.ali;
+  const hOn = P.hrel>0 && (P.hsa!==0 || P.hra!==0);
+  for(let i=0;i<N;i++){
+    const p=parts[i];
+    /* the hormone rescales THIS agent's gains — same rules, different
+       constants, set by where it happens to be standing */
+    let sa=P.sa, ra=P.ra;
+    if(hOn){
+      const h=hormAt(p.x,p.y)-1;
+      sa = P.sa*(1+P.hsa*h); ra = P.ra*(1+P.hra*h);
+      if(sa<0.02) sa=0.02; else if(sa>1.57) sa=1.57;
+      if(ra<0.02) ra=0.02; else if(ra>1.57) ra=1.57;
+    }
+    const sense=(off)=>{
+      const a=p.a+off;
+      const sx=Math.floor(wrap(p.x+Math.cos(a)*so, W));
+      const sy=Math.floor(wrap(p.y+Math.sin(a)*so, H));
+      return grid[sy*W+sx];
+    };
+    const F=sense(0), L=sense(-sa), R=sense(sa);
+
+    if(F>L && F>R)            { /* straight */ }
+    else if(F<L && F<R)       { p.a += Math.random()<0.5 ? ra : -ra; }
+    else if(L>R)              { p.a -= ra; }
+    else if(R>L)              { p.a += ra; }
+    else                      { p.a += Math.random()<0.5 ? ra : -ra; }   // explicit tie-break
+
+    /* The two field effects are kept SEPARATE on purpose. Alignment
+       rotates the heading (the agent orients to the flow). Advection
+       translates the agent without changing heading (the flow carries
+       it). Folding them into one additive term is what made the boid
+       file unable to show either. */
+    if((ali>0 || adv>0) && (P.ng>0 || P.mass>0)){
+      fieldAt(p.x, p.y, _f);
+      const w=_f[2];
+      if(ali>0 && w>0) p.a += angDiff(Math.atan2(_f[1],_f[0]), p.a) * ali * w;
+      p.x = wrap(p.x + Math.cos(p.a)*P.step + _f[0]*adv*w, W);
+      p.y = wrap(p.y + Math.sin(p.a)*P.step + _f[1]*adv*w, H);
+    } else {
+      p.x = wrap(p.x + Math.cos(p.a)*P.step, W);
+      p.y = wrap(p.y + Math.sin(p.a)*P.step, H);
+    }
+    grid[(Math.floor(p.y)*W + Math.floor(p.x))] += dep;
+
+    /* the agent writes its own momentum back into the medium: mass x velocity,
+       in the direction it is actually travelling */
+    if(P.mass>0 || P.hrel>0){
+      const mi=((Math.floor(p.y/MS)%mH)+mH)%mH*mW + (((Math.floor(p.x/MS)%mW)+mW)%mW);
+      if(P.mass>0){ momX[mi]+=Math.cos(p.a); momY[mi]+=Math.sin(p.a); }
+      if(P.hrel>0) horm[mi]+=P.hrel;      // released by presence, carries no direction
+    }
+  }
+}
+
+/* ---- topology: b1 = b0 - chi ---- */
+function euler(){
+  let C1=0,C3=0,Cd=0;
+  const at=(x,y)=>(x<0||y<0||x>=W||y>=H)?0:mask[y*W+x];
+  for(let y=-1;y<H;y++) for(let x=-1;x<W;x++){
+    const a=at(x,y),b=at(x+1,y),c=at(x,y+1),d=at(x+1,y+1), n=a+b+c+d;
+    if(n===1) C1++;
+    else if(n===3) C3++;
+    else if(n===2 && ((a&&d&&!b&&!c)||(b&&c&&!a&&!d))) Cd++;
+  }
+  return (C1-C3-2*Cd)/4;
+}
+const seen = { buf:null };
+function components(){
+  if(!seen.buf || seen.buf.length!==W*H) seen.buf=new Uint8Array(W*H);
+  const s=seen.buf; s.fill(0);
+  let n=0; const st=[];
+  for(let i=0;i<W*H;i++){
+    if(!mask[i]||s[i]) continue;
+    n++; st.push(i); s[i]=1;
+    while(st.length){
+      const q=st.pop(), qx=q%W, qy=(q-qx)/W;
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+        const nx=qx+dx, ny=qy+dy;
+        if(nx<0||ny<0||nx>=W||ny>=H) continue;
+        const k=ny*W+nx;
+        if(mask[k]&&!s[k]){ s[k]=1; st.push(k); }
+      }
+    }
+  }
+  return n;
+}
+function measure(t){
+  let on=0;
+  for(let i=0;i<grid.length;i++){ const m = grid[i]>t ? 1:0; mask[i]=m; on+=m; }
+  const b0=components(), b1=b0-euler();
+  hist.push(b1); if(hist.length>240) hist.shift();
+  document.getElementById('r-b1').textContent = b1;
+  document.getElementById('r-b0').textContent = b0;
+  document.getElementById('r-cov').textContent = (100*on/grid.length).toFixed(1)+'%';
+  drawSpark();
+}
+function drawSpark(){
+  const w=sparkC.clientWidth||250, h=44;
+  if(sparkC.width!==w){ sparkC.width=w; sparkC.height=h; }
+  sparkX.clearRect(0,0,w,h);
+  if(hist.length<2) return;
+  const mx=Math.max(4,...hist);
+  sparkX.strokeStyle='#a78bfa'; sparkX.lineWidth=1.5; sparkX.beginPath();
+  hist.forEach((v,i)=>{ const X=i/(hist.length-1)*w, Y=h-2-(v/mx)*(h-6);
+    i? sparkX.lineTo(X,Y) : sparkX.moveTo(X,Y); });
+  sparkX.stroke();
+  sparkX.fillStyle='#655c7a'; sparkX.font='9px ui-monospace,monospace';
+  sparkX.fillText('max '+mx, 4, 10);
+}
+
+/* ---- topographic contours -------------------------------------------
+   Marching squares, lifted from the smoke-rings sim. Levels are fractions
+   of the running max, so the isolines track the field instead of a fixed
+   scale. Note what a closed contour IS here: the boundary of the region
+   above that level. Every closed loop you see at the mask threshold is one
+   of the voids the β₁ counter is counting — the contour view and the Betti
+   number are the same object, drawn and measured.                        */
+const RAMP=[[78,30,26],[156,58,42],[212,98,56],[240,166,102],[255,232,198]];
+const LEVELS=[0.06,0.11,0.18,0.28,0.42,0.60,0.82];
+let refMax = 1;
+
+function pool(){                      // box-average the trail into the coarse grid
+  coarse.fill(0);
+  for(let y=0;y<cH*CS;y++){
+    const cy=(y/CS)|0, r=y*W, cr=cy*cW;
+    for(let x=0;x<cW*CS;x++) coarse[cr+((x/CS)|0)] += grid[r+x];
+  }
+  const inv=1/(CS*CS);
+  for(let i=0;i<coarse.length;i++) coarse[i]*=inv;
+}
+const lerp=(L,va,vb,pa,pb)=>pa+(pb-pa)*((L-va)/(vb-va));
+
+function buildContour(L, path, sx, sy){
+  let Tx=0,Ty=0,Rx=0,Ry=0,Bx=0,By=0,Lx=0,Ly=0;
+  for(let j=0;j<cH-1;j++){
+    const yT=j*CS*sy, yB=(j+1)*CS*sy, row=j*cW;
+    for(let i=0;i<cW-1;i++){
+      const k=row+i, tl=coarse[k], tr=coarse[k+1], br=coarse[k+cW+1], bl=coarse[k+cW];
+      const c=(tl>L?8:0)|(tr>L?4:0)|(br>L?2:0)|(bl>L?1:0);
+      if(c===0||c===15) continue;
+      const xL=i*CS*sx, xR=(i+1)*CS*sx;
+      if((tl>L)!==(tr>L)){ Tx=lerp(L,tl,tr,xL,xR); Ty=yT; }
+      if((tr>L)!==(br>L)){ Rx=xR; Ry=lerp(L,tr,br,yT,yB); }
+      if((bl>L)!==(br>L)){ Bx=lerp(L,bl,br,xL,xR); By=yB; }
+      if((tl>L)!==(bl>L)){ Lx=xL; Ly=lerp(L,tl,bl,yT,yB); }
+      switch(c){
+        case 1: case 14: path.moveTo(Lx,Ly); path.lineTo(Bx,By); break;
+        case 2: case 13: path.moveTo(Bx,By); path.lineTo(Rx,Ry); break;
+        case 3: case 12: path.moveTo(Lx,Ly); path.lineTo(Rx,Ry); break;
+        case 4: case 11: path.moveTo(Tx,Ty); path.lineTo(Rx,Ry); break;
+        case 6: case 9:  path.moveTo(Tx,Ty); path.lineTo(Bx,By); break;
+        case 7: case 8:  path.moveTo(Lx,Ly); path.lineTo(Tx,Ty); break;
+        case 5:  path.moveTo(Lx,Ly); path.lineTo(Tx,Ty); path.moveTo(Bx,By); path.lineTo(Rx,Ry); break;
+        case 10: path.moveTo(Lx,Ly); path.lineTo(Bx,By); path.moveTo(Tx,Ty); path.lineTo(Rx,Ry); break;
+      }
+    }
+  }
+}
+function drawContours(max){
+  const wCss=ov.width/(window.devicePixelRatio&&Math.min(window.devicePixelRatio,2)||1);
+  octx.clearRect(0,0,ov.width,ov.height);
+  if(!P.contour) return;
+  pool();
+  const inst = max<1e-6 ? 1e-6 : max;
+  refMax += (inst-refMax)*0.02;                     // slow reference, no chasing spikes
+  const sx = (ov.width/(window.devicePixelRatio?Math.min(window.devicePixelRatio,2):1))/W;
+  const sy = (ov.height/(window.devicePixelRatio?Math.min(window.devicePixelRatio,2):1))/H;
+  octx.globalCompositeOperation='lighter';
+  octx.lineCap='round'; octx.lineJoin='round';
+  for(const p of LEVELS){
+    const t=0.30+0.70*p, x=t*(RAMP.length-1), i=Math.min(RAMP.length-2, Math.floor(x)), f=x-i;
+    const a=RAMP[i], b=RAMP[i+1];
+    const col=`${(a[0]+(b[0]-a[0])*f)|0},${(a[1]+(b[1]-a[1])*f)|0},${(a[2]+(b[2]-a[2])*f)|0}`;
+    const path=new Path2D();
+    buildContour(p*refMax, path, sx, sy);
+    octx.strokeStyle=`rgba(${col},${(0.06+0.13*p).toFixed(3)})`; octx.lineWidth=3.2-1.5*p; octx.stroke(path);
+    octx.strokeStyle=`rgba(${col},${(0.42+0.58*p).toFixed(3)})`; octx.lineWidth=0.8+0.6*p; octx.stroke(path);
+  }
+  octx.globalCompositeOperation='source-over';
+  void wCss;
+}
+
+/* ---- render ---- */
+function render(max){
+  const d=img.data, inv = max>0 ? 1/max : 0;
+  for(let i=0;i<grid.length;i++){
+    let v = Math.sqrt(grid[i]*inv);             // gain: raw level is unreadable without it
+    if(v>1) v=1;
+    const px=i*4;
+    const g = P.dim ? 0.32 : 1;
+    if(P.showMask && mask[i]){ d[px]=60; d[px+1]=40; d[px+2]=90; }
+    else { d[px]=v*40*g; d[px+1]=v*255*g; d[px+2]=v*140*g; }
+    if(P.showHorm && P.hrel>0){                    // violet wash under the trail
+      const x=i%W, y=(i-x)/W;
+      let h=horm[((y/MS|0)%mH)*mW + ((x/MS|0)%mW)]/hormRef - 1;
+      h = h>1?1:(h<-1?-1:h);
+      d[px]   += h>0 ? h*110 : 0;
+      d[px+2] += h>0 ? h*150 : -h*70;
+    }
+    d[px+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+
+  if(P.showField){
+    ctx.strokeStyle='rgba(167,139,250,0.30)'; ctx.lineWidth=0.6;
+    const s=Math.max(14, Math.round(W/44)), o=[0,0,0];
+    ctx.beginPath();
+    for(let y=s/2;y<H;y+=s) for(let x=s/2;x<W;x+=s){
+      fieldAt(x,y,o);
+      if(o[2]<=0) continue;
+      const L=s*0.42*(0.35+0.65*o[2]);       // length shows local field strength
+      ctx.moveTo(x,y); ctx.lineTo(x+o[0]*L, y+o[1]*L);
+    }
+    ctx.stroke();
+  }
+}
+
+/* ---- loop ---- */
+/* Robust references from a histogram, not from max.
+   Raw max is a single-cell deposit spike (~100x the mean), so using it to
+   normalize made the render dark, the contour levels sit above everything,
+   and the mask nearly empty. Two quantities instead:
+     ref  = 99.5th percentile  -> render + contour scale
+     cut  = the level that puts exactly P.thr of cells inside the mask
+   Fixing coverage rather than level is also what makes beta_1 comparable
+   across parameter changes: the topology measurement stops moving just
+   because the field got brighter.                                        */
+const NB=1024; const histo=new Int32Array(NB);
+function refs(){
+  let max=0; for(let i=0;i<grid.length;i++) if(grid[i]>max) max=grid[i];
+  if(max<=0) return {ref:1, cut:Infinity, max:0};
+  histo.fill(0);
+  const s=(NB-1)/max;
+  for(let i=0;i<grid.length;i++) histo[(grid[i]*s)|0]++;
+  const total=grid.length;
+  let acc=0, ref=max, cut=max;
+  const needRef=total*0.005, needCut=total*P.thr;
+  let gotRef=false, gotCut=false;
+  for(let b=NB-1;b>=0;b--){
+    acc+=histo[b];
+    if(!gotRef && acc>=needRef){ ref=(b+0.5)/s; gotRef=true; }
+    if(!gotCut && acc>=needCut){ cut=(b+0.5)/s; gotCut=true; }
+    if(gotRef&&gotCut) break;
+  }
+  return {ref:Math.max(ref,1e-6), cut, max};
+}
+
+let fpsT=performance.now(), fpsN=0;
+let R={ref:1,cut:Infinity,max:0};
+function loop(){
+  time += P.dr;
+  if(P.hrel>0) diffuseDecayHorm();   // before the trail: its tau(x) gates the decay
+  diffuseDecay();
+  if(P.mass>0) diffuseDecayMom();
+  stepAgents();
+
+  R = refs();
+  render(R.ref);
+  drawContours(R.ref);
+  if(frame % 20 === 0) measure(R.cut);
+
+  if(frame % 15 === 0){
+    const half = Math.log(0.5)/Math.log(P.dec);
+    const mhalf= Math.log(0.5)/Math.log(P.mdec);
+    const ftau = P.dr>0 ? 1/P.dr : Infinity;
+    const ratio = ftau/half;
+    document.getElementById('r-th').textContent = half.toFixed(0)+' f';
+    document.getElementById('r-tm').textContent = P.mass>0 ? mhalf.toFixed(1)+' f' : 'off';
+    document.getElementById('r-mratio').textContent = P.mass>0 ? (mhalf/half).toFixed(2)+'×' : '–';
+    document.getElementById('r-tf').textContent = P.ng>0 ? (isFinite(ftau)?ftau.toFixed(0)+' f':'static') : 'off';
+    const rEl=document.getElementById('r-ratio');
+    rEl.textContent = P.ng>0 ? (isFinite(ratio)? ratio.toFixed(1)+'×' : '∞') : '–';
+    rEl.className = 'v' + (P.ng>0 && isFinite(ratio) && ratio<1.5 ? ' bad'
+                          : (P.ng>0 && isFinite(ratio) && ratio<4 ? ' warn':''));
+  }
+  fpsN++;
+  const now=performance.now();
+  if(now-fpsT>500){ document.getElementById('r-fps').textContent=(fpsN*1000/(now-fpsT)).toFixed(0);
+                    fpsT=now; fpsN=0; }
+  frame++;
+  requestAnimationFrame(loop);
+}
+loop();
+
+/* exposed for verification from the console */
+window.__sim = { get grid(){return grid}, get mask(){return mask}, get parts(){return parts},
+                 get W(){return W}, get H(){return H}, P, euler, components, refs,
+                 fieldAt, sampleMom, hormAt, get horm(){return horm},
+                 get hormRef(){return hormRef},
+                 get momX(){return momX}, get momY(){return momY},
+                 get mW(){return mW}, get mH(){return mH}, get momRef(){return momRef},
+                 get refsNow(){return R},
+                 betti(){ const {cut}=refs();
+                          let on=0;
+                          for(let i=0;i<grid.length;i++){const m=grid[i]>cut?1:0; mask[i]=m; on+=m;}
+                          const b0=components();
+                          return {b0, b1:b0-euler(), coverage:+(100*on/grid.length).toFixed(2)}; } };
+</script>
+</body>
+</html>

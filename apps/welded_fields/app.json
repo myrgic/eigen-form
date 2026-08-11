@@ -1,0 +1,14 @@
+{
+  "id": "welded_fields",
+  "title": "Welded Fields",
+  "description": "Stigmergic trail crossed with procedural advection on one shared grid.",
+  "version": "1.0.0",
+  "kind": "frozen-golden",
+  "entry": "index.html",
+  "provenance": {
+    "derivesFrom": "sha256:81d49079c91d40fda49601bfe235cb9aa22598e0bae156777aa7803abf69029f",
+    "changes": []
+  },
+  "capabilities": { "emits": [], "accepts": [] },
+  "pwa": { "installable": false }
+}

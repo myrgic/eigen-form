@@ -1,0 +1,14 @@
+{
+  "id": "boid_drafting",
+  "title": "Boid Drafting Simulation",
+  "description": "Boids interact with a reactive fluid grid, drafting in echelon and V-formations off each other's wakes.",
+  "version": "1.0.0",
+  "kind": "frozen-golden",
+  "entry": "index.html",
+  "provenance": {
+    "derivesFrom": "sha256:161f573c9f3749cbf1c9ebdb18a16b75ac62e514e41b7bd707dc9e5a6145f38b",
+    "changes": []
+  },
+  "capabilities": { "emits": [], "accepts": [] },
+  "pwa": { "installable": false }
+}

@@ -10,6 +10,9 @@
   "author": "Myrgic Labs",
   "scripts": {
     "golden": "node tools/golden.js",
-    "golden:check": "node tools/golden.js --check"
+    "golden:check": "node tools/golden.js --check",
+    "lab:build": "node tools/lab_build.js --write",
+    "lab:check": "node tools/lab_build.js --check",
+    "check": "npm run golden:check && npm run lab:check"
   }
 }

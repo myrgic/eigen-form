@@ -90,6 +90,31 @@ Any change to what the engine paints, intentional or not, moves a hash.
 That's the point: a rendering change becomes a loud, reviewed event
 instead of a silent visual drift.
 
+## The lab
+
+`hub/` is the eigen-form lab: a gallery of simulations, each packaged as
+its own installable web app under `apps/`, served from one hub page that
+is generated rather than written. Live: https://myrgic.com/eigen-form/hub/
+
+Three rules hold the contract together, detailed in `docs/lab-design.md`:
+
+1. **An app is a directory with a manifest.** `apps/<id>/app.json`
+   declares what an app is, where it came from (content hashes, always),
+   and what it builds on. Nothing outside the directory needs to know
+   how the app works.
+2. **The hub is a build artifact.** `hub/registry.json` is derived from
+   the app manifests by `tools/lab_build.js` and checked in CI; hand-
+   editing it is a build failure.
+3. **CI is the only deploy.** Every push runs both reconcilers, this
+   library's op-stream goldens and the lab's provenance check, before
+   publishing to Pages.
+
+Status: six apps are live under `apps/`, five byte-identical to their
+frozen originals and one (the AST diffusion study) vendoring its single
+external dependency. Every app's provenance hash is checked against
+`goldens/originals.txt` and the hub's registry on every push, so `main`
+can't drift from what it claims to serve.
+
 ## Vision
 
 eigen-form is the first library in a planned family of mathematical design primitives. The full vision: a library where every visual element is a rigorously defined mathematical object, parameterized at the level of its governing equations, renderable at arbitrary resolution without rasterization artifacts.

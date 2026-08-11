@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>the eigen-form lab</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0e0e12">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    background: #0e0e12; color: #e6e6ea;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  header { padding: 14px 20px 10px; border-bottom: 1px solid #26262e; }
+  header h1 { margin: 0 0 2px; font-size: 16px; font-weight: 650; }
+  header p { margin: 0; font-size: 12px; color: #8a8a96; }
+  #tabs {
+    display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 20px;
+    border-bottom: 1px solid #26262e; overflow-x: auto;
+  }
+  .tab {
+    background: #1a1a20; border: 1px solid #2c2c36; color: #cfcfd8;
+    padding: 7px 12px; border-radius: 8px; font-size: 12.5px; cursor: pointer;
+    white-space: nowrap;
+  }
+  .tab:hover { border-color: #4a4a5a; }
+  .tab.active { background: #2b2b6e; border-color: #4c4cc9; color: #fff; }
+  #stage { flex: 1; display: flex; min-height: 0; }
+  #detail {
+    width: 300px; flex: 0 0 300px; padding: 16px 18px; overflow-y: auto;
+    border-right: 1px solid #26262e;
+  }
+  #detail h2 { margin: 0 0 8px; font-size: 15px; }
+  #detail p.description { font-size: 13px; color: #b5b5c0; line-height: 1.5; margin: 0 0 14px; }
+  #detail .provenance {
+    font-size: 11px; color: #8a8a96; line-height: 1.6; word-break: break-all;
+    background: #16161c; border: 1px solid #26262e; border-radius: 6px; padding: 10px;
+  }
+  #detail .provenance b { color: #cfcfd8; }
+  #detail a.popout {
+    display: inline-block; margin-top: 14px; font-size: 12.5px; color: #9ba8ff;
+    text-decoration: none; border: 1px solid #2c2c36; padding: 6px 10px; border-radius: 6px;
+  }
+  #detail a.popout:hover { border-color: #4c4cc9; }
+  #frame-wrap { flex: 1; min-width: 0; background: #000; }
+  iframe { width: 100%; height: 100%; border: 0; display: block; }
+  #empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #6a6a76; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>the eigen-form lab</h1>
+  <p>Registry-driven gallery of frozen apps. Each entry loads by URL into a sandboxed iframe, no embedded source.</p>
+</header>
+<div id="tabs"></div>
+<div id="stage">
+  <div id="detail"><div id="empty">Loading registry&hellip;</div></div>
+  <div id="frame-wrap"></div>
+</div>
+<script>
+(async function () {
+  const tabsEl = document.getElementById('tabs');
+  const detailEl = document.getElementById('detail');
+  const frameWrap = document.getElementById('frame-wrap');
+
+  let registry;
+  try {
+    const res = await fetch('registry.json');
+    registry = await res.json();
+  } catch (err) {
+    detailEl.innerHTML = '<div id="empty">Could not load registry.json, ' +
+      'serve the repo root over HTTP, don\'t open the file directly.</div>';
+    return;
+  }
+
+  const apps = registry.apps || [];
+
+  function renderDetail(app) {
+    const changes = (app.provenance.changes && app.provenance.changes.length)
+      ? app.provenance.changes.map((c) => '<div>&middot; ' + c + '</div>').join('')
+      : '<div>&middot; none (byte-identical)</div>';
+    detailEl.innerHTML =
+      '<h2>' + app.title + '</h2>' +
+      '<p class="description">' + app.description + '</p>' +
+      '<div class="provenance"><b>derives from</b><br>' + app.provenance.derivesFrom +
+      '<br><br><b>changes</b><br>' + changes + '</div>' +
+      '<a class="popout" href="' + app.path + '" target="_blank" rel="noopener">Open app directly &rarr;</a>';
+  }
+
+  function selectApp(id) {
+    const app = apps.find((a) => a.id === id);
+    if (!app) return;
+    [...tabsEl.children].forEach((t) => t.classList.toggle('active', t.dataset.id === id));
+    renderDetail(app);
+    frameWrap.innerHTML = '';
+    const iframe = document.createElement('iframe');
+    iframe.src = app.path;
+    iframe.sandbox = 'allow-scripts';
+    iframe.title = app.title;
+    frameWrap.appendChild(iframe);
+  }
+
+  apps.forEach((app, i) => {
+    const tab = document.createElement('button');
+    tab.className = 'tab';
+    tab.dataset.id = app.id;
+    tab.textContent = app.title;
+    tab.addEventListener('click', () => selectApp(app.id));
+    tabsEl.appendChild(tab);
+    if (i === 0) selectApp(app.id);
+  });
+
+  // The shell is installable on its own, scoped to hub/ root via sw.js's own
+  // path (the default scope for a worker registered with no explicit `scope`
+  // option). sw.js's fetch handler ignores everything under apps/ so this
+  // registration can never shadow an app's own scope; see hub/sw.js.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker
+      .register('sw.js')
+      .catch(() => { /* offline install is a bonus, not load-bearing */ });
+  }
+})();
+</script>
+</body>
+</html>

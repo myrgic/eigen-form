@@ -1,0 +1,14 @@
+{
+  "id": "smoke_rings",
+  "title": "Smoke Rings, Topographical",
+  "description": "Smoke rings settling toward the center, drawn as the field's own contours.",
+  "version": "1.0.0",
+  "kind": "frozen-golden",
+  "entry": "index.html",
+  "provenance": {
+    "derivesFrom": "sha256:3732086b17a6b6e81b6b917db0889502d907700ba6fb175448b4ace542a24193",
+    "changes": []
+  },
+  "capabilities": { "emits": [], "accepts": [] },
+  "pwa": { "installable": false }
+}

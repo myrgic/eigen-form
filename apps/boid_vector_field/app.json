@@ -1,0 +1,14 @@
+{
+  "id": "boid_vector_field",
+  "title": "Boid Vector Field Simulator",
+  "description": "Agents navigate a dynamic flow field generated via continuous noise, experiencing advection and rheotaxis.",
+  "version": "1.0.0",
+  "kind": "frozen-golden",
+  "entry": "index.html",
+  "provenance": {
+    "derivesFrom": "sha256:28d05e19e82cc52d28820320fde8bfd68f7fe7409a95225d0dc57b6cff60202b",
+    "changes": []
+  },
+  "capabilities": { "emits": [], "accepts": [] },
+  "pwa": { "installable": false }
+}

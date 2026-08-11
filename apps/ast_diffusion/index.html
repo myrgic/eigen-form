@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AST Topological Convolution Kernel</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <script src="vendor/d3.v7.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background: #fafafa; color: #333; font-family: sans-serif; overflow: hidden; display: flex; height: 100vh; }
+        #sidebar { width: 320px; background: #fff; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #ddd; box-shadow: 2px 0 5px rgba(0,0,0,0.05); z-index: 10; }
+        #canvas-container { flex: 1; position: relative; background: #f0f0f0; }
+        h2 { margin: 0 0 5px 0; font-size: 18px; color: #2563eb; }
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-size: 13px; color: #555; display: flex; justify-content: space-between; font-weight: bold; }
+        input[type=range] { width: 100%; }
+        p.desc { font-size: 12px; color: #666; line-height: 1.4; margin: 0; padding-bottom: 10px; border-bottom: 1px solid #eee; }
+        button { padding: 10px; background: #2563eb; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        button:hover { background: #1d4ed8; }
+        
+        .node-circle { stroke: #fff; stroke-width: 2px; transition: fill 0.3s, r 0.3s; cursor: pointer; }
+        .node-circle:hover { stroke: #000; }
+        .link-path { fill: none; stroke: #999; stroke-width: 2px; }
+        .node-label { font-size: 12px; font-family: monospace; pointer-events: none; text-anchor: middle; dy: 25; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>Topological AST Diffusion</h2>
+    <p class="desc">A Directed Acyclic Graph representing code. Click a node to inject heat (a Git merge). Click "Step" to see how the convolution kernel diffuses heat asymmetrically.</p>
+    
+    <div class="control-group">
+        <label>Upstream Cascade (α) <span id="val-alpha">0.6</span></label>
+        <input type="range" id="ctrl-alpha" min="0" max="1" step="0.05" value="0.6">
+        <span style="font-size: 11px; color:#888;">Flows AGAINST import arrows (fixing breaks).</span>
+    </div>
+    
+    <div class="control-group">
+        <label>Downstream Cascade (β) <span id="val-beta">0.1</span></label>
+        <input type="range" id="ctrl-beta" min="0" max="1" step="0.05" value="0.1">
+        <span style="font-size: 11px; color:#888;">Flows WITH import arrows (priming context).</span>
+    </div>
+    
+    <div class="control-group">
+        <label>Decay / Evaporation (T) <span id="val-decay">0.9</span></label>
+        <input type="range" id="ctrl-decay" min="0.5" max="1" step="0.05" value="0.9">
+    </div>
+
+    <button id="btn-step" style="margin-top:10px;">Step Convolution (t+1)</button>
+    <button id="btn-reset" style="background:#ef4444;">Clear All Heat</button>
+</div>
+
+<div id="canvas-container"></div>
+
+<script>
+    const width = document.getElementById('canvas-container').clientWidth;
+    const height = document.getElementById('canvas-container').clientHeight;
+
+    const nodes = [
+        { id: 'app.ts', depth: 0 },
+        { id: 'server.ts', depth: 0 },
+        { id: 'router.ts', depth: 1 },
+        { id: 'auth.ts', depth: 2 },
+        { id: 'db.ts', depth: 2 },
+        { id: 'crypto.ts', depth: 3 },
+        { id: 'utils.ts', depth: 3 }
+    ];
+    nodes.forEach(n => n.heat = 0);
+
+    // Source imports Target (Arrows point down the dependency chain)
+    const links = [
+        { source: 'app.ts', target: 'router.ts' },
+        { source: 'server.ts', target: 'router.ts' },
+        { source: 'server.ts', target: 'db.ts' },
+        { source: 'router.ts', target: 'auth.ts' },
+        { source: 'auth.ts', target: 'db.ts' },
+        { source: 'auth.ts', target: 'crypto.ts' },
+        { source: 'db.ts', target: 'utils.ts' },
+        { source: 'crypto.ts', target: 'utils.ts' }
+    ];
+
+    // Calculate In/Out Degrees for normalization
+    const inDegree = {}, outDegree = {};
+    nodes.forEach(n => { inDegree[n.id] = 0; outDegree[n.id] = 0; });
+    links.forEach(l => {
+        outDegree[l.source]++;
+        inDegree[l.target]++;
+    });
+
+    const params = { alpha: 0.6, beta: 0.1, decay: 0.9 };
+    ['alpha', 'beta', 'decay'].forEach(k => {
+        document.getElementById(`ctrl-${k}`).addEventListener('input', e => { 
+            params[k] = parseFloat(e.target.value); 
+            document.getElementById(`val-${k}`).textContent = e.target.value; 
+        });
+    });
+
+    const svg = d3.select("#canvas-container").append("svg")
+        .attr("width", width).attr("height", height);
+
+    // Arrow markers
+    svg.append('defs').append('marker')
+        .attr('id', 'arrow')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 22).attr('refY', 0)
+        .attr('markerWidth', 6).attr('markerHeight', 6)
+        .attr('orient', 'auto')
+        .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', '#999');
+
+    const g = svg.append('g');
+
+    const link = g.selectAll(".link")
+        .data(links).enter().append("path")
+        .attr("class", "link-path")
+        .attr("marker-end", "url(#arrow)");
+
+    const nodeGroup = g.selectAll(".node")
+        .data(nodes).enter().append("g");
+
+    const colorScale = d3.scaleSequential(d3.interpolateYlOrRd).domain([0, 5]);
+
+    const nodeCircle = nodeGroup.append("circle")
+        .attr("class", "node-circle")
+        .attr("r", 15)
+        .attr("fill", d => colorScale(d.heat))
+        .on("click", (event, d) => {
+            d.heat += 5.0; // Inject Heat
+            updateVisuals();
+        });
+
+    nodeGroup.append("text")
+        .attr("class", "node-label")
+        .attr("dy", 28)
+        .text(d => d.id);
+
+    // D3 Force layout purely for aesthetic rendering
+    const simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id(d => d.id).distance(100))
+        .force("charge", d3.forceManyBody().strength(-800))
+        .force("y", d3.forceY(d => d.depth * 150).strength(1.5)) // Force into hierarchy layers
+        .force("center", d3.forceCenter(width / 2, height / 3));
+
+    simulation.on("tick", () => {
+        link.attr("d", d => `M${d.source.x},${d.source.y} L${d.target.x},${d.target.y}`);
+        nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
+    });
+
+    function updateVisuals() {
+        nodeCircle
+            .attr("fill", d => colorScale(d.heat))
+            .attr("r", d => 15 + Math.min(15, d.heat * 3));
+    }
+
+    // Mathematical Convolution Step
+    document.getElementById('btn-step').addEventListener('click', () => {
+        let nextHeat = {};
+        
+        // 1. Decay current heat
+        nodes.forEach(n => {
+            nextHeat[n.id] = n.heat * params.decay;
+        });
+
+        // 2. Convolution (Message Passing)
+        links.forEach(l => {
+            const source = typeof l.source === 'string' ? nodes.find(n=>n.id===l.source) : l.source;
+            const target = typeof l.target === 'string' ? nodes.find(n=>n.id===l.target) : l.target;
+
+            // Alpha: Upstream Cascade (Heat flows backwards up the import arrow)
+            // Normalized by inDegree to prevent explosion if a file is imported many times
+            if (target.heat > 0.05) {
+                nextHeat[source.id] += (target.heat * params.alpha) / (inDegree[target.id] || 1);
+            }
+
+            // Beta: Downstream Cascade (Heat flows forwards with the import arrow)
+            if (source.heat > 0.05) {
+                nextHeat[target.id] += (source.heat * params.beta) / (outDegree[source.id] || 1);
+            }
+        });
+
+        // 3. Commit state
+        nodes.forEach(n => {
+            n.heat = Math.max(0, nextHeat[n.id]); // Clamp to zero
+        });
+        
+        updateVisuals();
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+        nodes.forEach(n => n.heat = 0);
+        updateVisuals();
+    });
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+
+</script>
+</body>
+</html>

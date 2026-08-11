@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boid Drafting Simulation</title>
+    <style>
+        body { margin: 0; padding: 0; background: #0f172a; color: #f8fafc; font-family: sans-serif; overflow: hidden; display: flex; height: 100vh; }
+        #sidebar { width: 320px; background: #1e293b; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #334155; overflow-y: auto; }
+        #canvas-container { flex: 1; position: relative; }
+        canvas { display: block; width: 100%; height: 100%; }
+        h2 { margin: 0 0 10px 0; font-size: 18px; color: #38bdf8; }
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-size: 13px; color: #cbd5e1; display: flex; justify-content: space-between; }
+        input[type=range] { width: 100%; }
+        p.desc { font-size: 12px; color: #94a3b8; line-height: 1.4; margin: 0; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>Bidirectional Wake Drafting</h2>
+    <p class="desc">Boids interact with a reactive fluid grid. They inject momentum to create wakes. The grid diffuses and dissipates this energy. Trailing boids seek these wakes to draft, forming echelon and V-formations naturally.</p>
+    
+    <div class="control-group">
+        <label>Grid Dissipation (Fade) <span id="val-diss">0.05</span></label>
+        <input type="range" id="ctrl-diss" min="0.01" max="0.2" step="0.01" value="0.05">
+    </div>
+    <div class="control-group">
+        <label>Drafting Weight <span id="val-draft">1.5</span></label>
+        <input type="range" id="ctrl-draft" min="0" max="3" step="0.1" value="1.5">
+    </div>
+    <div class="control-group">
+        <label>Cohesion <span id="val-coh">0.5</span></label>
+        <input type="range" id="ctrl-coh" min="0" max="2" step="0.1" value="0.5">
+    </div>
+    <div class="control-group">
+        <label>Separation <span id="val-sep">1.5</span></label>
+        <input type="range" id="ctrl-sep" min="0" max="3" step="0.1" value="1.5">
+    </div>
+</div>
+
+<div id="canvas-container">
+    <canvas id="sim-canvas"></canvas>
+</div>
+
+<script>
+    const canvas = document.getElementById('sim-canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+    const gridRes = 15; // Size of fluid cells
+    let cols, rows;
+    let fluid = [];
+
+    const params = { diss: 0.05, draft: 1.5, coh: 0.5, sep: 1.5 };
+    
+    ['diss', 'draft', 'coh', 'sep'].forEach(k => {
+        document.getElementById(`ctrl-${k}`).addEventListener('input', e => { 
+            params[k] = parseFloat(e.target.value); 
+            document.getElementById(`val-${k}`).textContent = e.target.value; 
+        });
+    });
+
+    let boids = [];
+    const numBoids = 100;
+
+    function resize() {
+        width = canvas.clientWidth; height = canvas.clientHeight;
+        canvas.width = width; canvas.height = height;
+        cols = Math.ceil(width / gridRes);
+        rows = Math.ceil(height / gridRes);
+        // Init fluid grid
+        fluid = Array(cols).fill().map(() => Array(rows).fill().map(() => ({ vx: 0, vy: 0 })));
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    for(let i=0; i<numBoids; i++) {
+        boids.push({
+            x: Math.random() * width, y: Math.random() * height,
+            vx: Math.random() * 4 - 2, vy: Math.random() * 4 - 2
+        });
+    }
+
+    function animate() {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, width, height);
+
+        // 1. Fluid Update (Diffusion & Dissipation)
+        let nextFluid = Array(cols).fill().map(() => Array(rows).fill().map(() => ({ vx: 0, vy: 0 })));
+        for (let x = 0; x < cols; x++) {
+            for (let y = 0; y < rows; y++) {
+                let cell = fluid[x][y];
+                // Simple 3x3 box blur for diffusion
+                let sumVx = 0, sumVy = 0, count = 0;
+                for(let i = -1; i <= 1; i++) {
+                    for(let j = -1; j <= 1; j++) {
+                        let nx = x + i, ny = y + j;
+                        if(nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
+                            sumVx += fluid[nx][ny].vx;
+                            sumVy += fluid[nx][ny].vy;
+                            count++;
+                        }
+                    }
+                }
+                // Apply diffusion, then dissipation (decay toward 0)
+                nextFluid[x][y].vx = (sumVx / count) * (1 - params.diss);
+                nextFluid[x][y].vy = (sumVy / count) * (1 - params.diss);
+            }
+        }
+        fluid = nextFluid;
+
+        // Render Fluid Grid
+        for (let x = 0; x < cols; x++) {
+            for (let y = 0; y < rows; y++) {
+                let mag = Math.hypot(fluid[x][y].vx, fluid[x][y].vy);
+                if (mag > 0.05) {
+                    ctx.fillStyle = `rgba(56, 189, 248, ${Math.min(mag * 0.5, 0.5)})`;
+                    ctx.fillRect(x * gridRes, y * gridRes, gridRes, gridRes);
+                }
+            }
+        }
+
+        const maxSpeed = 3.5;
+        const maxForce = 0.15;
+
+        // 2. Boid Update
+        for (let b of boids) {
+            let steerC = { x: 0, y: 0 }, steerS = { x: 0, y: 0 }, steerA = { x: 0, y: 0 }, count = 0;
+
+            for (let other of boids) {
+                if (b === other) continue;
+                let dx = other.x - b.x, dy = other.y - b.y;
+                let dSq = dx*dx + dy*dy;
+                if (dSq < 3600) { // Radius 60
+                    let d = Math.sqrt(dSq);
+                    steerC.x += other.x; steerC.y += other.y;
+                    steerA.x += other.vx; steerA.y += other.vy;
+                    if (d < 25) { steerS.x -= dx/d; steerS.y -= dy/d; }
+                    count++;
+                }
+            }
+
+            if (count > 0) {
+                steerC.x = (steerC.x / count) - b.x; steerC.y = (steerC.y / count) - b.y;
+                steerA.x = (steerA.x / count) - b.vx; steerA.y = (steerA.y / count) - b.vy;
+            }
+
+            // Interact with fluid
+            let gx = Math.floor(b.x / gridRes), gy = Math.floor(b.y / gridRes);
+            let draftX = 0, draftY = 0;
+            if (gx >= 0 && gx < cols && gy >= 0 && gy < rows) {
+                // Draft (seek flow)
+                draftX = fluid[gx][gy].vx; draftY = fluid[gx][gy].vy;
+                
+                // Deposit (inject momentum into fluid)
+                // CLAMP injection to prevent infinite explosion
+                fluid[gx][gy].vx = Math.max(-2, Math.min(2, fluid[gx][gy].vx + b.vx * 0.2));
+                fluid[gx][gy].vy = Math.max(-2, Math.min(2, fluid[gx][gy].vy + b.vy * 0.2));
+            }
+
+            b.vx += steerC.x * maxForce * params.coh + steerS.x * maxForce * params.sep + steerA.x * maxForce * 0.5 + draftX * maxForce * params.draft;
+            b.vy += steerC.y * maxForce * params.coh + steerS.y * maxForce * params.sep + steerA.y * maxForce * 0.5 + draftY * maxForce * params.draft;
+
+            let speed = Math.hypot(b.vx, b.vy);
+            if (speed > maxSpeed) { b.vx = (b.vx / speed) * maxSpeed; b.vy = (b.vy / speed) * maxSpeed; }
+
+            b.x += b.vx; b.y += b.vy;
+            if (b.x < 0) b.x += width; if (b.x > width) b.x -= width;
+            if (b.y < 0) b.y += height; if (b.y > height) b.y -= height;
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.save();
+            ctx.translate(b.x, b.y);
+            ctx.rotate(Math.atan2(b.vy, b.vx));
+            ctx.beginPath();
+            ctx.moveTo(6, 0); ctx.lineTo(-4, 3); ctx.lineTo(-4, -3);
+            ctx.fill();
+            ctx.restore();
+        }
+        requestAnimationFrame(animate);
+    }
+    animate();
+</script>
+</body>
+</html>

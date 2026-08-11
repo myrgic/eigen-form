@@ -1,0 +1,20 @@
+# Content hashes of the six frozen originals this lab's apps derive from,
+# plus the vendored third-party asset ast_diffusion depends on.
+#
+# Labels are app ids (apps/<id>/), not the original filenames: provenance
+# travels as a hash, and the hash is what tools/lab_build.js checks against
+# each app's app.json provenance.derivesFrom. Hashes are sha256, taken
+# directly from the frozen originals at the source of truth before any
+# display copy existed.
+#
+# format: <sha256>  <label>
+81d49079c91d40fda49601bfe235cb9aa22598e0bae156777aa7803abf69029f  welded_fields
+ce081b7b0c19f5af16b7d72a221a29c485af35ba0ff4ad3e916033fe3cdde391  physarum
+3732086b17a6b6e81b6b917db0889502d907700ba6fb175448b4ace542a24193  smoke_rings
+161f573c9f3749cbf1c9ebdb18a16b75ac62e514e41b7bd707dc9e5a6145f38b  boid_drafting
+28d05e19e82cc52d28820320fde8bfd68f7fe7409a95225d0dc57b6cff60202b  boid_vector_field
+33fc55f3b6b33d8a77ae7411e0cf61cc0aa742f7c8394892d7be9323152c336c  ast_diffusion
+
+# Vendored dependency (d3 v7.9.0), pinned by hash, living at
+# apps/ast_diffusion/vendor/d3.v7.min.js.
+f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539  apps/ast_diffusion/vendor/d3.v7.min.js

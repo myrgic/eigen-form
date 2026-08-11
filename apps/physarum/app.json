@@ -1,0 +1,14 @@
+{
+  "id": "physarum",
+  "title": "Physarum Stigmergy Simulation",
+  "description": "Particles leave trails in a pixel grid and steer toward the highest concentration ahead of them as it diffuses and decays.",
+  "version": "1.0.0",
+  "kind": "frozen-golden",
+  "entry": "index.html",
+  "provenance": {
+    "derivesFrom": "sha256:ce081b7b0c19f5af16b7d72a221a29c485af35ba0ff4ad3e916033fe3cdde391",
+    "changes": []
+  },
+  "capabilities": { "emits": [], "accepts": [] },
+  "pwa": { "installable": false }
+}

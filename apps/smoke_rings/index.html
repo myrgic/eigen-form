@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>smoke rings — topographical</title>
+<style>
+  html,body{margin:0;padding:0;background:#0B0605;overflow:hidden;height:100%}
+  #f{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+  .plate{position:absolute;left:28px;bottom:26px;color:#8A7466;
+    font-family:"Iowan Old Style",Georgia,serif;font-size:15px;letter-spacing:.04em;
+    line-height:1.55;user-select:none;pointer-events:none}
+  .plate b{font-weight:normal;color:#C49A6C;letter-spacing:.12em}
+  .rack{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;gap:24px;
+    align-items:flex-end;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:#5F4C3F;
+    user-select:none;opacity:.16;transition:opacity .6s ease}
+  .rack:hover,.rack:focus-within{opacity:1}
+  .knob{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .knob label{letter-spacing:.14em;text-transform:uppercase;color:#7A6455}
+  .knob input{width:150px;cursor:pointer}
+  .k-set input{accent-color:#E8A05C}.k-wan input{accent-color:#A63A2B}
+  .rack button{background:none;border:1px solid #5F4C3F;color:#8A7466;font-family:inherit;
+    font-size:10px;letter-spacing:.14em;text-transform:uppercase;padding:6px 11px;border-radius:4px;
+    cursor:pointer;margin-bottom:1px}
+  .rack button:hover{border-color:#C49A6C;color:#C49A6C}
+  .rack button:focus-visible{outline:1px solid #C49A6C;outline-offset:2px}
+</style>
+</head>
+<body>
+<canvas id="f"></canvas>
+<div class="plate"><b>SMOKE RINGS</b><br>settling toward the center &mdash; drawn as the field&rsquo;s own contours</div>
+<div class="rack" id="rack">
+  <div class="knob k-set"><label for="set">settle</label>
+    <input id="set" type="range" min="0" max="1" step="0.005" value="0.32" aria-label="anchor mass"></div>
+  <div class="knob k-wan"><label for="wan">wander</label>
+    <input id="wan" type="range" min="0" max="1" step="0.005" value="0.38" aria-label="center wander"></div>
+  <button id="reset" type="button" title="clear the field and re-seed; keeps your slider settings">reset</button>
+</div>
+<script>
+(function(){
+  'use strict';
+  var TAU=Math.PI*2;
+  var cv=document.getElementById('f'),cx=cv.getContext('2d');
+  var W=0,H=0,DPR=Math.min(window.devicePixelRatio||1,1.5),RIM=0,CXp=0,CYp=0;
+  var reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---- field: density on a G x G grid over normalized [-1.15,1.15]^2 ----
+  var G=132, EXT=1.15, D=new Float32Array(G*G), Dt=new Float32Array(G*G), MASK=new Uint8Array(G*G);
+  (function(){for(var j=0;j<G;j++)for(var i=0;i<G;i++){
+    var x=-EXT+(i+0.5)*2*EXT/G, y=-EXT+(j+0.5)*2*EXT/G;
+    MASK[j*G+i]=(x*x+y*y<=1.0)?1:0;}})();  // clipped to the unit disk (the rim)
+
+  function resize(){
+    var w=innerWidth||960,h=innerHeight||600;W=w;H=h;
+    cv.width=W*DPR;cv.height=H*DPR;cv.style.width=W+'px';cv.style.height=H+'px';
+    cx.setTransform(DPR,0,0,DPR,0,0);CXp=W/2;CYp=H/2;RIM=0.47*Math.min(W,H);
+    cx.fillStyle='#0B0605';cx.fillRect(0,0,W,H);
+  }
+  addEventListener('resize',resize);resize();
+
+  // normalized field coord -> screen
+  function sx(nx){return CXp+nx*RIM;}
+  function sy(ny){return CYp+ny*RIM;}
+  // grid index (i in [0,G-1]) -> normalized coord
+  function gx(i){return -EXT+(i+0.5)*2*EXT/G;}
+
+  // ---- ramp: madder -> ember (high density = hot core) ----
+  var RAMP=[[78,30,26],[156,58,42],[212,98,56],[240,166,102],[255,232,198]];
+  function ramp(p,out){p=p<0?0:(p>1?1:p);var x=p*(RAMP.length-1),i=Math.floor(x),f=x-i;
+    if(i>=RAMP.length-1){i=RAMP.length-2;f=1;}var a=RAMP[i],b=RAMP[i+1];
+    out[0]=a[0]+(b[0]-a[0])*f;out[1]=a[1]+(b[1]-a[1])*f;out[2]=a[2]+(b[2]-a[2])*f;}
+
+  // ---- knobs ----
+  // The center is a MASS, not a spring: a softened gravitational anchor.
+  // accel = -MU * pos / (r^2 + EPS2)^1.5. Orbits dephase with size (Kepler),
+  // so the population never phase-locks into the harmonic sputter — but they
+  // still (nearly) close, so the rings survive. EPS2 is the anchor's soft core.
+  var MU=0.34, EPS2=0.05, JITTER=0.012;
+  // THE DYAD: the anchor is the DRIVEN component -- it wanders (OU) off center and is
+  // pulled back "at intervals"; the orbiting tracers are the LISTENER, tracking the moving
+  // well a beat late. ax,ay = anchor position; THETA = pull-back rate; ASIG = wander strength.
+  var ax=0, ay=0, THETA=0.7, ASIG=0.05;
+  // pointer becomes the DRIVER: hover = gentle lean, hold = firm grab of the anchor
+  var px=0, py=0, pInside=false, pDown=false, STR_HOVER=0.6, STR_GRAB=4.4;
+  var setEl=document.getElementById('set'),wanEl=document.getElementById('wan');
+  function readSet(){MU=0.04+parseFloat(setEl.value)*1.28;}       // near-zero anchor -> tight vortex
+  function readWan(){ASIG=parseFloat(wanEl.value)*0.34;}           // 0 = still center -> wild roaming
+  setEl.addEventListener('input',readSet);wanEl.addEventListener('input',readWan);readSet();readWan();
+
+  // ---- tracers: Ornstein-Uhlenbeck in a harmonic well ----
+  // v += (-K*pos - DAMP*v)dt + noise ; pos += v dt.  Tangential velocity => orbits;
+  // damping slowly spirals them in; noise wanders. Closure is a completed orbit.
+  var DAMP=0.085, NT=190, tr=[];
+  function rnd(a,b){return a+Math.random()*(b-a);}
+  function gmag(r2){var s=r2+EPS2;return MU/(s*Math.sqrt(s));}   // |accel|/r at radius^2=r2
+  function newTracer(){
+    var ang=rnd(0,TAU), rad=rnd(0.28,0.9);
+    var px=ax+Math.cos(ang)*rad, py=ay+Math.sin(ang)*rad;   // born around the wandering anchor
+    var vt=rad*Math.sqrt(gmag(rad*rad))*rnd(0.72,1.12), sgn=Math.random()<0.5?1:-1;
+    return {x:px,y:py,vx:-Math.sin(ang)*vt*sgn,vy:Math.cos(ang)*vt*sgn,
+            wind:0,pw:0,life:rnd(9,22),age:0,pa:ang};
+  }
+  for(var s=0;s<NT;s++)tr.push(newTracer());
+
+  // soft 3x3 gaussian splat so neighbouring deposits merge into a connected sheet
+  var KER=[0.075,0.124,0.075,0.124,0.204,0.124,0.075,0.124,0.075];
+  function deposit(nx,ny,amt){
+    var ci=Math.round((nx+EXT)/(2*EXT)*G-0.5), cj=Math.round((ny+EXT)/(2*EXT)*G-0.5),n=0;
+    for(var b=-1;b<=1;b++)for(var a=-1;a<=1;a++){
+      var i=ci+a,j=cj+b;if(i<0||i>=G||j<0||j>=G){n++;continue;}
+      D[j*G+i]+=amt*KER[n++];}
+  }
+
+  function stepTracers(dt){
+    // driven component: the anchor wanders (OU) off center and is pulled back at intervals
+    ax+=-THETA*ax*dt+(Math.random()*2-1)*Math.sqrt(ASIG*dt);
+    ay+=-THETA*ay*dt+(Math.random()*2-1)*Math.sqrt(ASIG*dt);
+    if(pInside){var str=pDown?STR_GRAB:STR_HOVER;ax+=str*(px-ax)*dt;ay+=str*(py-ay)*dt;}  // your hand on the driver
+    var lim=0.62, ar=Math.sqrt(ax*ax+ay*ay);if(ar>lim){ax*=lim/ar;ay*=lim/ar;}
+    var jn=Math.sqrt(JITTER*dt);
+    for(var k=tr.length-1;k>=0;k--){
+      var t=tr[k];
+      var dx=t.x-ax, dy=t.y-ay;               // everything is referenced to the moving anchor
+      var g=gmag(dx*dx+dy*dy);                // listener: gravity toward the wandering center
+      t.vx+=(-g*dx-DAMP*t.vx)*dt+(Math.random()*2-1)*jn;
+      t.vy+=(-g*dy-DAMP*t.vy)*dt+(Math.random()*2-1)*jn;
+      t.x+=t.vx*dt;t.y+=t.vy*dt;t.age+=dt;
+      if(t.x*t.x+t.y*t.y<=1.0)deposit(t.x,t.y,8.5*dt);      // deposit in absolute coords -> the cloud trails
+      var a=Math.atan2(dy,dx),da=a-t.pa;if(da>Math.PI)da-=TAU;else if(da<-Math.PI)da+=TAU;
+      t.wind+=da;t.pa=a;
+      if(Math.abs(t.wind-t.pw)>=TAU){t.pw=t.wind;
+        if(t.x*t.x+t.y*t.y<=1.0)deposit(t.x,t.y,9);}        // "found its tail" -- gentle, so it doesn't point-spike
+      var rr=dx*dx+dy*dy;
+      if(t.age>t.life||rr>1.5||rr<0.0016){
+        if(t.temp)tr.splice(k,1);else tr[k]=newTracer();   // seeded tracers fade; baseline stays at NT
+      }
+    }
+  }
+
+  // ---- field relaxation: diffuse + decay (a small relaxing density) ----
+  var DIFF=0.19, DEC=0.992, curMax=1;
+  function diffuseOnce(){   // one smoothing sub-pass, no decay
+    for(var j=1;j<G-1;j++)for(var i=1;i<G-1;i++){
+      var idx=j*G+i;if(!MASK[idx]){Dt[idx]=0;continue;}
+      Dt[idx]=D[idx]+DIFF*(D[idx-1]+D[idx+1]+D[idx-G]+D[idx+G]-4*D[idx]);
+    }
+    var tmp=D;D=Dt;Dt=tmp;
+  }
+  function relax(){
+    diffuseOnce();diffuseOnce();          // two passes: smooth faster than the deposits sharpen
+    var m=0;
+    for(var e=0;e<G*G;e++){ if(!MASK[e]){D[e]=0;continue;} var v=D[e]*DEC;D[e]=v;if(v>m)m=v; }
+    curMax=m;
+  }
+
+  // ---- marching squares: build the iso-contour ONCE per level into a Path2D,
+  //      allocation-free per cell; render() then strokes that path twice (halo+core). ----
+  function interp(L,va,vb,pa,pb){return pa+(pb-pa)*((L-va)/(vb-va));}
+  var _Tx,_Ty,_Rx,_Ry,_Bx,_By,_Lx,_Ly;   // reused crossing-point scratch (no per-cell allocation)
+  function buildContour(L,path){
+    for(var j=0;j<G-1;j++){
+      var yT=gx(j),yB=gx(j+1),syT=sy(yT),syB=sy(yB),row=j*G;
+      for(var i=0;i<G-1;i++){
+        var idx=row+i, tl=D[idx],tr2=D[idx+1],br=D[idx+G+1],bl=D[idx+G];
+        var c=(tl>L?8:0)|(tr2>L?4:0)|(br>L?2:0)|(bl>L?1:0);
+        if(c===0||c===15)continue;
+        var xL=gx(i),xR=gx(i+1),sxL=sx(xL),sxR=sx(xR);
+        if((tl>L)!==(tr2>L)){_Tx=sx(interp(L,tl,tr2,xL,xR));_Ty=syT;}
+        if((tr2>L)!==(br>L)){_Rx=sxR;_Ry=sy(interp(L,tr2,br,yT,yB));}
+        if((bl>L)!==(br>L)){_Bx=sx(interp(L,bl,br,xL,xR));_By=syB;}
+        if((tl>L)!==(bl>L)){_Lx=sxL;_Ly=sy(interp(L,tl,bl,yT,yB));}
+        switch(c){
+          case 1:case 14:path.moveTo(_Lx,_Ly);path.lineTo(_Bx,_By);break;
+          case 2:case 13:path.moveTo(_Bx,_By);path.lineTo(_Rx,_Ry);break;
+          case 3:case 12:path.moveTo(_Lx,_Ly);path.lineTo(_Rx,_Ry);break;
+          case 4:case 11:path.moveTo(_Tx,_Ty);path.lineTo(_Rx,_Ry);break;
+          case 6:case 9:path.moveTo(_Tx,_Ty);path.lineTo(_Bx,_By);break;
+          case 7:case 8:path.moveTo(_Lx,_Ly);path.lineTo(_Tx,_Ty);break;
+          case 5:path.moveTo(_Lx,_Ly);path.lineTo(_Tx,_Ty);path.moveTo(_Bx,_By);path.lineTo(_Rx,_Ry);break;
+          case 10:path.moveTo(_Lx,_Ly);path.lineTo(_Bx,_By);path.moveTo(_Tx,_Ty);path.lineTo(_Rx,_Ry);break;
+        }
+      }
+    }
+  }
+  function fieldMax(){return curMax;}   // kept for the harness; free (folded into relax)
+
+  var LEVELS=[0.09,0.16,0.26,0.38,0.53,0.71,0.89], col=[0,0,0], refMax=1;
+  function render(){
+    cx.globalCompositeOperation='source-over';
+    cx.fillStyle='#0B0605';cx.fillRect(0,0,W,H);
+    var inst=curMax<1e-3?1e-3:curMax;
+    refMax+=(inst-refMax)*0.018;            // slow reference so it doesn't chase transient spikes
+    var mx=refMax;
+    cx.globalCompositeOperation='lighter';cx.lineCap='round';cx.lineJoin='round';
+    for(var l=0;l<LEVELS.length;l++){
+      var p=LEVELS[l];ramp(0.30+0.70*p,col);
+      var path=new Path2D();buildContour(p*mx,path);      // ONE grid scan per level
+      var pre='rgba('+(col[0]|0)+','+(col[1]|0)+','+(col[2]|0)+',';
+      cx.strokeStyle=pre+(0.07+0.14*p).toFixed(3)+')';cx.lineWidth=3.4-1.6*p;cx.stroke(path); // halo
+      cx.strokeStyle=pre+(0.44+0.62*p).toFixed(3)+')';cx.lineWidth=0.8+0.7*p;cx.stroke(path);  // core
+    }
+    // pointer indicator: a soft ring on hover, a firm bright ring while grabbing
+    if(pInside){
+      cx.globalCompositeOperation='lighter';
+      cx.strokeStyle=pDown?'rgba(245,190,130,0.55)':'rgba(230,165,110,0.28)';
+      cx.lineWidth=pDown?1.5:1;
+      cx.beginPath();cx.arc(sx(px),sy(py),pDown?10:6.5,0,TAU);cx.stroke();
+    }
+    cx.globalCompositeOperation='source-over';
+    cx.strokeStyle='rgba(120,66,40,0.35)';cx.lineWidth=1;
+    cx.beginPath();cx.arc(CXp,CYp,RIM,0,TAU);cx.stroke();
+  }
+
+  // a click seeds a burst of new tracers (the gravity captures them into orbits) + a density puff
+  function seedBurst(nx,ny){
+    if(nx*nx+ny*ny<=1.0)deposit(nx,ny,26);
+    for(var b=0;b<14;b++){
+      var pa=rnd(0,TAU), rx=nx+Math.cos(pa)*0.035, ry=ny+Math.sin(pa)*0.035;
+      var dx=rx-ax, dy=ry-ay, rr=Math.sqrt(dx*dx+dy*dy)||0.001;
+      var vt=rr*Math.sqrt(gmag(rr*rr))*rnd(0.7,1.1), sgn=Math.random()<0.5?1:-1;
+      if(tr.length<NT+90)
+        tr.push({x:rx,y:ry,vx:-dy/rr*vt*sgn,vy:dx/rr*vt*sgn,
+          wind:0,pw:0,life:rnd(8,16),age:0,pa:Math.atan2(dy,dx),temp:true});
+    }
+  }
+  function ptNorm(e){return [(e.clientX-CXp)/RIM,(e.clientY-CYp)/RIM];}
+  cv.addEventListener('pointermove',function(e){var p=ptNorm(e);px=p[0];py=p[1];
+    if(!pDown)pInside=(px*px+py*py<=1.04);});
+  cv.addEventListener('pointerdown',function(e){var p=ptNorm(e);px=p[0];py=p[1];
+    pInside=true;pDown=true;try{cv.setPointerCapture(e.pointerId);}catch(_){}
+    seedBurst(px,py);});
+  cv.addEventListener('pointerup',function(e){pDown=false;pInside=(px*px+py*py<=1.04);});
+  cv.addEventListener('pointercancel',function(){pDown=false;});
+  cv.addEventListener('pointerleave',function(){if(!pDown)pInside=false;});
+
+  // reset: clear field + re-seed tracers + recenter anchor; DOES NOT touch the sliders
+  function reset(){
+    D.fill(0);Dt.fill(0);refMax=1;ax=0;ay=0;
+    tr.length=0;for(var s=0;s<NT;s++)tr.push(newTracer());
+    if(reduced){for(var w=0;w<400;w++){stepTracers(1/30);if(w%2)relax();}render();}
+  }
+  document.getElementById('reset').addEventListener('click',reset);
+  addEventListener('keydown',function(e){if((e.key==='r'||e.key==='R')&&!e.metaKey&&!e.ctrlKey)reset();});
+
+  var last=null;
+  function frame(ts){
+    if(last===null)last=ts;var dt=Math.min((ts-last)/1000,0.05);last=ts;
+    stepTracers(dt);relax();render();
+    if(!reduced)requestAnimationFrame(frame);
+  }
+  if(reduced){
+    document.getElementById('rack').style.display='none';
+    for(var w=0;w<400;w++){stepTracers(1/30);if(w%2)relax();}
+    render();
+  }else requestAnimationFrame(frame);
+
+  window.TOPO={step:function(dt,n){n=n||1;for(var q=0;q<n;q++){stepTracers(dt);relax();}},
+    render:render,max:fieldMax,tracers:function(){return tr.length;},
+    anchor:function(){return {ax:ax,ay:ay,r:Math.sqrt(ax*ax+ay*ay)};},reset:reset,
+    stat:function(){var s=0,m=0,c=0;for(var e=0;e<G*G;e++){if(!MASK[e])continue;var v=D[e];s+=v;if(v>m)m=v;c++;}
+      var mean=s/c;return {max:+m.toFixed(2),mean:+mean.toFixed(3),spike:+(m/(mean||1e-9)).toFixed(1)};}};
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" rx="28" fill="#2563eb"/>
+  <text x="96" y="118" font-family="ui-monospace, Menlo, monospace" font-size="64" font-weight="700"
+        fill="#fafafa" text-anchor="middle">AST</text>
+</svg>

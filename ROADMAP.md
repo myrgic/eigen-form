@@ -110,6 +110,10 @@ the same deposit-decay field engine.
 
 The GitHub Pages site grows from a showcase into a hub.
 
+Update, 2026-08-11: the gallery's first instance already exists, merged
+in as the eigen-form lab (`hub/`, `apps/`, `docs/lab-design.md`); the
+items below are what it still needs to grow into the full v0.3 vision.
+
 - One page per family, rendered by the library itself. The page about
   contours draws its own diagrams with the contour primitive.
 - Study pages on the great visualization libraries and what eigen-form
