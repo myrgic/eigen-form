@@ -83,10 +83,6 @@ export function autoInit(create) {
       if (d.gradient)    opts.gradient    = d.gradient;
       if (d.p)           opts.p           = parseInt(d.p, 10);
       if (d.q)           opts.q           = parseInt(d.q, 10);
-      // Declarative background/reference color. The canvas itself is
-      // transparent and composites onto the page — data-bg is accepted
-      // for API completeness but isn't required for correct blending.
-      if (d.bg)          opts.bg          = d.bg;
       create(c, opts);
     });
   }

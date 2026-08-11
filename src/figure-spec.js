@@ -75,7 +75,14 @@ export function fromSpec(spec) {
   if (spec.family !== FAMILY) {
     throw new Error(`figure-spec: expected family "${FAMILY}", got "${spec.family}"`);
   }
-  return { ...spec.params };
+  // Legacy back-compat: a spec exported before the "host owns the
+  // ground" removal (bg was never actually part of this spec's own
+  // params — see exportSpec()/PARAM_DEFAULTS above — but an externally
+  // hand-built spec.params may still carry one). Accept it silently on
+  // import rather than erroring, but drop it: the engine no longer
+  // reads opts.bg, and this function never re-emits it.
+  const { bg, ...params } = spec.params;
+  return { ...params };
 }
 
 // =====================================================================

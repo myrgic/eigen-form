@@ -1,8 +1,6 @@
 /* =====================================================================
-   src/palette/gradients.js — the canonical spectrum gradient band,
-   hue/lightness sampling along the closure cycle, and the small
-   color-string parser the engine uses for its optional reference-color
-   parameter.
+   src/palette/gradients.js — the canonical spectrum gradient band and
+   hue/lightness sampling along the closure cycle.
 
    v0.3: the color band is a fully configurable panel parameter
    (hueStart, hueEnd, sat, light, lightEnd — see apps/mark's schema and
@@ -52,27 +50,4 @@ export function colorFor(u, chromaRamp, gradient) {
 export function colorStyle(c, alpha) {
   if (alpha == null) return `hsl(${c.hue.toFixed(1)} ${c.sat.toFixed(1)}% ${c.light.toFixed(1)}%)`;
   return `hsla(${c.hue.toFixed(1)} ${c.sat.toFixed(1)}% ${c.light.toFixed(1)}% / ${alpha.toFixed(3)})`;
-}
-
-// Accepts #rgb, #rrggbb, rgb()/rgba(), or a 3-element array; returns
-// [r,g,b] or null. Used for the mark's optional reference/halo color,
-// which is not part of the paint pipeline itself (see the comment on
-// setBg in eigen-form.js).
-export function parseColor(input) {
-  if (Array.isArray(input)) return input.slice(0, 3).map(Number);
-  if (typeof input === 'string') {
-    const s = input.trim();
-    const hex3 = s.match(/^#?([0-9a-f])([0-9a-f])([0-9a-f])$/i);
-    const hex6 = s.match(/^#?([0-9a-f]{6})$/i);
-    if (hex6) {
-      const n = parseInt(hex6[1], 16);
-      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-    }
-    if (hex3) {
-      return [hex3[1], hex3[2], hex3[3]].map(c => parseInt(c + c, 16));
-    }
-    const rgb = s.match(/rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i);
-    if (rgb) return [+rgb[1], +rgb[2], +rgb[3]];
-  }
-  return null;
 }

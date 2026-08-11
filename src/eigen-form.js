@@ -38,9 +38,15 @@
      gradient:     'spectrum'|object   color treatment, see GRADIENTS below
      parallax:     0..1   strength of leading-fwd / trailing-rev hue
                           offset (default 0; 1 = ±period over trail)
-     bg:           'rgb()' or [r,g,b]   optional halo/reference color;
-                   the canvas itself is transparent and composites onto
-                   the page — bg does not paint a background box.
+
+   GROUND
+     The mark owns no background/reference color, by design, at any
+     layer (construction opts, setParam, or a data attribute) — the
+     canvas itself is always transparent and composites onto whatever
+     it's rendered over. That's the host page's call, not the engine's,
+     the same module boundary the panel already draws (host page owns
+     tokens.css's --bg; the panel never carries its own color default).
+     See docs/api.md and docs/parameters.md, "the host owns the ground".
 
    GRADIENTS
      The color band is a fully configurable panel parameter, not a menu
@@ -77,7 +83,7 @@
 
 import * as torusKnot from './dynamics/torus-knot.js';
 import * as substrate from './dynamics/substrate.js';
-import { GRADIENTS, resolveGradient, colorFor, colorStyle, parseColor } from './palette/gradients.js';
+import { GRADIENTS, resolveGradient, colorFor, colorStyle } from './palette/gradients.js';
 import * as canvas2d from './backends/canvas2d.js';
 import * as mount from './lifecycle/mount.js';
 import * as figureSpec from './figure-spec.js';
@@ -108,15 +114,6 @@ function createTrefoilMark(canvas, opts) {
   };
   const showEmergence = !!opts.emergence;
 
-  // ---- Optional reference color (halo tuning only — canvas itself is
-  // transparent; nothing is painted as an opaque substrate). ----
-  let bg = parseColor(opts.bg) || [10, 10, 15];
-  let BG_R = bg[0], BG_G = bg[1], BG_B = bg[2];
-  function setBg(input) {
-    const parsed = parseColor(input);
-    if (!parsed) return;
-    [BG_R, BG_G, BG_B] = parsed;
-  }
   const cx = LOGICAL / 2, cy = LOGICAL / 2;
 
   // ---- State ----
@@ -291,7 +288,6 @@ function createTrefoilMark(canvas, opts) {
     params,
     setParam(k, v) {
       if (k === 'gradient') params.gradient = resolveGradient(v);
-      else if (k === 'bg') setBg(v);
       else params[k] = v;
     },
     reset,

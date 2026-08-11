@@ -51,9 +51,20 @@ Returns a controller object, or `null` if the canvas is not found.
 #### `setParam` special keys
 
 - `gradient` — accepts a named string or custom object; automatically resolved through `resolveGradient`.
-- `bg` — accepts a hex string (`"#0a0a0f"`), `rgb(...)` string, or `[r, g, b]` array.
 
 All other keys map directly to `params.*`.
+
+## The host owns the ground
+
+The mark owns no background/reference color, at any layer: no construction
+option, no `setParam` key, no `data-*` attribute. The canvas is always
+transparent and composites onto whatever the host page renders behind it —
+that's the host's call, not the engine's. This is the same module boundary
+`src/panel` already follows (the panel never carries its own color
+default; the host page's `tokens.css` supplies `--bg` and every other
+token). If your page wants a seamless backdrop, set it on the host element
+that contains the canvas (`body { background: ... }`, or a wrapping `.stage`
+element's own background) — see `examples/basic.html` for the plain case.
 
 ## Gradients
 

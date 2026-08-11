@@ -71,10 +71,15 @@ All parameters are read/write via `controller.params` and updatable at runtime v
 - **Range:** 0..1
 - **Visual:** detunes the hue clock from the orbit clock. At 0, hue is perfectly locked to the orbital period — every position on the knot gets the same color on every pass. At parallax > 0, the hue clock runs faster than the orbital clock, so successive passes over the same point paint different hues. This creates visible "redshift/blueshift" bands in the accumulated trail — visual depth without 3D geometry.
 
-### `bg` — substrate color
-- **Type:** hex string (`"#0a0a0f"`), `"rgb(10,10,15)"`, or `[r, g, b]` array
-- **Default:** `[10, 10, 15]` (#0a0a0f — Myrgic substrate)
-- **Visual:** the background color the trail fades toward. Matching your page background produces a seamless infinite-depth effect.
+## The host owns the ground
+
+There is no `bg` parameter. The mark owns no background/reference color at
+any layer — construction, `setParam`, or a data attribute — by design: the
+canvas is always transparent and composites onto whatever it's rendered
+over, and that's the host page's decision, never the engine's. Set a
+background on the host element the canvas sits in (page body, or a wrapping
+container) to get a seamless backdrop; see `docs/api.md`, "The host owns
+the ground".
 
 ## Emergence
 
