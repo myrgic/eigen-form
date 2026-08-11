@@ -67,6 +67,39 @@ torus knot: defined by governing equations, parameterized at that level.
   over vector fields. A tracer that closes on its own path is promoted to a
   persistent loop. The torus knot becomes a special case of a closed orbit.
 
+### Where families come from: the migration recipe
+
+The first families are not written from scratch. They are extracted from a
+set of existing standalone simulation pages (welded fields, stigmergy
+swarms, topographical smoke rings, boid flocking, diffusion kernels) that
+each fused dynamics, observables, rendering, and page shell into one file.
+Across all of them there are roughly five primitives, which is the evidence
+they belong in a library. The recipe, per sim:
+
+1. **Freeze the original.** The standalone page is retained unmodified as a
+   reference, with a content hash. It is never edited again.
+2. **Extract the primitives.** The sim's dynamics and observables land in
+   the library as named objects with parameter tables. Nothing is copied
+   into a page; pages come later.
+3. **Compose the page.** The sim is re-expressed as a thin gallery page:
+   a figure spec plus calls into library primitives.
+4. **Prove equivalence headlessly.** The original's loop and the
+   library-composed version run on the same seed; the field and state
+   buffers must match bit for bit, or every residual must be explained to
+   zero. Only equivalence licenses the page.
+5. **Publish with provenance.** The page carries a pointer to the frozen
+   original's hash and a list of what changed (typically: composed on
+   library primitives, external dependencies vendored).
+
+Pilot: **welded fields**, chosen because it has the smallest parts list and
+contributes the most distinctive primitive, the **weld**: a first-class
+operator joining two field substrates along a shared boundary, so that
+sharing is a shared edge rather than a synced copy. Domain topology
+(closed, open, welded) becomes an explicit instrument choice on the field
+primitive, and a page can show the same field under each topology side by
+side. The physarum-family sims follow, since they share one deposit-decay
+field engine.
+
 ## v0.3 - the gallery
 
 The GitHub Pages site grows from a showcase into a hub.
