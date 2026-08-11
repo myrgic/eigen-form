@@ -1,11 +1,15 @@
 {
   "name": "eigen-form",
-  "version": "0.0.2",
-  "description": "Mathematical design library — parameterized eigenform rendering. v0.0.2: transparent, emergent-depth trefoil torus knots.",
+  "version": "0.1.0",
+  "description": "Mathematical design library — parameterized eigenform rendering. v0.1: the torus-knot engine split into dynamics/palette/backends/lifecycle seams, headless golden-op regression tests, versioned figure specs.",
   "main": "src/eigen-form.js",
   "files": ["src/", "README.md", "LICENSE"],
   "license": "MIT",
-  "homepage": "https://github.com/myrgic/sites/tree/main/packages/eigen-form",
+  "homepage": "https://github.com/myrgic/eigen-form",
   "keywords": ["eigenform", "torus-knot", "design-system", "myrgic", "scientific-visualization"],
-  "author": "Myrgic Labs"
+  "author": "Myrgic Labs",
+  "scripts": {
+    "golden": "node tools/golden.js",
+    "golden:check": "node tools/golden.js --check"
+  }
 }
