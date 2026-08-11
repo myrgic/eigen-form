@@ -233,6 +233,45 @@ the nesting is the architecture. That guard is a path check
 (`hub/sw.js` ignores any request whose path contains `/apps/`), so it
 holds regardless of which repository root the tree is served from.
 
+## Sandbox policy by kind
+
+The shell frames every app in a sandboxed iframe, but not with the same
+sandbox value: `hub/index.html` reads `app.kind` from the registry and
+picks between two tokens.
+
+- **frozen-golden**: `sandbox="allow-scripts"`. These pages are
+  preserved bytes from an original outside this repository; nothing
+  about them needs, or should get, access to the shell's own origin.
+- **sdk-page** (and, once one exists, **instrument-view**):
+  `sandbox="allow-scripts allow-same-origin"`. These pages are
+  first-party code that `import`s this repository's own `src/*.js`
+  module entry directly (see "Consuming the library" above). That
+  matters because of how `<script type="module">` loads: a module
+  fetch always runs through the CORS algorithm, comparing the
+  *document's* origin against the *resource's* origin. A sandboxed
+  iframe with only `allow-scripts` has a unique, opaque origin —
+  `null` — regardless of which host actually served it, so even a
+  module import of a file on the exact same host as the iframe's own
+  `src` is treated as cross-origin. A static file server that sends no
+  `Access-Control-Allow-Origin` header (this repo's dev server, and
+  GitHub Pages by default) then fails that CORS check. The failure is
+  silent to the page: the browser blocks the module load with a
+  console error in the shape of "Access to script at '.../src/
+  eigen-form.js' from origin 'null' has been blocked by CORS policy: no
+  'Access-Control-Allow-Origin' header is present on the requested
+  resource," the `<script type="module">` tag never runs, and the app
+  renders as a blank frame with no other symptom — this was a
+  pre-existing bug the uniform `allow-scripts`-only sandbox produced
+  for `apps/mark` the moment it was loaded through the shell rather
+  than opened directly. `allow-same-origin` gives the iframe back its
+  real origin (the page's own serving host), so the module fetch reads
+  as same-origin and loads normally. `allow-scripts` plus
+  `allow-same-origin` together is the standard, intentional relaxation
+  for first-party sandboxed content — it is not equivalent to dropping
+  the sandbox, since the frame still cannot navigate the top window,
+  spawn new windows without `allow-popups`, or submit forms without
+  `allow-forms`.
+
 ## Honesty rules
 
 - A figure rendered from data names its dataset by hash.

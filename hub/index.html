@@ -263,7 +263,15 @@
       : 'var(--bg)';
     const iframe = document.createElement('iframe');
     iframe.src = app.path;
-    iframe.sandbox = 'allow-scripts';
+    // Sandbox policy by kind (docs/lab-design.md, "Sandbox policy by
+    // kind"): a frozen-golden app is preserved third-party bytes and
+    // stays fully opaque-origin sandboxed. An sdk-page (and, when it
+    // exists, an instrument-view) is first-party code importing this
+    // repo's own src/*.js module entry — an opaque origin cannot
+    // satisfy a module script's CORS-mode fetch of a same-host file, so
+    // it needs allow-same-origin too, or its `<script type="module">`
+    // tags fail to load and the app renders blank inside the shell.
+    iframe.sandbox = app.kind === 'frozen-golden' ? 'allow-scripts' : 'allow-scripts allow-same-origin';
     iframe.title = app.title;
     frameWrap.appendChild(iframe);
   }
