@@ -109,6 +109,13 @@ import { renderPanel } from '../../src/panel/render.js';
 // (the library's own documented range per parameter); scale: 'log' on
 // period and decay because both span roughly two orders of magnitude,
 // where a linear slider wastes most of its travel on the low end.
+//
+// The hue group (v0.3, retooling the old named-preset `gradient` select
+// per docs/api.md "Gradients"): hueStart/hueEnd/sat/light/lightEnd are
+// five independent knobs rather than one enum, with DEFAULTS equal to
+// spectrum's own values (hueStart:0, hueEnd:360, sat:70, light:60,
+// lightEnd:60) — the band is spectrum unless a viewer clamps it away
+// from that, never a menu of named brand presets.
 const schema = {
   p:           { type: 'number', min: 1,      max: 7,      step: 1,   default: 2,    group: 'eigenmode',  label: 'p (angular)' },
   q:           { type: 'number', min: 1,      max: 7,      step: 1,   default: 3,    group: 'eigenmode',  label: 'q (radial)' },
@@ -119,23 +126,48 @@ const schema = {
   decay:       { type: 'number', min: 500,    max: 60000,  step: 100, unit: 'ms',    default: 6000, group: 'path',       label: 'memory', scale: 'log' },
   precession:  { type: 'number', min: -100000, max: 100000, step: 500, unit: 'ms',   default: 0,    group: 'precession', label: 'period' },
   parallax:    { type: 'number', min: -2,     max: 4,      step: 0.1, default: 0,    group: 'hue parallax', label: 'detune' },
-  gradient:    { type: 'select', options: ['spectrum', 'cogos', 'mod3', 'research', 'constellation', 'duotone', 'mono', 'madder'],
-                 default: 'spectrum', group: 'hue', label: 'gradient' }
+  hueStart:    { type: 'angle',  min: 0,      max: 360,    step: 1,   unit: 'deg',   default: 0,    group: 'hue', label: 'hue start' },
+  hueEnd:      { type: 'angle',  min: 0,      max: 360,    step: 1,   unit: 'deg',   default: 360,  group: 'hue', label: 'hue end' },
+  sat:         { type: 'number', min: 0,      max: 100,    step: 1,   unit: '%',     default: 70,   group: 'hue', label: 'saturation' },
+  light:       { type: 'number', min: 0,      max: 100,    step: 1,   unit: '%',     default: 60,   group: 'hue', label: 'light' },
+  lightEnd:    { type: 'number', min: 0,      max: 100,    step: 1,   unit: '%',     default: 60,   group: 'hue', label: 'light end' }
 };
 
 const store = defineParams(schema);
 
+// store.values() keys line up 1:1 with createTrefoilMark's opts for
+// every param except the hue group, which the controller expects
+// folded into a single `gradient` object (src/eigen-form.js,
+// resolveGradient) — bandFromStore() does that folding both at
+// construction and on every knob change below.
+const HUE_KEYS = ['hueStart', 'hueEnd', 'sat', 'light', 'lightEnd'];
+function bandFromStore() {
+  return {
+    hueStart: store.get('hueStart'),
+    hueEnd:   store.get('hueEnd'),
+    sat:      store.get('sat'),
+    light:    store.get('light'),
+    lightEnd: store.get('lightEnd')
+  };
+}
+function optsFromStore(overrides) {
+  const values = store.values();
+  const rest = { ...values };
+  for (const k of HUE_KEYS) delete rest[k];
+  return { ...rest, gradient: bandFromStore(), ...overrides };
+}
+
 const canvas = document.getElementById('mark');
-// store.values() keys line up 1:1 with createTrefoilMark's opts (p, q,
-// scale, period, ballRadius, strokeWidth, decay, precession, parallax,
-// gradient) — the schema was declared to match the controller's own
-// parameter names, so no translation layer sits between the two.
-let mark = createTrefoilMark(canvas, { emergence: false, ...store.values() });
+let mark = createTrefoilMark(canvas, optsFromStore({ emergence: false }));
 
 // The whole wiring the design doc promises: every store change reaches
-// the controller through one subscription, no per-slider handlers.
+// the controller through one subscription, no per-slider handlers. A
+// hue-group key folds through bandFromStore() into one `gradient` set;
+// every other key maps straight through to setParam.
 store.subscribe((key, value) => {
-  if (mark && mark.setParam) mark.setParam(key, value);
+  if (!mark || !mark.setParam) return;
+  if (HUE_KEYS.includes(key)) mark.setParam('gradient', bandFromStore());
+  else mark.setParam(key, value);
 });
 
 function rebuild(opts) {
@@ -161,7 +193,7 @@ replayBtn.type = 'button';
 replayBtn.className = 'ef-action';
 replayBtn.textContent = '↻ replay emergence';
 replayBtn.addEventListener('click', () => {
-  rebuild({ ...store.values(), emergence: true });
+  rebuild(optsFromStore({ emergence: true }));
 });
 panelEl.appendChild(hr);
 panelEl.appendChild(replayBtn);
