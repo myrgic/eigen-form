@@ -1,4 +1,5 @@
-/* hub/tokens.css: the lab's visual-language tokens.
+/* src/panel/tokens.css: the lab's visual-language tokens — the canonical
+ * copy, now living in the SDK rather than the hub shell.
  *
  * Codified, not invented: these custom properties are mined directly from
  * apps/welded_fields/index.html's :root block, the de facto token source
@@ -9,9 +10,15 @@
  * design rationale (dark ground, single accent, monospace readouts,
  * grouped small-caps headers) this file codifies.
  *
- * Consumed by hub/index.html today. An app is free to link this file too,
- * but nothing requires it: frozen-golden apps are preserved bytes and stay
- * exempt by definition (docs/params-panel-design.md, "Shell integration").
+ * Moved here from hub/tokens.css (v0.2): the token file belongs beside
+ * the panel module it themes (src/panel/panel.css, src/panel/render.js),
+ * not the shell, per the design doc's own module principle — a display
+ * module never carries its own position, and theme is entirely
+ * custom-property flow-through, so the tokens live with the SDK the
+ * theme flows from. hub/index.html links this file at its new path; an
+ * sdk-page app is free to link it too, but nothing requires it:
+ * frozen-golden apps are preserved bytes and stay exempt by definition
+ * (docs/params-panel-design.md, "Shell integration").
  */
 
 :root {

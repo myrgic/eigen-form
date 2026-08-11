@@ -1,0 +1,165 @@
+/* src/panel/panel.css — the generated control surface's structural
+   stylesheet, scoped under .ef-panel.
+
+   docs/params-panel-design.md's module principle for a display module:
+   it takes a CONTAINER, never a position, and theme is entirely
+   custom-property flow-through. This file honors both halves of that
+   rule:
+
+   - Every color, font, and spacing value here is var(--...), reaching
+     into src/panel/tokens.css (or whatever token set the page that
+     imports this file has declared under the same names) — nothing is
+     hardcoded, so a page that wants a different accent recolors the
+     panel by overriding custom properties, never by overriding rules
+     in this file.
+   - Layout fills the .ef-panel container it's given: 100% width/height,
+     no fixed widths, no position/top/left/z-index anywhere below. Where
+     the panel sits on the page — sidebar, sticky column, sheet — is the
+     consuming page's layout decision, made around the container this
+     stylesheet is scoped to, not this file's.
+
+   src/panel/render.js is the only file that ever creates the elements
+   these rules style; this file never reaches past the .ef-panel root.
+*/
+
+.ef-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: var(--space-4);
+  background: var(--panel);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+.ef-panel *,
+.ef-panel *::before,
+.ef-panel *::after {
+  box-sizing: border-box;
+}
+
+/* Group: reuses the .grp/.hd primitives tokens.css already defines
+   (mined from welded_fields), scoped here so a panel group doesn't rely
+   on the host page having linked tokens.css's bare .grp/.hd selectors
+   itself — .ef-panel .grp inherits everything tokens.css's own .grp
+   rule sets, this just gives the panel's own layout hooks. */
+.ef-panel .grp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ef-panel .ef-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ef-panel .ef-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.ef-panel .ef-label {
+  font: 11px var(--sans);
+  color: var(--dim);
+}
+
+.ef-panel .ef-readout {
+  font: 11.5px var(--mono);
+  color: var(--fg);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Slider (number / angle knobs) */
+.ef-panel input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--line);
+  border-radius: var(--radius-1);
+  outline: none;
+  cursor: pointer;
+  margin: 0;
+}
+.ef-panel input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--panel);
+  cursor: pointer;
+}
+.ef-panel input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--panel);
+  cursor: pointer;
+}
+
+/* Boolean knob */
+.ef-panel .ef-checkbox-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.ef-panel input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Select knob */
+.ef-panel select {
+  width: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2);
+  padding: var(--space-1) var(--space-2);
+  font: 11.5px var(--mono);
+  cursor: pointer;
+}
+.ef-panel select:hover {
+  border-color: var(--faint);
+}
+
+/* Locked (prereg): display-only, no input element — the design doc's
+   rule that the panel will not render a writable control for a
+   declared value. */
+.ef-panel .ef-locked {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font: 11.5px var(--mono);
+}
+.ef-panel .ef-locked .ef-lock-value {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+.ef-panel .ef-lock-glyph {
+  color: var(--faint);
+  font-size: 10px;
+  letter-spacing: normal;
+}
+
+/* Gauges: same visual family as knobs, read-only. */
+.ef-panel .ef-gauge .ef-readout {
+  color: var(--accent);
+}

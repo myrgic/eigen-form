@@ -52,9 +52,13 @@ grouped sections with small-caps headers. Color rule inherited from the
 roadmap: hue is data or brand, never both in one figure; panel chrome is
 brand, plotted color is data.
 
-`hub/tokens.css` is the canonical token file: the palette, spacing, and
-`.grp`/`.hd`/`.read` primitives described above, codified from
-`apps/welded_fields/index.html`'s `:root` block and consumed by the shell.
+`src/panel/tokens.css` is the canonical token file: the palette, spacing,
+and `.grp`/`.hd`/`.read` primitives described above, codified from
+`apps/welded_fields/index.html`'s `:root` block. It lives in the SDK
+rather than the hub shell — `hub/index.html` links it at `../src/panel/
+tokens.css` — so an app that renders its own panel via
+`src/panel/render.js` gets the same theme by construction, with no
+shell-relative path to reach across.
 
 ## Shell integration: the first envelope
 
