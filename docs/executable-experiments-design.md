@@ -176,3 +176,23 @@ against their code. What their structure confirms, and what it warns:
   it does not run. And both shaders accreted several overlapping
   no-lock mechanisms over the years; this design keeps exactly one
   mechanism per intent, on purpose.
+
+## Export targets beyond the browser
+
+An exported unit's spec is engine-agnostic by construction (kernel
+identity, typed parameters, declared topology), which opens translation
+targets where the browser SDK never runs. The first named one: a Unity
+shader for VRChat. The mapping is mechanical at every layer — the field
+pass is a CustomRenderTexture whose fragment shader reads its own
+previous state; the declared topology becomes the sampler's wrap mode
+(Repeat is the torus, Clamp the bounded plane, Mirror the reflecting
+boundary); agents follow the established state-texture pattern (one
+texel per agent, gather-update, then a point-render pass scatters
+deposits into the field); the defineParams schema emits the ShaderLab
+Properties block, and a locked spec emits a material. One declaration
+is honest and mandatory: such an export is an artistic projection, not
+an instrument. It carries the spec hash of the experiment it projects,
+but variable framerate and GPU arithmetic put it outside the
+verification stamp, in the twin pattern's terms: a projection with its
+tolerance loosened to taste. The science stays in the lab; the effect
+ships.
