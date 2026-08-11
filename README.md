@@ -2,7 +2,7 @@
 
 A mathematical design library for parameterized eigenform rendering. eigen-form produces scientifically accurate geometric figures from mathematical primitives — the same equations used in topology and physics research, rendered directly to canvas as brand-quality visual artifacts. It is designed to be equally ergonomic for AI agents and human developers: the data-attribute API auto-initializes with no code; the imperative API exposes every parameter for programmatic control.
 
-> **v0.1**: torus-knot family, now split along its dynamics/palette/backends/lifecycle seams with headless golden-op regression tests. Broader primitive families v0.2+, see `ROADMAP.md`.
+> **v0.2**: declared parameter schemas (`src/params/define.js`) and a generated control-surface panel (`src/panel/render.js`), themed by a canonical token file every SDK-consuming page shares. **v0.1**: torus-knot family, split along its dynamics/palette/backends/lifecycle seams with headless golden-op regression tests. See `ROADMAP.md`.
 
 Canonical home: this repository (`myrgic/eigen-form`), extracted from
 `myrgic/sites` `packages/eigen-form/` on 2026-08-10. The sites checkout
@@ -66,10 +66,25 @@ identically (see Goldens, below):
   data-attribute auto-init, the animation loop, off-screen pausing, and
   the reduced-motion check.
 - `src/figure-spec.js`: a mark's full parameter state as a small
-  versioned document (`exportSpec()` / `fromSpec()`), new in v0.1.
+  versioned document (`exportSpec()` / `fromSpec()`), new in v0.1; v0.2
+  adds `withParamsStore()` / `paramsStoreOf()`, additive, so a spec can
+  also carry a `defineParams()` store's schema hash and values.
 - `src/eigen-form.js`: the thin assembly, composing the above into the
   same `createTrefoilMark` public API v0.0.2 shipped. The split changed
   nothing observable.
+- `src/params/define.js` (v0.2): `defineParams(schema)` — a simulation
+  declares its knobs as a typed schema (number/angle/boolean/select,
+  with `min`/`max`/`step`/`scale`/`prereg`), gets back a validated store
+  (`get`/`set`/`values`/`subscribe`/`serialize`/`hydrate`/`locked`) plus
+  the linear/log/log-complement slider-fraction mapping every renderer
+  shares. No DOM.
+- `src/panel/render.js` (v0.2): `renderPanel(store, container, opts)` —
+  the generated control surface. Renders a store's declared groups as
+  knobs by type, `opts.gauges` as read-only rows, and any `prereg`-
+  locked param as a display-only value with a lock glyph, never a
+  writable control. Themed entirely through `src/panel/tokens.css` +
+  `src/panel/panel.css` (scoped under `.ef-panel`), the canonical token
+  file the hub shell links too. See `docs/params-panel-design.md`.
 
 ## Goldens
 
@@ -131,6 +146,8 @@ eigen-form is the first library in a planned family of mathematical design primi
 - `docs/api.md` — data-attribute and imperative API reference
 - `docs/parameters.md` — full parameter family with ranges and visual descriptions
 - `docs/construction.md` — torus knot math, hue parallax, substrate residue, compositing
+- `docs/params-panel-design.md` — declared knobs, one control surface: `defineParams`, the three control classes (knobs/gauges/locks), the shell's typed envelope
+- `docs/lab-design.md` — the lab's declarative app contract: `app.json`, the `tools/lab_build.js` reconciler, sandbox policy by kind
 
 ## License
 

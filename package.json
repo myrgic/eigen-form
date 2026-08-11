@@ -1,7 +1,7 @@
 {
   "name": "eigen-form",
-  "version": "0.1.0",
-  "description": "Mathematical design library — parameterized eigenform rendering. v0.1: the torus-knot engine split into dynamics/palette/backends/lifecycle seams, headless golden-op regression tests, versioned figure specs.",
+  "version": "0.2.0",
+  "description": "Mathematical design library — parameterized eigenform rendering. v0.2: declared parameter schemas and a generated control-surface panel (src/params, src/panel), atop v0.1's torus-knot engine seams, headless golden-op regression tests, and versioned figure specs.",
   "main": "src/eigen-form.js",
   "files": ["src/", "README.md", "LICENSE"],
   "license": "MIT",
@@ -13,6 +13,7 @@
     "golden:check": "node tools/golden.js --check",
     "lab:build": "node tools/lab_build.js --write",
     "lab:check": "node tools/lab_build.js --check",
-    "check": "npm run golden:check && npm run lab:check"
+    "test": "node tests/params.js",
+    "check": "npm run test && npm run golden:check && npm run lab:check"
   }
 }

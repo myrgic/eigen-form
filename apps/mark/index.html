@@ -4,26 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Mark: eigen-form lab</title>
+<!-- The SDK's canonical tokens + panel stylesheet (docs/params-panel-design.md,
+     "One visual language" / "module principles"): this page no longer keeps
+     its own hand-derived palette. Theme flows in entirely through the custom
+     properties these two files declare; #panel below carries no rules of its
+     own beyond what a display module's *container* is allowed to own
+     (position, sizing bounds) — never color, font, or spacing. -->
+<link rel="stylesheet" href="../../src/panel/tokens.css">
+<link rel="stylesheet" href="../../src/panel/panel.css">
 <style>
-  /* Self-contained theme tokens. examples/configurator.html (the page this
-     one adapts) pulls these from ../../packages/brand-tokens, a path that
-     does not exist inside this repository. Inlined here rather than
-     carrying that 404 forward; values match the palette already in use
-     across hub/index.html and examples/basic.html. */
-  :root {
-    --bg: #0a0a0f;
-    --bg-card: #16161c;
-    --border: #26262e;
-    --fg: #fafafa;
-    --fg-2: #cfcfd8;
-    --fg-3: #9a9aa6;
-    --fg-4: #8a8a96;
-    --accent: #9ba8ff;
-    --r-1: 6px;
-    --r-3: 12px;
-    --dur-fast: 120ms;
-    --font-mono: 'JetBrains Mono', monospace;
-  }
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -34,7 +23,7 @@
     padding: 32px;
     background: var(--bg);
     color: var(--fg);
-    font-family: var(--font-mono);
+    font-family: var(--sans);
   }
   .stage-col {
     display: flex; flex-direction: column;
@@ -44,75 +33,47 @@
   .stage {
     width: min(70vmin, 600px);
     aspect-ratio: 1;
-    border: 1px solid var(--border);
-    border-radius: var(--r-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-3);
     overflow: hidden;
   }
   canvas { width: 100%; height: 100%; display: block; }
   .meta { text-align: center; }
   .meta .title { font-size: 20px; letter-spacing: 0.04em; }
-  .meta .tagline { margin-top: 6px; font-size: 12px; color: var(--fg-4); }
+  .meta .tagline { margin-top: 6px; font-size: 12px; color: var(--faint); }
 
-  .panel {
-    border: 1px solid var(--border);
-    border-radius: var(--r-3);
-    background: var(--bg-card);
-    padding: 18px;
-    font-size: 11px;
-    display: flex; flex-direction: column;
-    gap: 14px;
-    height: fit-content;
-    position: sticky; top: 24px;
+  /* #panel is the container renderPanel(store, container) is given —
+     this is the whole of what the page is allowed to own about it:
+     where it sits (sticky column) and how tall it may grow. Color,
+     padding, layout-of-contents all belong to .ef-panel in panel.css,
+     applied to this same element by renderPanel itself. */
+  #panel {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-3);
+    position: sticky;
+    top: 24px;
+    max-height: calc(100vh - 48px);
   }
-  .panel h4 {
-    font-size: 10px;
-    color: var(--fg-4);
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    font-weight: 500;
-    margin: 0 0 8px;
-  }
-  .row {
-    display: grid;
-    grid-template-columns: 110px 1fr 48px;
-    gap: 8px; align-items: center;
-  }
-  .row .lbl { color: var(--fg-4); }
-  .row .val { color: var(--fg-2); text-align: right; font-variant-numeric: tabular-nums; }
-  input[type=range] {
-    -webkit-appearance: none;
-    height: 4px; background: var(--border);
-    border-radius: 2px; outline: none; cursor: pointer;
-  }
-  input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 12px; height: 12px;
-    background: var(--accent);
-    border-radius: 50%; border: 2px solid var(--bg);
-    cursor: pointer;
-  }
-  .btn-row { display: flex; flex-wrap: wrap; gap: 4px; }
-  button {
+
+  /* The one control below the generated panel that isn't a declared
+     parameter: emergence only plays out at construction time (there's
+     no live setParam for it), so it stays a page-level action rather
+     than a schema knob. Styled to match the panel's own control family
+     off the same tokens. */
+  #panel hr.ef-div { border: 0; border-top: 1px solid var(--line); margin: var(--space-2) 0; }
+  #panel button.ef-action {
+    width: 100%;
     background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--r-1);
-    padding: 4px 9px;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--fg-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-1);
+    padding: var(--space-2) var(--space-3);
+    font: 10.5px var(--mono);
+    color: var(--dim);
     cursor: pointer;
     letter-spacing: 0.04em;
-    transition: border-color var(--dur-fast), color var(--dur-fast);
+    transition: border-color 120ms, color 120ms;
   }
-  button:hover { color: var(--fg); border-color: var(--accent); }
-  button.active { border-color: var(--accent); color: var(--fg); }
-  hr.div { border: 0; border-top: 1px solid var(--border); margin: 0; }
-  .swatch-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-  .swatch-row button {
-    height: 28px; padding: 0;
-    border-radius: var(--r-1);
-    color: transparent;
-  }
+  #panel button.ef-action:hover { color: var(--fg); border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -124,330 +85,86 @@
     </div>
   </div>
 
-  <!-- Hand-bound panel: interim. Once defineParams (docs/params-panel-design.md)
-       lands, this page's sliders become a generated control surface driven by
-       a declared params schema instead of the manual bindRange wiring below. -->
-  <div class="panel">
-    <div>
-      <h4>Eigenmode</h4>
-      <div class="btn-row">
-        <button class="mode" data-pq="1,1">(1,1)</button>
-        <button class="mode active" data-pq="2,3">(2,3)</button>
-        <button class="mode" data-pq="2,5">(2,5)</button>
-        <button class="mode" data-pq="3,4">(3,4)</button>
-        <button class="mode" data-pq="3,5">(3,5)</button>
-      </div>
-    </div>
+  <!-- Generated control surface: docs/params-panel-design.md. This div is
+       the whole of the panel's markup now — renderPanel(store, this)
+       builds every group/knob into it from the schema declared below;
+       nothing here is hand-bound. -->
+  <div class="panel" id="panel"></div>
 
-    <hr class="div">
-
-    <div>
-      <h4>Orbit</h4>
-      <div class="row">
-        <span class="lbl">period</span>
-        <input type="range" id="period" min="1000" max="10000" step="100" value="3000">
-        <span class="val" id="v-period">3.0s</span>
-      </div>
-      <div class="row">
-        <span class="lbl">scale</span>
-        <input type="range" id="scale" min="100" max="225" step="1" value="215">
-        <span class="val" id="v-scale">215</span>
-      </div>
-    </div>
-
-    <div>
-      <h4>Path</h4>
-      <div class="row">
-        <span class="lbl">thickness</span>
-        <input type="range" id="stroke" min="2" max="60" step="1" value="36">
-        <span class="val" id="v-stroke">36</span>
-      </div>
-      <div class="row">
-        <span class="lbl">memory</span>
-        <input type="range" id="decay" min="500" max="20000" step="100" value="6000">
-        <span class="val" id="v-decay">6.0s</span>
-      </div>
-    </div>
-
-    <div>
-      <h4>Precession</h4>
-      <div class="row">
-        <span class="lbl">period</span>
-        <input type="range" id="precession" min="-60000" max="60000" step="500" value="0">
-        <span class="val" id="v-precession">off</span>
-      </div>
-      <div class="btn-row">
-        <button id="prec-off" class="active">off</button>
-        <button id="prec-pro">prograde 30s</button>
-        <button id="prec-retro">retro 30s</button>
-      </div>
-    </div>
-
-    <div>
-      <h4>Hue parallax</h4>
-      <div class="row">
-        <span class="lbl">detune</span>
-        <input type="range" id="parallax" min="-2" max="4" step="0.1" value="0">
-        <span class="val" id="v-parallax">0</span>
-      </div>
-    </div>
-
-    <hr class="div">
-
-    <div>
-      <h4>Substrate</h4>
-      <div class="swatch-row" id="bg-swatches"></div>
-      <div class="row" style="margin-top:8px">
-        <span class="lbl">custom</span>
-        <input type="color" id="bg-custom" value="#0a0a0f" style="width:100%;height:24px;background:transparent;border:1px solid var(--border);border-radius:var(--r-1);padding:0;cursor:pointer">
-        <span class="val" id="v-bg">#0a0a0f</span>
-      </div>
-    </div>
-
-    <hr class="div">
-
-    <div>
-      <h4>Hue</h4>
-      <div class="btn-row" id="grad-presets">
-        <button class="grad active" data-g="spectrum">spectrum</button>
-        <button class="grad" data-g="cogos">cogos</button>
-        <button class="grad" data-g="mod3">mod3</button>
-        <button class="grad" data-g="research">research</button>
-        <button class="grad" data-g="constellation">constellation</button>
-        <button class="grad" data-g="duotone">duotone</button>
-        <button class="grad" data-g="mono">mono</button>
-      </div>
-
-      <div id="grad-strip" style="height:24px;margin-top:10px;border:1px solid var(--border);border-radius:var(--r-1);background:linear-gradient(to right, hsl(0 70% 60%), hsl(360 70% 60%))"></div>
-
-      <div class="row" style="margin-top:10px">
-        <span class="lbl">start °</span>
-        <input type="range" id="hue-start" min="0" max="360" step="1" value="0">
-        <span class="val" id="v-hue-start">0°</span>
-      </div>
-      <div class="row">
-        <span class="lbl">end °</span>
-        <input type="range" id="hue-end" min="0" max="720" step="1" value="360">
-        <span class="val" id="v-hue-end">360°</span>
-      </div>
-      <div class="row">
-        <span class="lbl">saturation</span>
-        <input type="range" id="hue-sat" min="0" max="100" step="1" value="70">
-        <span class="val" id="v-hue-sat">70</span>
-      </div>
-      <div class="row">
-        <span class="lbl">light</span>
-        <input type="range" id="hue-light" min="20" max="90" step="1" value="60">
-        <span class="val" id="v-hue-light">60</span>
-      </div>
-      <div class="row">
-        <span class="lbl">light end</span>
-        <input type="range" id="hue-light-end" min="20" max="100" step="1" value="60">
-        <span class="val" id="v-hue-light-end">60</span>
-      </div>
-    </div>
-
-    <hr class="div">
-    <button id="replay">↻ replay emergence</button>
-  </div>
-
-<script type="module" src="../../src/eigen-form.js"></script>
 <script type="module">
 // This page imports the library directly (docs/lab-design.md, "Consuming
 // the library") and calls createTrefoilMark imperatively to hold the
-// returned controller, so the panel below can drive it via setParam. The
-// canvas intentionally does NOT carry data-myrgic-mark: the library's own
-// mount.autoInit() scans for that attribute on module load and would
-// construct a second, uncontrolled mark instance on the same canvas
-// alongside this one. One explicit instance, one controller, matching the
-// pattern examples/configurator.html already established.
+// returned controller, so the generated panel below can drive it via
+// store.subscribe -> controller.setParam. The canvas intentionally does
+// NOT carry data-myrgic-mark: the library's own mount.autoInit() scans
+// for that attribute on module load and would construct a second,
+// uncontrolled mark instance on the same canvas alongside this one.
+import { createTrefoilMark } from '../../src/eigen-form.js';
+import { defineParams } from '../../src/params/define.js';
+import { renderPanel } from '../../src/panel/render.js';
+
+// The mark's declared parameter schema (docs/params-panel-design.md,
+// "defineParams"). Ranges mined from examples/configurator.html (the
+// hand-tuned UI bounds this page used to hard-code) and docs/parameters.md
+// (the library's own documented range per parameter); scale: 'log' on
+// period and decay because both span roughly two orders of magnitude,
+// where a linear slider wastes most of its travel on the low end.
+const schema = {
+  p:           { type: 'number', min: 1,      max: 7,      step: 1,   default: 2,    group: 'eigenmode',  label: 'p (angular)' },
+  q:           { type: 'number', min: 1,      max: 7,      step: 1,   default: 3,    group: 'eigenmode',  label: 'q (radial)' },
+  scale:       { type: 'number', min: 100,    max: 350,    step: 1,   unit: 'px',    default: 215,  group: 'orbit',      label: 'scale' },
+  period:      { type: 'number', min: 500,    max: 30000,  step: 100, unit: 'ms',    default: 3000, group: 'orbit',      label: 'period', scale: 'log' },
+  ballRadius:  { type: 'number', min: 2,      max: 60,     step: 1,   unit: 'px',    default: 18,   group: 'path',       label: 'ball radius' },
+  strokeWidth: { type: 'number', min: 1,      max: 100,    step: 1,   unit: 'px',    default: 36,   group: 'path',       label: 'thickness' },
+  decay:       { type: 'number', min: 500,    max: 60000,  step: 100, unit: 'ms',    default: 6000, group: 'path',       label: 'memory', scale: 'log' },
+  precession:  { type: 'number', min: -100000, max: 100000, step: 500, unit: 'ms',   default: 0,    group: 'precession', label: 'period' },
+  parallax:    { type: 'number', min: -2,     max: 4,      step: 0.1, default: 0,    group: 'hue parallax', label: 'detune' },
+  gradient:    { type: 'select', options: ['spectrum', 'cogos', 'mod3', 'research', 'constellation', 'duotone', 'mono', 'madder'],
+                 default: 'spectrum', group: 'hue', label: 'gradient' }
+};
+
+const store = defineParams(schema);
+
 const canvas = document.getElementById('mark');
-let mark = window.createTrefoilMark(canvas, {
-  emergence: false,
-  scale: 215,
-  ballRadius: 18,
-  strokeWidth: 36
+// store.values() keys line up 1:1 with createTrefoilMark's opts (p, q,
+// scale, period, ballRadius, strokeWidth, decay, precession, parallax,
+// gradient) — the schema was declared to match the controller's own
+// parameter names, so no translation layer sits between the two.
+let mark = createTrefoilMark(canvas, { emergence: false, ...store.values() });
+
+// The whole wiring the design doc promises: every store change reaches
+// the controller through one subscription, no per-slider handlers.
+store.subscribe((key, value) => {
+  if (mark && mark.setParam) mark.setParam(key, value);
 });
 
 function rebuild(opts) {
-  // Stop existing & recreate to apply emergence reset cleanly
+  // Stop existing & recreate to apply emergence reset cleanly.
   if (mark && mark.stop) mark.stop();
   const ctx = canvas.getContext('2d');
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  mark = window.createTrefoilMark(canvas, opts);
+  mark = createTrefoilMark(canvas, opts);
 }
 
-const state = {
-  emergence: false,
-  p: 2, q: 3,
-  period: 3000,
-  scale: 215,
-  ballRadius: 18,
-  strokeWidth: 36,
-  decay: 6000,
-  precession: 0,
-  parallax: 0,
-  gradient: 'spectrum'
-};
+const panelEl = document.getElementById('panel');
+renderPanel(store, panelEl);
 
-function applyLive(k, v) {
-  state[k] = v;
-  if (mark && mark.setParam) mark.setParam(k, v);
-}
-
-function bindRange(id, key, format) {
-  const el = document.getElementById(id);
-  const out = document.getElementById('v-' + id);
-  el.addEventListener('input', e => {
-    const v = parseFloat(e.target.value);
-    out.textContent = format(v);
-    applyLive(key, v);
-  });
-  out.textContent = format(parseFloat(el.value));
-}
-bindRange('period',     'period',      v => (v/1000).toFixed(1) + 's');
-bindRange('scale',      'scale',       v => v.toFixed(0));
-bindRange('stroke',     'strokeWidth', v => v.toFixed(0));
-bindRange('decay',      'decay',       v => (v/1000).toFixed(1) + 's');
-bindRange('parallax',   'parallax',    v => v.toFixed(2));
-
-// Precession with sign-aware label
-const precEl = document.getElementById('precession');
-const precOut = document.getElementById('v-precession');
-function precLabel(v) {
-  if (v === 0) return 'off';
-  const dir = v > 0 ? '+' : '−';
-  return dir + (Math.abs(v)/1000).toFixed(1) + 's';
-}
-precEl.addEventListener('input', e => {
-  const v = parseFloat(e.target.value);
-  precOut.textContent = precLabel(v);
-  applyLive('precession', v);
+// Replay: full rebuild with emergence, from the store's current values.
+// Not a schema knob (emergence only applies at construction, there's no
+// live setParam for it), so it's appended after the generated groups
+// rather than declared in the schema.
+const hr = document.createElement('hr');
+hr.className = 'ef-div';
+const replayBtn = document.createElement('button');
+replayBtn.type = 'button';
+replayBtn.className = 'ef-action';
+replayBtn.textContent = '↻ replay emergence';
+replayBtn.addEventListener('click', () => {
+  rebuild({ ...store.values(), emergence: true });
 });
-document.getElementById('prec-off').addEventListener('click', () => {
-  precEl.value = 0; precOut.textContent = 'off'; applyLive('precession', 0);
-});
-document.getElementById('prec-pro').addEventListener('click', () => {
-  precEl.value = 30000; precOut.textContent = '+30.0s'; applyLive('precession', 30000);
-});
-document.getElementById('prec-retro').addEventListener('click', () => {
-  precEl.value = -30000; precOut.textContent = '−30.0s'; applyLive('precession', -30000);
-});
-
-// Eigenmode buttons
-document.querySelectorAll('.mode').forEach(b => {
-  b.addEventListener('click', () => {
-    document.querySelectorAll('.mode').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    const [p, q] = b.dataset.pq.split(',').map(Number);
-    applyLive('p', p); applyLive('q', q);
-  });
-});
-
-// Gradient presets, also drive the custom editor
-const PRESETS = {
-  spectrum:      { hueStart: 0,   hueEnd: 360, sat: 70, light: 60, lightEnd: 60 },
-  cogos:         { hueStart: 240, hueEnd: 285, sat: 70, light: 62, lightEnd: 62 },
-  mod3:          { hueStart: 165, hueEnd: 210, sat: 65, light: 60, lightEnd: 60 },
-  research:      { hueStart: 28,  hueEnd: 58,  sat: 72, light: 62, lightEnd: 62 },
-  constellation: { hueStart: 305, hueEnd: 340, sat: 68, light: 62, lightEnd: 62 },
-  duotone:       { hueStart: 260, hueEnd: 190, sat: 70, light: 60, lightEnd: 60 },
-  mono:          { hueStart: 260, hueEnd: 260, sat: 60, light: 60, lightEnd: 95 }
-};
-
-const hueStartEl = document.getElementById('hue-start');
-const hueEndEl   = document.getElementById('hue-end');
-const hueSatEl   = document.getElementById('hue-sat');
-const hueLightEl = document.getElementById('hue-light');
-const hueLightEndEl = document.getElementById('hue-light-end');
-const stripEl    = document.getElementById('grad-strip');
-
-function readHueState() {
-  return {
-    hueStart: +hueStartEl.value,
-    hueEnd:   +hueEndEl.value,
-    sat:      +hueSatEl.value,
-    light:    +hueLightEl.value,
-    lightEnd: +hueLightEndEl.value
-  };
-}
-
-function updateStrip() {
-  const g = readHueState();
-  const span = g.hueEnd - g.hueStart;
-  const stops = [];
-  const N = 24;
-  for (let i = 0; i <= N; i++) {
-    const t = i / N;
-    let hueT;
-    if (Math.abs(span) >= 360) hueT = t;
-    else hueT = t < 0.5 ? t * 2 : (1 - t) * 2;
-    const hue = (g.hueStart + span * hueT + 720) % 360;
-    const light = g.light + (g.lightEnd - g.light) * hueT;
-    stops.push(`hsl(${hue.toFixed(1)} ${g.sat}% ${light}%) ${(t*100).toFixed(0)}%`);
-  }
-  stripEl.style.background = `linear-gradient(to right, ${stops.join(', ')})`;
-}
-
-function applyGradientFromUI() {
-  const g = readHueState();
-  applyLive('gradient', g);
-  updateStrip();
-  document.getElementById('v-hue-start').textContent = g.hueStart + '°';
-  document.getElementById('v-hue-end').textContent   = g.hueEnd + '°';
-  document.getElementById('v-hue-sat').textContent   = g.sat;
-  document.getElementById('v-hue-light').textContent = g.light;
-  document.getElementById('v-hue-light-end').textContent = g.lightEnd;
-}
-
-[hueStartEl, hueEndEl, hueSatEl, hueLightEl, hueLightEndEl].forEach(el => {
-  el.addEventListener('input', () => {
-    document.querySelectorAll('.grad').forEach(x => x.classList.remove('active'));
-    applyGradientFromUI();
-  });
-});
-
-document.querySelectorAll('.grad').forEach(b => {
-  b.addEventListener('click', () => {
-    document.querySelectorAll('.grad').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    const p = PRESETS[b.dataset.g];
-    hueStartEl.value = p.hueStart;
-    hueEndEl.value   = p.hueEnd;
-    hueSatEl.value   = p.sat;
-    hueLightEl.value = p.light;
-    hueLightEndEl.value = p.lightEnd;
-    applyGradientFromUI();
-  });
-});
-updateStrip();
-
-// Substrate swatches + custom picker
-const BG_PRESETS = ['#0a0a0f', '#000000', '#13131a', '#1a1a22', '#2a2533', '#f6f4ef', '#ffffff'];
-const bgWrap = document.getElementById('bg-swatches');
-BG_PRESETS.forEach(hex => {
-  const b = document.createElement('button');
-  b.style.background = hex;
-  b.style.border = '1px solid var(--border)';
-  b.dataset.bg = hex;
-  b.addEventListener('click', () => {
-    applyLive('bg', hex);
-    document.getElementById('bg-custom').value = hex;
-    document.getElementById('v-bg').textContent = hex;
-  });
-  bgWrap.appendChild(b);
-});
-document.getElementById('bg-custom').addEventListener('input', e => {
-  const v = e.target.value;
-  applyLive('bg', v);
-  document.getElementById('v-bg').textContent = v;
-});
-
-// Replay: full rebuild with emergence
-document.getElementById('replay').addEventListener('click', () => {
-  rebuild({ ...state, emergence: true });
-});
+panelEl.appendChild(hr);
+panelEl.appendChild(replayBtn);
 </script>
 </body>
 </html>
