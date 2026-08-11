@@ -63,7 +63,7 @@ All parameters are read/write via `controller.params` and updatable at runtime v
 ### `gradient` — color treatment
 - **Type:** string name or object
 - **Default:** `"spectrum"`
-- **Visual:** controls how hue cycles across the trail. Named presets map to hue spans (see `api.md` for the full table). Custom objects: `{ hueStart, hueEnd, sat, light, lightEnd }`.
+- **Visual:** controls how hue cycles across the trail. The band is a fully configurable set of panel parameters — `hueStart` (0..360), `hueEnd` (0..360), `sat`, `light`, `lightEnd` — declared via `defineParams` in `src/params/define.js`-based pages (see `apps/mark`'s schema). `"spectrum"` (`hueStart:0, hueEnd:360, sat:70, light:60`) is the sole surviving named preset and is the default unless the values have been dialed away from it; see `api.md` for the full field reference. A figure spec (`exportSpec()`) captures the band's current values the same way it captures every other tunable — a locked or exported spec carries whatever the band was dialed to, clamped by construction, with nothing special-cased.
 
 ### `parallax` — hue-parallax strength
 - **Type:** number (0..1)

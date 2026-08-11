@@ -57,17 +57,22 @@ All other keys map directly to `params.*`.
 
 ## Gradients
 
-Named gradients available via `data-gradient` or `opts.gradient`:
+The color band is a fully configurable set of panel parameters, not a
+menu of named presets: `hueStart`, `hueEnd` (degrees, 0..360), `sat`
+(%), `light` (%), and `lightEnd` (%, at `hueEnd`, defaults to `light`).
+`data-gradient` / `opts.gradient` accepts either a custom object with
+those fields, or the one surviving named preset:
 
 | Name | Hue range | Notes |
 |---|---|---|
-| `spectrum` | 0..360° | Default. Full rainbow, locked to closure period. |
-| `cogos` | 240..285° | Violet/indigo — CogOS sub-brand. |
-| `mod3` | 165..210° | Cyan/teal — mod3 voice sub-brand. |
-| `research` | 28..58° | Amber/gold — research sub-brand. |
-| `constellation` | 305..340° | Magenta — constellation trust sub-brand. |
-| `duotone` | 260..190° | Violet → cyan two-tone. |
-| `mono` | 260°, lightEnd 95% | Accent → white luminance ramp. |
+| `spectrum` | 0..360° | Default. Full rainbow, locked to closure period. Also the values a fully-open band settles to (`hueStart:0, hueEnd:360, sat:70, light:60`). |
+
+The org sub-brand rows (`cogos`, `mod3`, `research`, `constellation`)
+and the ad hoc `duotone`/`mono`/`madder` variants that used to live
+here as named presets are retired (v0.3) — every look they produced is
+reachable by dialing the same knobs directly (e.g. `hueStart: 240,
+hueEnd: 285` for the old `cogos` band, or `hueStart: hueEnd` for a
+monochrome ramp).
 
 Custom gradient objects:
 ```js
@@ -77,6 +82,11 @@ createTrefoilMark(el, {
 ```
 
 Fields: `hueStart`, `hueEnd` (degrees), `sat` (%, default 70), `light` (%, default 60), `lightEnd` (% at hueEnd, defaults to `light`).
+
+A locked or exported figure spec (`exportSpec()`, see `docs/parameters.md`
+and `src/figure-spec.js`) carries whatever band values were in effect
+at export time directly — clamped band values travel with the spec by
+construction, the same as every other tunable, with no special-casing.
 
 ## Window globals
 

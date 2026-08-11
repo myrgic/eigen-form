@@ -1,21 +1,23 @@
 /* =====================================================================
-   src/palette/gradients.js — named gradient bands, hue/lightness
-   sampling along the closure cycle, and the small color-string parser
-   the engine uses for its optional reference-color parameter.
+   src/palette/gradients.js — the canonical spectrum gradient band,
+   hue/lightness sampling along the closure cycle, and the small
+   color-string parser the engine uses for its optional reference-color
+   parameter.
+
+   v0.3: the color band is a fully configurable panel parameter
+   (hueStart, hueEnd, sat, light, lightEnd — see apps/mark's schema and
+   docs/api.md), not a menu of named presets. The org-named sub-brand
+   rows (cogos/mod3/research/constellation) and the ad hoc duotone/
+   mono/madder variants that used to live here are retired: every look
+   they produced is reachable by dialing the same four-to-five knobs
+   directly, and a locked or exported figure spec now carries whatever
+   values were dialed in, clamped by construction — no special-casing
+   for "was this a named preset" needed anywhere downstream.
+   `spectrum` remains the one named preset and the default.
    ===================================================================== */
 
 export const GRADIENTS = {
-  spectrum:      { hueStart:   0, hueEnd: 360, sat: 70, light: 60 },
-  cogos:         { hueStart: 240, hueEnd: 285, sat: 70, light: 62 },
-  mod3:          { hueStart: 165, hueEnd: 210, sat: 65, light: 60 },
-  research:      { hueStart:  28, hueEnd:  58, sat: 72, light: 62 },
-  constellation: { hueStart: 305, hueEnd: 340, sat: 68, light: 62 },
-  duotone:       { hueStart: 260, hueEnd: 190, sat: 70, light: 60 },
-  mono:          { hueStart: 260, hueEnd: 260, sat: 60, light: 60, lightEnd: 95 },
-  // Warm monochrome ink/madder band — matches a page whose accent is a
-  // single madder red (e.g. #C4483E ≈ hsl(4.5°,51%,51%)) rather than a
-  // full-saturation rainbow. Low sat keeps it quiet against ink/paper.
-  madder:        { hueStart:   4, hueEnd:  36, sat: 54, light: 56 }
+  spectrum: { hueStart: 0, hueEnd: 360, sat: 70, light: 60 }
 };
 
 export function resolveGradient(g) {

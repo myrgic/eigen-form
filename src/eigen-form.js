@@ -21,8 +21,8 @@
      trailing edge cycles reverse — visual depth without 3D geometry.
 
    USAGE
-     <canvas data-myrgic-mark></canvas>                  // auto-init
-     createTrefoilMark(el, {gradient: 'cogos', ...})     // imperative
+     <canvas data-myrgic-mark></canvas>                              // auto-init
+     createTrefoilMark(el, {gradient: {hueStart: 240, hueEnd: 285}}) // imperative
 
    OPTIONS
      emergence:    bool   play full appear→settle→trail sequence
@@ -35,7 +35,7 @@
      precession:   ms     full centroid rotation period
                           (default 0 = disabled; positive = prograde,
                           negative = retrograde)
-     gradient:     name|object   color treatment, see GRADIENTS below
+     gradient:     'spectrum'|object   color treatment, see GRADIENTS below
      parallax:     0..1   strength of leading-fwd / trailing-rev hue
                           offset (default 0; 1 = ±period over trail)
      bg:           'rgb()' or [r,g,b]   optional halo/reference color;
@@ -43,15 +43,22 @@
                    the page — bg does not paint a background box.
 
    GRADIENTS
-     'spectrum'   default — full rainbow, hue locked to closure
-     'cogos'      violet/indigo band   240..280°
-     'mod3'       cyan/teal band       170..210°
-     'research'   amber/gold band       30..60°
-     'constellation'  magenta band     310..340°
-     'duotone'    violet → cyan        custom two-tone
-     'mono'       accent → white       luminance only
-     'madder'     warm monochrome ink/madder band  4..36°, low sat
-     {hueStart, hueEnd, sat?, light?}  custom span (degrees)
+     The color band is a fully configurable panel parameter, not a menu
+     of named presets (docs/api.md, "Gradients"; retooled v0.3 — the
+     org sub-brand rows and the ad hoc duotone/mono/madder variants
+     that used to live here are gone, folded into the same knobs below):
+     'spectrum'                        default — full rainbow, hue
+                                        locked to closure (hueStart:0,
+                                        hueEnd:360, sat:70, light:60);
+                                        the sole surviving named preset
+     {hueStart, hueEnd, sat?, light?, lightEnd?}  custom span (degrees),
+                                        merged over the spectrum
+                                        defaults for any field omitted.
+                                        A locked/exported figure spec
+                                        carries whatever values were
+                                        dialed in — clamped by
+                                        construction, nothing special-
+                                        cased downstream.
 
    SEAMS (v0.1 — see ROADMAP.md)
      src/dynamics/torus-knot.js   knotPoint, phase windows, smoothstep,

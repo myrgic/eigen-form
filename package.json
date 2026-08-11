@@ -1,7 +1,7 @@
 {
   "name": "eigen-form",
-  "version": "0.2.0",
-  "description": "Mathematical design library — parameterized eigenform rendering. v0.2: declared parameter schemas and a generated control-surface panel (src/params, src/panel), atop v0.1's torus-knot engine seams, headless golden-op regression tests, and versioned figure specs.",
+  "version": "0.3.0",
+  "description": "Mathematical design library — parameterized eigenform rendering. v0.3: the color band is a fully configurable panel parameter (spectrum by default), retiring the named-brand-preset select, atop v0.2's declared parameter schemas and generated control-surface panel (src/params, src/panel), v0.1's torus-knot engine seams, headless golden-op regression tests, and versioned figure specs.",
   "main": "src/eigen-form.js",
   "files": ["src/", "README.md", "LICENSE"],
   "license": "MIT",

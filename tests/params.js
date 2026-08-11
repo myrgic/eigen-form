@@ -59,11 +59,11 @@ test('boolean: type-checked, rejects non-boolean', async ({ defineParams }) => {
 
 test('select: membership-checked against declared options', async ({ defineParams }) => {
   const store = defineParams({
-    gradient: { type: 'select', options: ['spectrum', 'cogos', 'mono'], default: 'spectrum' }
+    view: { type: 'select', options: ['stage', 'wireframe', 'ghost'], default: 'stage' }
   });
-  store.set('gradient', 'cogos');
-  assert.strictEqual(store.get('gradient'), 'cogos');
-  assert.throws(() => store.set('gradient', 'not-a-preset'), /is not one of/);
+  store.set('view', 'wireframe');
+  assert.strictEqual(store.get('view'), 'wireframe');
+  assert.throws(() => store.set('view', 'not-an-option'), /is not one of/);
 });
 
 test('unknown key: get() and set() both throw', async ({ defineParams }) => {
