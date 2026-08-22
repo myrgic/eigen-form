@@ -1,0 +1,16 @@
+{
+ "repo": "zed",
+ "commits": 2495,
+ "mechanical": 65,
+ "mech_frac": 0.026052104208416832,
+ "bulk_all": 113,
+ "mech_bulk": 14,
+ "swing_all": 2.8992069685056854,
+ "swing_genuine": 2.464433435049354,
+ "delta": -0.4347735334563314,
+ "reasons": {
+  "monoextension-bulk": 14,
+  "message": 48,
+  "generated-files": 3
+ }
+}

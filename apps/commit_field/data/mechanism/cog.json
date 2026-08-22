@@ -1,0 +1,16 @@
+{
+ "repo": "cog",
+ "commits": 2494,
+ "mechanical": 79,
+ "mech_frac": 0.031676022453889334,
+ "bulk_all": 268,
+ "mech_bulk": 55,
+ "swing_all": 5.239422919374564,
+ "swing_genuine": 4.921324236634302,
+ "delta": -0.31809868274026254,
+ "reasons": {
+  "monoextension-bulk": 51,
+  "message": 21,
+  "vendor-dir": 7
+ }
+}
