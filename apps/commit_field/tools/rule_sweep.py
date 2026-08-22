@@ -170,8 +170,16 @@ def report(label, containers, B=200):
               (c if c < 10 ** 8 else "none", e, r, lo, hi))
     vals = [v for v in point.values() if v > 0]
     swing = max(vals) / min(vals)
+    # DEFENSIBLE-RANGE SWING. The full-sweep swing above is DEGENERATE: it is
+    # always k_eff(uncapped)/k_eff(cap=4), and k_eff@4 is a near-constant floor
+    # (~2.4, since a cap of 4 admits almost only pairs and triples). Regressing
+    # that ratio against max container size is close to circular -- it produced
+    # a spurious R^2=0.808 "law" on 2026-08-22. Report the swing between two
+    # caps a real analyst might argue for instead; that one is honest.
+    swing_def = point[128] / point[16] if point.get(16) else float("nan")
     print()
-    print("  RULE SWING (max/min k_eff across the cap sweep) = %.1fx" % swing)
+    print("  full-sweep swing (DEGENERATE, do not regress) = %.1fx" % swing)
+    print("  DEFENSIBLE-RANGE SWING (cap 16 -> 128) = %.2fx   <- use this one" % swing_def)
     if swings:
         print("     bootstrap 95%% CI on the swing: [%.1fx, %.1fx]  (B=%d)" %
               (pct(swings, 2.5), pct(swings, 97.5), len(swings)))
@@ -181,6 +189,7 @@ def report(label, containers, B=200):
             "k_eff": {str(c): point[c] for c in CAPS},
             "ci": {str(c): [pct(per_cap[c], 2.5), pct(per_cap[c], 97.5)] for c in CAPS},
             "swing": swing,
+            "swing_defensible_16_128": (point[128] / point[16]) if point.get(16) else None,
             "swing_ci": [pct(swings, 2.5), pct(swings, 97.5)] if swings else None}
 
 
