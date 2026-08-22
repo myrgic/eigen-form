@@ -78,7 +78,11 @@
       "kind": "frozen-golden",
       "provenance": {
         "derivesFrom": "sha256:ce081b7b0c19f5af16b7d72a221a29c485af35ba0ff4ad3e916033fe3cdde391",
-        "changes": []
+        "changes": [
+          "head, after <title>: added an embedded <script type=\"application/cogdoc+yaml\"> frontmatter block carrying the canonical cogdoc fields (id/type/title/sector/status/created/authors/tags) plus paper-specific claim, method[] (every slider declared with range, default, unit and meaning), observables, findings, limitations, and typed refs[]. Inert to the renderer (scripts of unknown type are not executed and do not display), so the file is simultaneously an indexable cogdoc of type `paper` and a running artifact — the .cog.html convention. Type `paper` is value 4 of the canonical 19-type enum in .cog/conf/spec/canonical-cogdoc-frontmatter-schema.cog.md and required `id` because it is a sequenced type.",
+          "reset()/imageData lifetime fix: the original called `const imageData = ctx.createImageData(width, height)` ONCE at top level immediately after the first reset(). Two failures followed. (1) A container reporting zero width at first layout made createImageData throw IndexSizeError, and because the throw was top-level the subsequent `animate()` call never ran — the simulation was permanently dead on that load, not merely unseeded; the resize listener then re-ran reset() successfully, so the canvas sized correctly and still nothing drew. (2) On any resize, reset() reallocated `grid`/`nextGrid` to the new dimensions while `imageData` retained the old ones, so the render loop wrote into a buffer of the wrong size. Fixed by declaring `let imageData` and reallocating it inside reset() alongside the grid, and by flooring both dimensions with Math.max(64, ...) so a zero-width parent cannot throw at all. This is the same repair welded_fields already carried at lines 249-265, whose comment 'reallocated with the grid, unlike the original' names this exact defect; the correction is now applied to the original rather than only annotated beside it. Verified in-browser after the fix: canvas 490x316, 25793 lit pixels, animation running, zero console errors.",
+          "version 1.0.0 -> 1.1.0: additive frontmatter plus a behavioral bug fix, no change to the model, its parameters, or its visual output."
+        ]
       },
       "pwa": {
         "installable": false
@@ -106,7 +110,10 @@
       "kind": "frozen-golden",
       "provenance": {
         "derivesFrom": "sha256:81d49079c91d40fda49601bfe235cb9aa22598e0bae156777aa7803abf69029f",
-        "changes": []
+        "changes": [
+          "head, after <title>: added an embedded <script type=\"application/cogdoc+yaml\"> frontmatter block carrying the canonical cogdoc core (id `paper-welded-fields`, type `paper`, title, description, sector, status, created, updated, salience, authors, tags) plus the paper-conditional fields required by .cog/conf/spec/cogdoc-html-executable-artifacts.cog.md: `claim`, `method[]` with one entry per free parameter (all 18 sidebar sliders plus fixed N=9000, each with range, default, unit where applicable, and a MEANING — a parameter with no stated meaning is a knob, not a method), `observables` naming window.__sim and the cost of each call, `findings[]`, `limitations[]`, and typed `refs[]`. WHY: the artifact previously asserted its corrections in code comments only — line 265's 'reallocated with the grid, unlike the original' and line 625's coverage-vs-level note were unaddressable and uncountable. Spec rule 5 requires any 'unlike the original'-class comment to become a typed ref, so the physarum correction is now `refs[] uri:app:physarum rel:corrects` and is queryable as a graph edge rather than folklore. Spec rule 4 requires an artifact that makes a claim to expose and NAME a test port; window.__sim already existed (commented 'exposed for verification from the console') but was undeclared, so `observables` now names it and cogdoc_verify.py exercises it. The block is inert to the renderer (scripts of unknown type are neither executed nor rendered), so the file is simultaneously a running artifact and an indexable cogdoc. Type `paper` is value 4 of the canonical 19-type enum and is a sequenced type, hence the required `id`.",
+          "version 1.0.0 -> 1.1.0: additive frontmatter only. No change to the model, its parameters, its defaults, or its rendered output — the sole edit is the inert <script> block in <head>. Declared here because this app is kind `frozen-golden` and spec rule 3 makes any edit to a frozen-golden entry a declared change with its reason. Verified after the edit: cogdoc_html.py validate -> OK [paper] paper-welded-fields with zero errors and zero warnings; headless Chromium load via cogdoc_verify.py -> canvas non-zero, lit pixels non-zero, zero console errors, and __sim.betti()/refs() checked against the stated findings."
+        ]
       },
       "pwa": {
         "installable": false
