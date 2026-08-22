@@ -1,0 +1,43 @@
+{
+  "$comment": "REFERENCE SCORES. The page re-runs these models in the browser over data/events.json and reconciles its measured values against this file. A mismatch is a defect, not a rounding difference: both implementations are deterministic.",
+  "dataset": "myrgic/cogos",
+  "params": {
+    "half_life_days": 14.0,
+    "alpha": 0.35,
+    "bulk_commit_threshold": 32,
+    "cochange_size_normalized": true,
+    "cochange_max_commit": 16
+  },
+  "meta": {
+    "scored_commits": 627,
+    "unseen_fraction": 0.330752990851513,
+    "mean_candidates": 1265.2567783094098
+  },
+  "models": {
+    "frequency": {
+      "mrr": 0.0757609230900767,
+      "hit10": 0.16561514195583596,
+      "hit50": 0.33964248159831756,
+      "n": 1902
+    },
+    "recency": {
+      "mrr": 0.10285779457897164,
+      "hit10": 0.2013669821240799,
+      "hit50": 0.407465825446898,
+      "n": 1902
+    },
+    "field": {
+      "mrr": 0.10236508417071631,
+      "hit10": 0.20031545741324921,
+      "hit50": 0.41798107255520506,
+      "n": 1902
+    },
+    "random": {
+      "mrr": 0.007546124489181413,
+      "hit10": 0.010588242965767325,
+      "hit50": 0.05294121482883667,
+      "n": 627,
+      "analytic": true
+    }
+  }
+}
