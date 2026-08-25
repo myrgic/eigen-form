@@ -1,0 +1,17 @@
+{
+ "repo": "deepseek-harness",
+ "commits": 2481,
+ "mechanical": 131,
+ "mech_frac": 0.05280128980249899,
+ "bulk_all": 527,
+ "mech_bulk": 42,
+ "swing_all": 5.075396671725925,
+ "swing_genuine": 4.906310465249533,
+ "delta": -0.1690862064763925,
+ "reasons": {
+  "monoextension-bulk": 20,
+  "message": 80,
+  "generated-files": 5,
+  "vendor-dir": 26
+ }
+}

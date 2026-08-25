@@ -1,0 +1,16 @@
+{
+ "repo": "vllm",
+ "commits": 2498,
+ "mechanical": 35,
+ "mech_frac": 0.01401120896717374,
+ "bulk_all": 108,
+ "mech_bulk": 13,
+ "swing_all": 2.4333573099036263,
+ "swing_genuine": 2.0468765859097853,
+ "delta": -0.38648072399384104,
+ "reasons": {
+  "message": 23,
+  "monoextension-bulk": 11,
+  "vendor-dir": 1
+ }
+}

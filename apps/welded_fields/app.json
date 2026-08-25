@@ -2,12 +2,24 @@
   "id": "welded_fields",
   "title": "Welded Fields",
   "description": "Stigmergic trail crossed with procedural advection on one shared grid.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "kind": "frozen-golden",
   "entry": "index.html",
+  "cogdoc": {
+    "type": "paper",
+    "id": "paper-welded-fields",
+    "embedded": "script[type=\"application/cogdoc+yaml\"]",
+    "claim": "A stigmergic system can close its own loop: with the exogenous noise gain at zero the transport field is entirely agent-deposited and the governing quantity is an internal ratio of timescales (momentum half-life / trail half-life). Measuring that system requires normalization robust to deposit spikes (99.5th percentile, not raw max) and a threshold that fixes mask COVERAGE rather than LEVEL, which is what makes beta_1 comparable across parameter changes.",
+    "port": "window.__sim",
+    "verify": ".cog/bin/tools/cogdoc_verify.py"
+  },
   "provenance": {
     "derivesFrom": "sha256:81d49079c91d40fda49601bfe235cb9aa22598e0bae156777aa7803abf69029f",
-    "changes": []
+    "changes": [
+      "head, after <title>: added an embedded <script type=\"application/cogdoc+yaml\"> frontmatter block carrying the canonical cogdoc core (id `paper-welded-fields`, type `paper`, title, description, sector, status, created, updated, salience, authors, tags) plus the paper-conditional fields required by .cog/conf/spec/cogdoc-html-executable-artifacts.cog.md: `claim`, `method[]` with one entry per free parameter (all 18 sidebar sliders plus fixed N=9000, each with range, default, unit where applicable, and a MEANING — a parameter with no stated meaning is a knob, not a method), `observables` naming window.__sim and the cost of each call, `findings[]`, `limitations[]`, and typed `refs[]`. WHY: the artifact previously asserted its corrections in code comments only — line 265's 'reallocated with the grid, unlike the original' and line 625's coverage-vs-level note were unaddressable and uncountable. Spec rule 5 requires any 'unlike the original'-class comment to become a typed ref, so the physarum correction is now `refs[] uri:app:physarum rel:corrects` and is queryable as a graph edge rather than folklore. Spec rule 4 requires an artifact that makes a claim to expose and NAME a test port; window.__sim already existed (commented 'exposed for verification from the console') but was undeclared, so `observables` now names it and cogdoc_verify.py exercises it. The block is inert to the renderer (scripts of unknown type are neither executed nor rendered), so the file is simultaneously a running artifact and an indexable cogdoc. Type `paper` is value 4 of the canonical 19-type enum and is a sequenced type, hence the required `id`.",
+      "version 1.0.0 -> 1.1.0: additive frontmatter only. No change to the model, its parameters, its defaults, or its rendered output — the sole edit is the inert <script> block in <head>. Declared here because this app is kind `frozen-golden` and spec rule 3 makes any edit to a frozen-golden entry a declared change with its reason. Verified after the edit: cogdoc_html.py validate -> OK [paper] paper-welded-fields with zero errors and zero warnings; headless Chromium load via cogdoc_verify.py -> canvas non-zero, lit pixels non-zero, zero console errors, and __sim.betti()/refs() checked against the stated findings."
+    ],
+    "entryHash": "sha256:4c342e9eb426850ddb51e5c63250ee360b3f4894524d24524c5150b3c5282bb5"
   },
   "capabilities": { "emits": [], "accepts": [] },
   "pwa": { "installable": false }

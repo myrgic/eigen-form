@@ -2,12 +2,23 @@
   "id": "physarum",
   "title": "Physarum Stigmergy Simulation",
   "description": "Particles leave trails in a pixel grid and steer toward the highest concentration ahead of them as it diffuses and decays.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "kind": "frozen-golden",
   "entry": "index.html",
+  "cogdoc": {
+    "type": "paper",
+    "id": "paper-physarum-stigmergy",
+    "embedded": "script[type=\"application/cogdoc+yaml\"]",
+    "claim": "Deposit into a diffusing, decaying shared medium is sufficient for global structure to emerge among agents that never communicate directly."
+  },
   "provenance": {
     "derivesFrom": "sha256:ce081b7b0c19f5af16b7d72a221a29c485af35ba0ff4ad3e916033fe3cdde391",
-    "changes": []
+    "changes": [
+      "head, after <title>: added an embedded <script type=\"application/cogdoc+yaml\"> frontmatter block carrying the canonical cogdoc fields (id/type/title/sector/status/created/authors/tags) plus paper-specific claim, method[] (every slider declared with range, default, unit and meaning), observables, findings, limitations, and typed refs[]. Inert to the renderer (scripts of unknown type are not executed and do not display), so the file is simultaneously an indexable cogdoc of type `paper` and a running artifact — the .cog.html convention. Type `paper` is value 4 of the canonical 19-type enum in .cog/conf/spec/canonical-cogdoc-frontmatter-schema.cog.md and required `id` because it is a sequenced type.",
+      "reset()/imageData lifetime fix: the original called `const imageData = ctx.createImageData(width, height)` ONCE at top level immediately after the first reset(). Two failures followed. (1) A container reporting zero width at first layout made createImageData throw IndexSizeError, and because the throw was top-level the subsequent `animate()` call never ran — the simulation was permanently dead on that load, not merely unseeded; the resize listener then re-ran reset() successfully, so the canvas sized correctly and still nothing drew. (2) On any resize, reset() reallocated `grid`/`nextGrid` to the new dimensions while `imageData` retained the old ones, so the render loop wrote into a buffer of the wrong size. Fixed by declaring `let imageData` and reallocating it inside reset() alongside the grid, and by flooring both dimensions with Math.max(64, ...) so a zero-width parent cannot throw at all. This is the same repair welded_fields already carried at lines 249-265, whose comment 'reallocated with the grid, unlike the original' names this exact defect; the correction is now applied to the original rather than only annotated beside it. Verified in-browser after the fix: canvas 490x316, 25793 lit pixels, animation running, zero console errors.",
+      "version 1.0.0 -> 1.1.0: additive frontmatter plus a behavioral bug fix, no change to the model, its parameters, or its visual output."
+    ],
+    "entryHash": "sha256:386d5f40a8a5e8c0098a68e08c2177167c3230dc4ae682b734e2261f72c1dd5d"
   },
   "capabilities": { "emits": [], "accepts": [] },
   "pwa": { "installable": false }

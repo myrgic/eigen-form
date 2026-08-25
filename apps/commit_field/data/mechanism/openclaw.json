@@ -1,0 +1,15 @@
+{
+ "repo": "openclaw",
+ "commits": 2488,
+ "mechanical": 48,
+ "mech_frac": 0.01929260450160772,
+ "bulk_all": 147,
+ "mech_bulk": 26,
+ "swing_all": 2.916558352132053,
+ "swing_genuine": 1.8596263591581885,
+ "delta": -1.0569319929738645,
+ "reasons": {
+  "message": 28,
+  "monoextension-bulk": 20
+ }
+}

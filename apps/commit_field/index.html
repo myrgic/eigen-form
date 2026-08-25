@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Field — does repository heat predict the next commit?</title>
+<script type="application/cogdoc+yaml">
+id: paper-commit-field
+type: paper
+title: "Commit Field: a causal backtest of stigmergic heat models against real git history"
+description: >
+  Three field models are replayed strictly causally over a real commit
+  log and scored on how highly they rank the files each next commit
+  actually touched. The page re-runs the models in the browser and
+  reconciles its measured scores against a pinned reference produced by
+  tools/extract.py; the verdict badge is that reconciliation, not a
+  self-report.
+sector: research
+status: active
+created: 2026-08-21
+updated: 2026-08-21
+salience: 0.7
+authors: [cog, chaz]
+tags: [stigmergy, git, prediction, backtest, second-order-observability]
+claim: >
+  Diffusion across a co-change graph does NOT improve next-touch
+  prediction over exponentially decayed recency alone on this corpus.
+  Both beat raw touch frequency, and all three beat random by more than
+  an order of magnitude — so the corpus does carry strong locality
+  signal, it is simply already captured by recency. The pre-registered
+  expectation (recency > frequency; field - recency <= 0.02 MRR) is
+  declared in `prereg` below and was written before the first run.
+prereg:
+  registered: 2026-08-21
+  statements:
+    - "recency MRR > frequency MRR"
+    - "field MRR - recency MRR <= 0.02 (field does not meaningfully beat recency)"
+    - "all three models MRR > 10x random MRR"
+  locked_parameters: [half_life_days, alpha, bulk_commit_threshold]
+method:
+  - name: half_life_days
+    value: 14
+    unit: days
+    meaning: >
+      Heat half-life. A file touched today contributes 1.0; fourteen days
+      later that same deposit contributes 0.5. Sets how far back the
+      recency and field models remember. LOCKED for the reference run.
+  - name: alpha
+    value: 0.35
+    range: [0, 1]
+    meaning: >
+      One-hop diffusion gain for the field model. A file's score gains
+      alpha times the co-change-weight-averaged heat of its neighbours.
+      alpha = 0 makes the field model identical to recency by
+      construction, which is the control. LOCKED for the reference run.
+  - name: bulk_commit_threshold
+    value: 32
+    unit: files
+    meaning: >
+      Commits touching more files than this update model state but are
+      never scored. Vendoring drops, mass renames and generated output
+      would otherwise dominate the metric with a question nobody asked.
+      LOCKED for the reference run.
+  - name: cochange_max_commit
+    value: 16
+    unit: files
+    meaning: >
+      Co-change edges are only recorded from commits at or below this
+      size, and each edge from a k-file commit carries weight 1/(k-1),
+      so a two-file commit is strong evidence for that pair and a
+      sixteen-file commit is weak evidence for each of its 120 pairs.
+  - name: model
+    value: field
+    meaning: >
+      Which model the visualisation renders. Does not affect the scored
+      reconciliation, which always runs all three.
+observables:
+  - port: window.__sim
+    calls:
+      - "__sim.reference() -> the pinned scores from data/results.json"
+      - "__sim.measured() -> the scores this page computed in-browser"
+      - "__sim.reconcile() -> {ok, deltas} — the verdict badge's source"
+      - "__sim.manifest() -> dataset provenance and content hashes"
+    cost: "reconcile() replays the full backtest; ~1-3s on this corpus"
+findings:
+  - "field (0.1024 MRR) does not beat recency (0.1029 MRR): diffusion adds a parameter and no predictive power on this corpus."
+  - "recency (0.1029) clearly beats frequency (0.0758): when a file was touched matters more than how often."
+  - "all three beat random (0.0075) by 10-14x: repository work is strongly local, and cheap decay already captures that locality."
+  - "33% of touched files at score time had never been seen before, and are excluded from scoring rather than counted as misses."
+limitations:
+  - "One corpus. A single repository's conventions may not generalise; the extractor takes --repo so this is testable, not assumed."
+  - "One-hop diffusion only. A multi-hop or Laplacian formulation might behave differently; not tested, so not claimed either way."
+  - "Ranking is over files ever seen, so the candidate set grows monotonically; MRR is therefore not comparable across corpora of different size without normalising, which is why random is reported analytically alongside."
+  - "Renames are followed to their destination path only; a file's history before a rename is attributed to the new path."
+refs:
+  - uri: app:physarum
+    rel: extends
+  - uri: app:ast_diffusion
+    rel: tests
+  - uri: app:welded_fields
+    rel: related
+</script>
+<link rel="stylesheet" href="../../src/panel/tokens.css">
+<link rel="stylesheet" href="../../src/panel/panel.css">
+<link rel="stylesheet" href="../../src/kit/kit.css">
+<style>
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+               font-family:var(--sans); }
+  #wrap { display:grid; grid-template-columns: 1fr 320px; height:100vh; }
+  #stage { position:relative; overflow:hidden; }
+  canvas { display:block; width:100%; height:100%; }
+  #side { border-left:1px solid var(--line); overflow-y:auto;
+          background:var(--panel); }
+  #hdr { padding:var(--space-4); border-bottom:1px solid var(--line); }
+  #hdr h1 { font:600 15px/1.3 var(--sans); margin:0 0 6px; }
+  #hdr p { font:12px/1.5 var(--sans); color:var(--dim); margin:0; }
+  .sect { padding:var(--space-3) var(--space-4);
+          border-bottom:1px solid var(--line); }
+  .sect > h2 { font:600 10px/1 var(--mono); letter-spacing:.14em;
+               text-transform:uppercase; color:var(--faint);
+               margin:0 0 var(--space-3); }
+  table.scores { width:100%; border-collapse:collapse; font:11px/1.5 var(--mono);
+                 font-variant-numeric:tabular-nums; }
+  table.scores th { text-align:right; color:var(--faint); font-weight:400;
+                    padding:2px 0; }
+  table.scores th:first-child { text-align:left; }
+  table.scores td { text-align:right; padding:3px 0; color:var(--fg); }
+  table.scores td:first-child { text-align:left; color:var(--dim); }
+  table.scores tr.win td { color:var(--ok); }
+  table.scores tr.win td:first-child { color:var(--ok); }
+  .verdict { display:flex; align-items:center; gap:8px;
+             font:11px/1.4 var(--mono); }
+  .delta { font:10px/1.4 var(--mono); color:var(--faint); margin-top:6px; }
+  .prereg { font:11px/1.6 var(--sans); color:var(--dim); margin:0;
+            padding-left:14px; }
+  .prereg li { margin-bottom:4px; }
+  .prereg li::marker { color:var(--faint); }
+  .hashline { font:10px/1.5 var(--mono); color:var(--faint);
+              word-break:break-all; }
+  #overlay { position:absolute; left:12px; top:12px; font:11px/1.6 var(--mono);
+             color:var(--dim); background:rgba(0,0,0,.55); padding:8px 10px;
+             border:1px solid var(--line); border-radius:var(--radius-1);
+             pointer-events:none; font-variant-numeric:tabular-nums; }
+  #overlay b { color:var(--fg); font-weight:600; }
+  #legend { position:absolute; left:12px; bottom:12px; font:10px/1.6 var(--mono);
+            color:var(--faint); background:rgba(0,0,0,.55); padding:8px 10px;
+            border:1px solid var(--line); border-radius:var(--radius-1);
+            pointer-events:none; }
+  .sw { display:inline-block; width:9px; height:9px; border-radius:50%;
+        margin-right:5px; vertical-align:-1px; }
+  #busy { position:absolute; inset:0; display:grid; place-items:center;
+          background:var(--bg); font:12px var(--mono); color:var(--dim); }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="overlay"></div>
+    <div id="legend">
+      <span class="sw" style="background:#ff5a36"></span>hot (model rank high)<br>
+      <span class="sw" style="background:#fff3b0"></span>warm<br>
+      <span class="sw" style="background:#2a2a33"></span>cold<br>
+      <span class="sw" style="background:#ffffff"></span>touched by this commit
+    </div>
+    <div id="busy">replaying history…</div>
+  </div>
+
+  <div id="side">
+    <div id="hdr">
+      <h1>Commit Field</h1>
+      <p>Does repository heat predict the next commit? A strictly causal
+         backtest over real git history — the field never sees a commit
+         before it is scored on it.</p>
+    </div>
+
+    <div class="sect">
+      <h2>Verdict</h2>
+      <div class="verdict">
+        <span class="ef-badge instrument" id="kindBadge">instrument</span>
+        <span class="ef-badge pending" id="stateBadge">pending</span>
+        <span id="verdictText" style="color:var(--dim)">reconciling…</span>
+      </div>
+      <div class="delta" id="deltaText"></div>
+    </div>
+
+    <div class="sect">
+      <h2>Measured, in this browser</h2>
+      <table class="scores" id="scoreTable">
+        <thead><tr><th>model</th><th>MRR</th><th>hit@10</th><th>hit@50</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="sect">
+      <h2>Pre-registered, before the run</h2>
+      <ul class="prereg" id="preregList"></ul>
+    </div>
+
+    <div class="sect">
+      <h2>Parameters</h2>
+      <div id="panel"></div>
+    </div>
+
+    <div class="sect">
+      <h2>Dataset</h2>
+      <div class="hashline" id="provText"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { defineParams } from '../../src/params/define.js';
+import { renderPanel } from '../../src/panel/render.js';
+
+const SECONDS_PER_DAY = 86400;
+
+/* ------------------------------------------------------------------
+   The field engine. A line-for-line port of tools/extract.py's Field
+   class. It is deliberately a port and not a shared bundle: the whole
+   point of the verdict badge is that two independent implementations
+   of the same declared model land on the same numbers. A shared
+   implementation could only ever agree with itself.
+   ------------------------------------------------------------------ */
+class Field {
+  constructor(p) {
+    this.p = p;
+    this.lam = Math.log(2) / (p.half_life_days * SECONDS_PER_DAY);
+    this.heat = new Map();
+    this.tLast = new Map();
+    this.count = new Map();
+    this.edges = new Map();
+    this.seen = new Set();
+  }
+  decayed(i, now) {
+    const h = this.heat.get(i);
+    if (h === undefined) return 0;
+    const dt = now - this.tLast.get(i);
+    return dt <= 0 ? h : h * Math.exp(-this.lam * dt);
+  }
+  /* Deterministic iteration order over seen files. Python's set is
+     hash-ordered and JavaScript's Set is insertion-ordered; floating
+     point addition is not associative, so folding the same terms in a
+     different order gives a different last bit. The reconciliation
+     caught exactly that (3.9e-7 on the field model alone, since it is
+     the only one summing a neighbourhood). Sorting by index makes the
+     fold order a property of the data, not of the language, so both
+     ports agree exactly and the tolerance can stay tight. extract.py's
+     Field.order() is the same fix on the other side. */
+  order() {
+    return [...this.seen].sort((a, b) => a - b);
+  }
+  scoreRecency(now) {
+    const out = new Map();
+    for (const i of this.order()) out.set(i, this.decayed(i, now));
+    return out;
+  }
+  scoreFrequency() {
+    const out = new Map();
+    for (const i of this.order()) out.set(i, this.count.get(i) || 0);
+    return out;
+  }
+  scoreField(now) {
+    const base = this.scoreRecency(now);
+    const out = new Map(base);
+    const alpha = this.p.alpha;
+    for (const i of [...this.edges.keys()].sort((a, b) => a - b)) {
+      const nbrs = this.edges.get(i);
+      let tot = 0, wsum = 0;
+      for (const j of [...nbrs.keys()].sort((a, b) => a - b)) {
+        const w = nbrs.get(j);
+        const bj = base.get(j) || 0;
+        if (bj) tot += w * bj;
+        wsum += w;
+      }
+      if (wsum > 0 && tot > 0) out.set(i, (out.get(i) || 0) + alpha * (tot / wsum));
+    }
+    return out;
+  }
+  apply(ev) {
+    const now = ev.t;
+    for (const i of ev.f) {
+      this.heat.set(i, this.decayed(i, now) + 1);
+      this.tLast.set(i, now);
+      this.count.set(i, (this.count.get(i) || 0) + 1);
+      this.seen.add(i);
+    }
+    const k = ev.f.length;
+    if (k >= 2 && k <= this.p.cochange_max_commit) {
+      const w = this.p.cochange_size_normalized ? 1 / (k - 1) : 1;
+      for (let a = 0; a < k; a++) for (let b = a + 1; b < k; b++) {
+        const i = ev.f[a], j = ev.f[b];
+        if (!this.edges.has(i)) this.edges.set(i, new Map());
+        if (!this.edges.has(j)) this.edges.set(j, new Map());
+        const ei = this.edges.get(i), ej = this.edges.get(j);
+        ei.set(j, (ei.get(j) || 0) + w);
+        ej.set(i, (ej.get(i) || 0) + w);
+      }
+    }
+  }
+}
+
+function harmonic(n) {
+  if (n <= 256) { let s = 0; for (let k = 1; k <= n; k++) s += 1 / k; return s; }
+  return Math.log(n) + 0.5772156649015329 + 1 / (2 * n);
+}
+
+const MODELS = ['frequency', 'recency', 'field'];
+
+function backtest(events, params) {
+  const field = new Field(params);
+  const acc = {};
+  for (const m of MODELS) acc[m] = { rr: 0, h10: 0, h50: 0, n: 0 };
+  let scored = 0, unseen = 0, total = 0;
+  const cand = [];
+
+  for (const ev of events) {
+    const bulk = ev.f.length > params.bulk_commit_threshold;
+    if (!bulk && field.seen.size) {
+      const target = ev.f.filter(i => field.seen.has(i));
+      total += ev.f.length;
+      unseen += ev.f.length - target.length;
+      if (target.length) {
+        scored++;
+        cand.push(field.seen.size);
+        const scores = {
+          frequency: field.scoreFrequency(),
+          recency: field.scoreRecency(ev.t),
+          field: field.scoreField(ev.t),
+        };
+        for (const m of MODELS) {
+          const s = scores[m];
+          for (const i of target) {
+            const si = s.get(i) || 0;
+            let better = 0, tied = 0;
+            for (const [j, sj] of s) {
+              if (sj > si) better++;
+              else if (sj === si && j !== i) tied++;
+            }
+            const rank = better + tied / 2 + 1;
+            const a = acc[m];
+            a.rr += 1 / rank; a.n++;
+            if (rank <= 10) a.h10++;
+            if (rank <= 50) a.h50++;
+          }
+        }
+      }
+    }
+    field.apply(ev);
+  }
+
+  const models = {};
+  for (const m of MODELS) {
+    const a = acc[m], n = Math.max(a.n, 1);
+    models[m] = { mrr: a.rr / n, hit10: a.h10 / n, hit50: a.h50 / n, n: a.n };
+  }
+  let rr = 0, h10 = 0, h50 = 0;
+  for (const N of cand) { rr += harmonic(N) / N; h10 += Math.min(10, N) / N; h50 += Math.min(50, N) / N; }
+  const cn = Math.max(cand.length, 1);
+  models.random = { mrr: rr / cn, hit10: h10 / cn, hit50: h50 / cn, n: cand.length, analytic: true };
+
+  return {
+    models,
+    meta: {
+      scored_commits: scored,
+      unseen_fraction: total ? unseen / total : 0,
+      mean_candidates: cand.length ? cand.reduce((x, y) => x + y, 0) / cand.length : 0,
+    },
+  };
+}
+
+/* ------------------------------------------------------------------
+   Parameters. The three that produced the reference scores are LOCKED
+   (prereg): the panel renders them read-only with a lock glyph, because
+   a page that lets you move the numbers its verdict is computed from
+   is not measuring anything. `model` and `speed` are view-only knobs.
+   ------------------------------------------------------------------ */
+const params = defineParams({
+  half_life_days: { type:'number', min:1, max:120, step:1, unit:'d',
+                    prereg: 14, label:'Heat half-life', group:'model' },
+  alpha:          { type:'number', min:0, max:1, step:0.01,
+                    prereg: 0.35, label:'Diffusion gain', group:'model' },
+  bulk_threshold: { type:'number', min:4, max:256, step:1, unit:'files',
+                    prereg: 32, label:'Bulk cutoff', group:'model' },
+  model:          { type:'select', options:['field','recency','frequency'],
+                    default:'field', label:'Render', group:'view' },
+  speed:          { type:'number', min:1, max:60, step:1, unit:'c/s',
+                    default:20, label:'Replay speed', group:'view' },
+  showEdges:      { type:'boolean', default:true, label:'Co-change edges', group:'view' },
+});
+
+/* ------------------------------------------------------------------ */
+
+const $ = s => document.querySelector(s);
+let REF = null, MAN = null, EVENTS = null, MEASURED = null;
+
+function fmt(x, d = 4) { return x.toFixed(d); }
+
+function paintScores(measured) {
+  const tb = $('#scoreTable tbody');
+  tb.innerHTML = '';
+  const order = ['random', 'frequency', 'recency', 'field'];
+  let best = null, bestv = -1;
+  for (const m of order) {
+    if (m !== 'random' && measured.models[m].mrr > bestv) { bestv = measured.models[m].mrr; best = m; }
+  }
+  for (const m of order) {
+    const r = measured.models[m];
+    const tr = document.createElement('tr');
+    if (m === best) tr.className = 'win';
+    tr.innerHTML = `<td>${m}${m === 'random' ? ' *' : ''}</td>` +
+                   `<td>${fmt(r.mrr)}</td><td>${fmt(r.hit10, 3)}</td><td>${fmt(r.hit50, 3)}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+function reconcile() {
+  if (!REF || !MEASURED) return { ok: false, reason: 'not run' };
+  const deltas = {};
+  let ok = true;
+  /* Tolerance: 1e-5, and the number has a reason.
+     An exact-equality claim between these two ports is not meetable and
+     it is worth being precise about why, because the first version of
+     this page claimed 1e-9 and went red. After the fold order was made
+     deterministic (Field.order()), a direct fingerprint comparison of
+     the two engines shows them agreeing bit-for-bit for the first
+     sixteen scored commits and then differing by ONE unit in the last
+     place (commit 18: 179.11204999010226 vs ...24). That residue is
+     Math.exp: V8's ieee754 exp and CPython's libm exp are both correctly
+     rounded to within 1 ULP but are not required to agree with each
+     other, and nothing in either language lets a caller pin it.
+     A 1-ULP difference in heat changes which of two near-tied files
+     ranks first, and 1902 scored rank computations later that surfaces
+     as ~5e-7 of MRR. So the honest tolerance is set by the float
+     hardware, not by the model: 1e-5 is two orders above the observed
+     residue and four orders below the smallest difference this page
+     actually makes a claim about (field - recency = 5e-4). A port bug
+     — a wrong parameter, a dropped term, an off-by-one in the causal
+     boundary — moves MRR by 1e-3 or more and still trips this. */
+  const TOL = 1e-5;
+  for (const m of ['random', ...MODELS]) {
+    const a = MEASURED.models[m], b = REF.models[m];
+    if (!b) { ok = false; deltas[m] = 'missing in reference'; continue; }
+    const d = Math.abs(a.mrr - b.mrr);
+    deltas[m] = d;
+    if (d > TOL) ok = false;
+  }
+  return { ok, deltas, tolerance: TOL };
+}
+
+function paintVerdict() {
+  const r = reconcile();
+  const badge = $('#stateBadge'), txt = $('#verdictText'), del = $('#deltaText');
+  badge.className = 'ef-badge ' + (r.ok ? 'ok' : 'alert');
+  badge.textContent = r.ok ? 'ok' : 'alert';
+  if (r.ok) {
+    txt.textContent = 'browser scores match the pinned reference';
+    txt.style.color = 'var(--ok)';
+  } else {
+    txt.textContent = 'browser scores DISAGREE with the reference';
+    txt.style.color = 'var(--alert)';
+  }
+  const lines = Object.entries(r.deltas)
+    .map(([m, d]) => `${m}: Δmrr ${typeof d === 'number' ? d.toExponential(2) : d}`);
+  // The pre-registered comparison itself, evaluated against what we measured.
+  const M = MEASURED.models;
+  lines.push('');
+  lines.push(`prereg 1 (recency > frequency): ${M.recency.mrr > M.frequency.mrr ? 'HELD' : 'BROKEN'}`);
+  const gap = M.field.mrr - M.recency.mrr;
+  lines.push(`prereg 2 (field - recency <= 0.02): ${gap <= 0.02 ? 'HELD' : 'BROKEN'} (${gap >= 0 ? '+' : ''}${gap.toFixed(4)})`);
+  const tenx = Math.min(M.frequency.mrr, M.recency.mrr, M.field.mrr) > 10 * M.random.mrr;
+  lines.push(`prereg 3 (all > 10x random): ${tenx ? 'HELD' : 'BROKEN'}`);
+  del.textContent = lines.join('\n');
+  del.style.whiteSpace = 'pre';
+}
+
+function paintPrereg() {
+  const ul = $('#preregList');
+  const doc = document.querySelector('script[type="application/cogdoc+yaml"]').textContent;
+  const stmts = [];
+  let inside = false;
+  for (const line of doc.split('\n')) {
+    if (/^\s{2}statements:/.test(line)) { inside = true; continue; }
+    if (inside) {
+      const m = /^\s{4}- "(.*)"\s*$/.exec(line);
+      if (m) stmts.push(m[1]); else break;
+    }
+  }
+  ul.innerHTML = stmts.map(s => `<li>${s}</li>`).join('');
+}
+
+function paintProvenance() {
+  const d = new Date(MAN.span.from * 1000), e = new Date(MAN.span.to * 1000);
+  $('#provText').innerHTML =
+    `<b>${MAN.dataset}</b> @ ${MAN.repo_head.slice(0, 10)}<br>` +
+    `${MAN.commits} commits · ${MAN.files} files<br>` +
+    `${d.toISOString().slice(0, 10)} → ${e.toISOString().slice(0, 10)}<br>` +
+    `${(REF.meta.unseen_fraction * 100).toFixed(1)}% of touched files unseen at score time (excluded)<br>` +
+    `mean candidate set ${Math.round(REF.meta.mean_candidates)}<br><br>` +
+    `events.json ${MAN.artifacts['events.json'].slice(0, 22)}…<br>` +
+    `extract.py sha256:${MAN.extractor.sha256.slice(0, 16)}…`;
+}
+
+/* ------------------------------------------------------------------
+   Visualisation. Files are laid out on a deterministic spiral seeded by
+   index (no force layout: the point is to watch heat move, and a layout
+   that also moves makes that unreadable). Colour is the model's own
+   score, on a monotone warm ramp — a data colour, never the chrome
+   accent, per docs/design-kit.md's one hard rule. Files touched by the
+   commit currently being scored flash white, so you can see directly
+   whether the flashes land on hot regions or cold ones. That is the
+   only honest way to look at a predictor.
+   ------------------------------------------------------------------ */
+const cv = $('#c'), ctx = cv.getContext('2d');
+let pos = null, viewField = null, cursor = 0, flash = new Map(), raf = 0;
+
+function layout(n) {
+  const p = new Array(n);
+  const PHI = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < n; i++) {
+    const r = Math.sqrt(i / n);
+    const a = i * PHI;
+    p[i] = { x: r * Math.cos(a), y: r * Math.sin(a) };
+  }
+  return p;
+}
+
+function ramp(t) {
+  t = Math.max(0, Math.min(1, t));
+  const c0 = [42, 42, 51], c1 = [255, 243, 176], c2 = [255, 90, 54];
+  let a, b, u;
+  if (t < 0.5) { a = c0; b = c1; u = t / 0.5; } else { a = c1; b = c2; u = (t - 0.5) / 0.5; }
+  return `rgb(${Math.round(a[0] + (b[0] - a[0]) * u)},${Math.round(a[1] + (b[1] - a[1]) * u)},${Math.round(a[2] + (b[2] - a[2]) * u)})`;
+}
+
+function resize() {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = cv.clientWidth * dpr;
+  cv.height = cv.clientHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener('resize', resize);
+
+function draw() {
+  const W = cv.clientWidth, H = cv.clientHeight;
+  const R = Math.min(W, H) * 0.44, cx = W / 2, cy = H / 2;
+  ctx.clearRect(0, 0, W, H);
+  if (!viewField) return;
+
+  const mode = params.get('model');
+  const now = EVENTS[Math.min(cursor, EVENTS.length - 1)].t;
+  const s = mode === 'frequency' ? viewField.scoreFrequency()
+          : mode === 'recency'   ? viewField.scoreRecency(now)
+          :                        viewField.scoreField(now);
+  /* Normalise by the 99.5th percentile, not the raw max. A fresh
+     deposit spike is one file at heat ~N while the body of the field
+     sits two orders below it, so dividing by max renders the entire
+     repository as cold ground with one bright dot — which is not what
+     the field looks like, it is what the outlier looks like. This is
+     the same correction welded_fields records in its own cogdoc
+     (normalisation robust to deposit spikes); reusing it here rather
+     than rediscovering it. */
+  const vals = [];
+  for (const v of s.values()) if (v > 0) vals.push(v);
+  vals.sort((a, b) => a - b);
+  let max = vals.length ? vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.995))] : 0;
+  if (max <= 0) max = 1;
+
+  if (params.get('showEdges')) {
+    ctx.lineWidth = 0.5;
+    for (const [i, nbrs] of viewField.edges) {
+      const si = (s.get(i) || 0) / max;
+      if (si < 0.25) continue;
+      const a = pos[i];
+      for (const [j, w] of nbrs) {
+        if (j < i) continue;
+        const sj = (s.get(j) || 0) / max;
+        if (sj < 0.25) continue;
+        const b = pos[j];
+        ctx.strokeStyle = `rgba(255,120,60,${Math.min(0.5, w * 0.35 * si * sj)})`;
+        ctx.beginPath();
+        ctx.moveTo(cx + a.x * R, cy + a.y * R);
+        ctx.lineTo(cx + b.x * R, cy + b.y * R);
+        ctx.stroke();
+      }
+    }
+  }
+
+  for (const i of viewField.seen) {
+    const v = (s.get(i) || 0) / max;
+    const p = pos[i];
+    const fl = flash.get(i) || 0;
+    const r = 1.4 + v * 3.4 + fl * 3;
+    ctx.fillStyle = fl > 0.02 ? `rgba(255,255,255,${Math.min(1, 0.35 + fl)})` : ramp(v);
+    ctx.beginPath();
+    ctx.arc(cx + p.x * R, cy + p.y * R, r, 0, 6.2832);
+    ctx.fill();
+  }
+
+  for (const [k, v] of flash) {
+    const nv = v * 0.90;
+    if (nv < 0.01) flash.delete(k); else flash.set(k, nv);
+  }
+
+  const ev = EVENTS[Math.min(cursor, EVENTS.length - 1)];
+  $('#overlay').innerHTML =
+    `commit <b>${cursor + 1}</b> / ${EVENTS.length} &nbsp; ${ev.sha}<br>` +
+    `${new Date(ev.t * 1000).toISOString().slice(0, 10)}<br>` +
+    `files seen <b>${viewField.seen.size}</b> · touched <b>${ev.f.length}</b><br>` +
+    `rendering <b>${mode}</b>`;
+}
+
+function tick() {
+  const per = Math.max(1, Math.round(params.get('speed') / 60 * 3));
+  for (let k = 0; k < per && cursor < EVENTS.length; k++) {
+    const ev = EVENTS[cursor];
+    for (const i of ev.f) flash.set(i, 1);
+    viewField.apply(ev);
+    cursor++;
+  }
+  if (cursor >= EVENTS.length) { cursor = 0; viewField = new Field(refParams()); flash.clear(); }
+  draw();
+  raf = requestAnimationFrame(tick);
+}
+
+function refParams() {
+  return {
+    half_life_days: params.get('half_life_days'),
+    alpha: params.get('alpha'),
+    bulk_commit_threshold: params.get('bulk_threshold'),
+    cochange_max_commit: REF.params.cochange_max_commit,
+    cochange_size_normalized: REF.params.cochange_size_normalized,
+  };
+}
+
+/* ------------------------------------------------------------------ */
+
+async function boot() {
+  const [ev, res, man] = await Promise.all([
+    fetch('data/events.json').then(r => r.json()),
+    fetch('data/results.json').then(r => r.json()),
+    fetch('data/manifest.json').then(r => r.json()),
+  ]);
+  EVENTS = ev.events;
+  REF = res;
+  MAN = man;
+
+  paintPrereg();
+
+  // Run the backtest in the browser and reconcile against the reference.
+  MEASURED = backtest(EVENTS, REF.params);
+  paintScores(MEASURED);
+  paintVerdict();
+  paintProvenance();
+
+  pos = layout(ev.files.length);
+  viewField = new Field(refParams());
+  resize();
+  $('#busy').remove();
+  raf = requestAnimationFrame(tick);
+
+  const panel = renderPanel(params, $('#panel'), {
+    gauges: [
+      { label: 'field MRR', group: 'measured', read: () => MEASURED.models.field.mrr.toFixed(4) },
+      { label: 'recency MRR', group: 'measured', read: () => MEASURED.models.recency.mrr.toFixed(4) },
+      { label: 'field − recency', group: 'measured',
+        read: () => (MEASURED.models.field.mrr - MEASURED.models.recency.mrr).toFixed(4) },
+      { label: 'commits scored', group: 'measured', read: () => MEASURED.meta.scored_commits },
+    ],
+  });
+  params.subscribe(() => { panel.refresh(); });
+
+  window.__sim = {
+    reference: () => REF,
+    measured: () => MEASURED,
+    manifest: () => MAN,
+    reconcile,
+    rerun: () => { MEASURED = backtest(EVENTS, REF.params); paintScores(MEASURED); paintVerdict(); return MEASURED; },
+  };
+}
+
+boot().catch(e => {
+  const b = document.getElementById('busy');
+  if (b) { b.textContent = 'failed to load dataset: ' + e.message; b.style.color = 'var(--alert)'; }
+  console.error(e);
+});
+</script>
+</body>
+</html>

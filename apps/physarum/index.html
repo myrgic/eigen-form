@@ -4,6 +4,97 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Physarum Stigmergy Simulation</title>
+<script type="application/cogdoc+yaml">
+id: paper-physarum-stigmergy
+type: paper
+title: "Physarum Stigmergy: sufficiency of a decaying shared trace for global coordination"
+description: >
+  8000 agents deposit into a diffusing, decaying pixel field and steer by three
+  samples each; global structure emerges with no direct communication. Executable
+  paper — parameters are sliders, and the deposit clamp is a reachable saturation
+  bound that flattens the gradient and stops coordination.
+sector: reference
+status: draft
+created: 2026-08-11
+updated: 2026-08-18
+salience: high
+authors:
+  - chazmaniandinkle
+tags: [stigmergy, physarum, agent-coordination, decay, diffusion, eigen-form, executable-paper]
+claim: >
+  Deposit into a diffusing, decaying shared medium is sufficient for global
+  structure to emerge among agents that never communicate directly, hold no
+  model of each other, and read only three samples of the field per step.
+method:
+  - param: sa
+    label: sensor angle
+    range: [10, 90]
+    default: 45
+    unit: degrees
+    meaning: angular offset of the left/right samples from heading
+  - param: ra
+    label: rotation angle
+    range: [10, 90]
+    default: 45
+    unit: degrees
+    meaning: turn applied per step when a flank sample wins
+  - param: decay
+    label: evaporation rate
+    range: [0.8, 0.999]
+    default: 0.99
+    meaning: >
+      per-frame multiplier on the field; trail half-life is
+      log(0.5)/log(decay) frames. This is the damping term.
+  - param: sensorDist
+    default: 9
+    fixed: true
+    meaning: lookahead distance, 9x the step size
+observables:
+  agents: 8000
+  field: Float32Array(width*height), 3x3 box blur then multiply by decay
+  read_cost: 3 samples per agent per frame, O(1) in field size
+findings:
+  - >
+    The passive read is O(1) in field size: each agent samples three cells
+    regardless of grid dimensions, which is what makes a wide field affordable.
+  - >
+    Motor logic is hysteresis. The incumbent heading is retained unless a flank
+    sample is strictly greater, so ties go to the incumbent — a displacement
+    ratio of exactly 1.0.
+  - >
+    SATURATION IS REACHABLE AND DESTROYS COORDINATION. Equilibrium requires
+    H(1-decay) = N*deposit; at decay=0.99, N=8000, deposit=25 the field wants
+    ~20M units against a 255/cell clamp. Where cells pin at the clamp,
+    wF == wL == wR, every branch of the motor logic is false, and the field
+    stops steering. A field at its cap is flat, and a flat field carries no
+    gradient. Consequence for any budgeted attention layer: the budget needs a
+    lower bound (stay below saturation), not only an upper one.
+limitations:
+  - >
+    No robust normalization: render and sensing both read raw cell values
+    against a hard clamp. See app:welded_fields, which normalizes to the 99.5th
+    percentile and fixes mask coverage rather than level.
+  - The displacement ratio is implicit at 1.0 and not exposed as a parameter.
+refs:
+  - uri: app:welded_fields
+    rel: corrected-by
+    desc: >
+      Reallocates the image buffer inside reset (comment "unlike the original")
+      and floors dimensions with Math.max(64, ...); also supplies the metrology
+      this artifact lacks.
+  - uri: cog://rfc/058
+    rel: demonstrates
+    desc: >
+      Declared observables' generation field as a decaying deposit medium;
+      d(generation)/dt is the concentration map this simulation renders.
+  - uri: cog://rfc/033
+    rel: demonstrates
+    desc: StigmergicProjector — coordination via trace, no messaging primitives.
+  - uri: cog://mem/working/2026-08-18-physarum-as-attention-rig
+    rel: grounds
+    desc: Line-by-line correspondence to the attention layer derived 2026-08-18.
+</script>
+
     <style>
         body { margin: 0; padding: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; height: 100vh; }
         #sidebar { width: 300px; background: #111; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 15px; z-index: 10; border-right: 1px solid #333; }
@@ -59,14 +150,24 @@
     let particles = [];
     const numParticles = 8000;
 
+    // `imageData` is reallocated HERE, with the grid — unlike the original, which
+    // called createImageData once at top level immediately after the first
+    // reset(). Two failures followed from that: a container reporting zero width
+    // at first layout threw IndexSizeError, and because the throw was top-level
+    // animate() never started at all; and any later resize reallocated `grid` to
+    // new dimensions while the image buffer kept the old ones. Dimensions are
+    // floored at 64 so a zero-width parent cannot throw in the first place.
+    let imageData;
+
     function reset() {
-        width = Math.floor(canvas.parentElement.clientWidth / scale);
-        height = Math.floor(canvas.parentElement.clientHeight / scale);
+        width = Math.max(64, Math.floor(canvas.parentElement.clientWidth / scale));
+        height = Math.max(64, Math.floor(canvas.parentElement.clientHeight / scale));
         canvas.width = width; canvas.height = height;
-        
+
         // Use 1D Float32Array for performance
         grid = new Float32Array(width * height);
         nextGrid = new Float32Array(width * height);
+        imageData = ctx.createImageData(width, height);
         
         particles = [];
         const cx = width/2, cy = height/2;
@@ -84,8 +185,6 @@
     document.getElementById('btn-reset').addEventListener('click', reset);
     window.addEventListener('resize', reset);
     reset();
-
-    const imageData = ctx.createImageData(width, height);
 
     function animate() {
         // 1. Grid Update: Diffusion & Decay (3x3 Box Blur)

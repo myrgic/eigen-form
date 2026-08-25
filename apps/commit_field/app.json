@@ -1,0 +1,28 @@
+{
+  "id": "commit_field",
+  "title": "Commit Field",
+  "description": "A causal backtest: three stigmergic heat models replayed over real git history and scored on whether they predict the files each next commit actually touched.",
+  "version": "1.0.0",
+  "kind": "instrument-view",
+  "entry": "index.html",
+  "cogdoc": {
+    "type": "paper",
+    "id": "paper-commit-field",
+    "embedded": "script[type=\"application/cogdoc+yaml\"]",
+    "claim": "Diffusion across a co-change graph does not improve next-touch prediction over exponentially decayed recency alone on this corpus; both beat raw frequency, and all three beat random by more than an order of magnitude.",
+    "port": "window.__sim",
+    "verify": ".cog/bin/tools/cogdoc_verify.py"
+  },
+  "provenance": {
+    "builtOn": "eigen-form@0.4.0 55f1b12"
+  },
+  "data": {
+    "manifest": "data/manifest.json",
+    "generator": "tools/extract.py",
+    "regenerate": "python3 tools/extract.py --repo <path> --label <name>"
+  },
+  "sdk": { "eigen-form": ">=0.2.0" },
+  "capabilities": { "emits": [], "accepts": [] },
+  "pwa": { "installable": false },
+  "display": { "order": 2, "accent": "#ff7a4d" }
+}

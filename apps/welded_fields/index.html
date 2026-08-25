@@ -4,6 +4,243 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Welded Fields — Stigmergy + Advection</title>
+<script type="application/cogdoc+yaml">
+id: paper-welded-fields
+type: paper
+title: "Welded Fields: closing the loop — an agent-owned momentum field, robust normalization, and a topology measurement invariant to level"
+description: >
+  A stigmergic trail field and a coarse advection/momentum field are welded onto
+  one grid. Agents deposit into both and steer by both, so with the exogenous
+  noise gain at zero the only transport field is agent-generated. Rendering,
+  contours and the mask are normalized to the 99.5th percentile rather than the
+  raw maximum, and the mask fixes COVERAGE rather than level, which is what
+  makes the Betti-1 readout comparable across parameter changes. Executable
+  paper — every slider is a declared parameter and window.__sim is the test port.
+sector: reference
+status: draft
+created: 2026-08-12
+updated: 2026-08-18
+salience: high
+authors:
+  - chazmaniandinkle
+tags: [stigmergy, advection, momentum-field, rheotaxis, topology, betti, robust-normalization, closed-loop, eigen-form, executable-paper]
+claim: >
+  A stigmergic system can close its own loop: when the exogenous noise gain is
+  zero the transport field is entirely agent-deposited, and the governing
+  quantity becomes an internal ratio of timescales (momentum half-life / trail
+  half-life) rather than an external clock. Measuring that system's structure
+  requires normalization that is robust to single-cell deposit spikes, and a
+  threshold that fixes mask COVERAGE rather than field LEVEL — otherwise the
+  topology readout moves merely because the field got brighter.
+method:
+  - param: sa
+    label: sensor angle
+    range: [5, 90]
+    default: 60
+    unit: degrees
+    meaning: angular offset of the left/right trail samples from heading
+  - param: ra
+    label: rotation angle
+    range: [5, 90]
+    default: 18
+    unit: degrees
+    meaning: turn applied per step when a flank sample wins; small relative to sa, so turning is gradual rather than snap-to-flank
+  - param: so
+    label: sensor distance
+    range: [1, 30]
+    default: 5
+    unit: cells
+    meaning: lookahead distance of the three trail samples
+  - param: dec
+    label: evaporation (trail decay)
+    range: [0.900, 0.999]
+    default: 0.990
+    meaning: >
+      per-frame multiplier on the trail field. Trail half-life is
+      log(0.5)/log(dec) frames; this is the denominator of every displayed ratio.
+  - param: dep
+    label: deposit
+    range: [1, 60]
+    default: 25
+    meaning: trail amount written per agent per frame; sets the equilibrium level, which robust normalization then divides out
+  - param: adv
+    label: advection (transport)
+    range: [0, 2]
+    default: 0.02
+    meaning: gain with which the local momentum vector displaces the agent's position — the field carries the agent
+  - param: ali
+    label: alignment (rheotaxis)
+    range: [0, 1]
+    default: 0.02
+    meaning: gain with which the agent rotates its heading toward the local momentum direction — the field turns the agent
+  - param: mass
+    label: self-field mass
+    range: [0, 2]
+    default: 1.00
+    meaning: >
+      how strongly agents deposit their own velocity into the momentum field.
+      At 0 the momentum field is inert and the system reduces to plain
+      stigmergy; above 0 the transport field is agent-generated, which is what
+      "closed loop" means here.
+  - param: mdec
+    label: momentum decay
+    range: [0.700, 0.995]
+    default: 0.940
+    meaning: >
+      per-frame multiplier on the momentum field. Momentum half-life is
+      log(0.5)/log(mdec); the DISPLAYED governing quantity is the ratio
+      momentum-tau-half / trail-tau-half, a timescale the system owns.
+  - param: ng
+    label: noise gain (exogenous)
+    range: [0, 2]
+    default: 0.00
+    meaning: >
+      gain on the external procedural (curl-noise) field. This is the ONLY
+      exogenous driver; at its default 0 nothing outside the simulation drives
+      anything, and the noise/trail ratio readout goes dark by design.
+  - param: ns
+    label: noise scale
+    range: [0.001, 0.03]
+    default: 0.0060
+    unit: 1/cells
+    meaning: spatial frequency of the exogenous noise field; only meaningful when ng > 0
+  - param: dr
+    label: drift rate
+    range: [0, 0.05]
+    default: 0.0050
+    unit: 1/frame
+    meaning: >
+      temporal advance of the exogenous noise field. Its timescale is 1/dr
+      frames; the ratio (1/dr)/trail-tau-half is flagged warn below 4x and bad
+      below 1.5x, because an external clock faster than the medium's memory
+      overwrites structure before it can form.
+  - param: hrel
+    label: hormone release
+    range: [0, 2]
+    default: 0.00
+    meaning: rate at which agents release the slow regional hormone field; at 0 the whole hormone subsystem is off
+  - param: hdec
+    label: hormone decay
+    range: [0.950, 0.9995]
+    default: 0.9970
+    meaning: per-frame multiplier on the hormone field; deliberately slower than the trail so the hormone acts as regional weather, not as a gradient
+  - param: hsa
+    label: hormone -> sensor angle
+    range: [-1, 1]
+    default: 0.00
+    meaning: signed modulation of sensor angle by local hormone level; a hot region can widen or narrow every agent's search cone at once
+  - param: hra
+    label: hormone -> rotation angle
+    range: [-1, 1]
+    default: 0.00
+    meaning: signed modulation of rotation angle by local hormone level
+  - param: hdc
+    label: hormone -> trail tau (weather)
+    range: [-1, 1]
+    default: 0.00
+    meaning: >
+      signed modulation of the trail decay by local hormone level — a regional
+      change to the medium's memory itself, not to any agent's behaviour
+  - param: thr
+    label: mask coverage
+    range: [1, 40]
+    default: 8
+    unit: percent
+    meaning: >
+      TARGET COVERAGE, not a level. The threshold is solved per frame so exactly
+      this fraction of cells fall inside the mask. This is the invariance that
+      makes beta_1 comparable across parameter changes.
+  - param: N
+    default: 9000
+    fixed: true
+    meaning: agent count; fixed, and divided out of the field statistics by the running-mean normalization
+observables:
+  port: window.__sim
+  betti: >
+    __sim.betti() -> {b0, b1, coverage}. b0 = connected components of the mask
+    (union-find), b1 = b0 - euler() (voids/loops), coverage = percent of cells in
+    the mask, which should track the `thr` slider by construction.
+  refs: >
+    __sim.refs() -> {ref, cut, max}. ref = 99.5th percentile of the trail field
+    (render + contour scale); cut = the level placing exactly `thr` of cells in
+    the mask; max = raw maximum. ref << max whenever deposit spikes exist.
+  fields: __sim.grid (Float32Array W*H trail), __sim.momX/momY (mW*mH momentum), __sim.horm (hormone), __sim.mask (Uint8Array)
+  samplers: __sim.fieldAt(x,y,out), __sim.sampleMom(x,y,out), __sim.hormAt(x,y)
+  params: __sim.P — live parameter object; mutate to drive the model from a test harness
+  cost: >
+    betti() is O(W*H) union-find and reruns the histogram; it is a measurement
+    call, not a per-frame path. The per-frame agent read stays 3 trail samples +
+    1 momentum sample per agent, O(1) in field size.
+findings:
+  - >
+    ROBUST NORMALIZATION IS LOAD-BEARING. The raw maximum of the trail field is a
+    single-cell deposit spike roughly two orders above the mean; normalizing to it
+    made the render dark, put every contour level above the whole field, and left
+    the mask nearly empty. Taking the 99.5th percentile from a 1024-bin histogram
+    instead fixes all three with one quantity.
+  - >
+    FIXING COVERAGE RATHER THAN LEVEL BUYS MEASUREMENT INVARIANCE. The mask
+    threshold is solved each frame for a target coverage (`thr`), so beta_1 stops
+    moving merely because the field got brighter. A topology statistic taken at a
+    fixed absolute level is confounded with the nuisance parameter `deposit`;
+    taken at fixed coverage it is not.
+  - >
+    THE LOOP CLOSES. With noise gain at 0 no exogenous field drives anything: the
+    transport field is entirely agent-deposited momentum. The controlling quantity
+    becomes momentum tau-half / trail tau-half — computed as
+    log(0.5)/log(mdec) over log(0.5)/log(dec) and displayed as a ratio — a
+    timescale the system owns rather than an external clock it is entrained to.
+  - >
+    RUNNING MEANS MAKE GAINS DIMENSIONLESS. momRef and hormRef track the mean
+    field magnitude with a 0.05 relaxation, and every read divides by them, so
+    `adv`, `ali` and the hormone couplings mean the same thing regardless of
+    agent count or deposit size. Without this, every gain would silently rescale
+    with N.
+  - >
+    THE IMAGE BUFFER MUST BE REALLOCATED WITH THE GRID. Dimensions are floored at
+    Math.max(64, ...) and the ImageData is created inside reset() alongside the
+    grid. The ancestor allocated it once at top level, so a zero-width container
+    threw IndexSizeError before the animation loop ever started and the artifact
+    was permanently dead on that load. See refs[] rel:corrects.
+limitations:
+  - >
+    b1 is computed as b0 - euler() on a binary mask, which is exact for the
+    Euler characteristic of the pixel complex but says nothing about feature
+    scale: one large void and one pixel-sized hole count the same.
+  - >
+    Coverage invariance is invariance under a LEVEL nuisance only. Changing
+    `thr` itself still changes the topology, and correctly so — it is a
+    different measurement, not the same one rescaled.
+  - >
+    The hormone couplings (hsa/hra/hdc) default to 0 and are therefore
+    demonstrated but not characterized; no finding here rests on them.
+  - >
+    entryHash in app.json is machine-generated and currently pending rebuild.
+refs:
+  - uri: app:physarum
+    rel: corrects
+    desc: >
+      The ancestor allocated its ImageData once at top level immediately after
+      the first reset(); a container reporting zero width made createImageData
+      throw IndexSizeError, and because the throw was top-level the animation
+      loop never started. This artifact reallocates the buffer inside reset()
+      alongside the grid (the in-code comment "reallocated with the grid, unlike
+      the original") and floors both dimensions with Math.max(64, ...). It also
+      supplies the metrology the ancestor lacks: percentile normalization and a
+      coverage-fixed threshold in place of a raw clamp.
+  - uri: cog:conf/spec/cogdoc-html-executable-artifacts
+    rel: implements
+    desc: >
+      Carries this frontmatter in an inert application/cogdoc+yaml script block,
+      and exposes window.__sim as the test port that spec rule 4 requires of any
+      artifact that makes a claim.
+  - uri: cog://rfc/058
+    rel: demonstrates
+    desc: >
+      Declared observables as a decaying deposit medium. The momentum field is
+      that medium made vectorial, and the momentum/trail half-life ratio is the
+      endogenous timescale such a system is governed by.
+</script>
 <style>
   :root{
     --bg:#07060b; --panel:#100d18; --line:#241d33; --fg:#e8e3f2; --dim:#9a92ae; --faint:#655c7a;

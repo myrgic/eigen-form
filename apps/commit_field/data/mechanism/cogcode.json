@@ -1,0 +1,16 @@
+{
+ "repo": "cogcode",
+ "commits": 2499,
+ "mechanical": 17,
+ "mech_frac": 0.006802721088435374,
+ "bulk_all": 119,
+ "mech_bulk": 2,
+ "swing_all": 2.5277900805538964,
+ "swing_genuine": 1.9008309082277752,
+ "delta": -0.6269591723261212,
+ "reasons": {
+  "message": 14,
+  "generated-files": 1,
+  "monoextension-bulk": 2
+ }
+}
