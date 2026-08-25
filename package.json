@@ -1,12 +1,23 @@
 {
   "name": "eigen-form",
   "version": "0.4.0",
-  "description": "Mathematical design library — parameterized eigenform rendering. v0.4: the engine no longer owns any background/reference color (opts.bg, setParam('bg', ...), and data-bg are gone — the host page owns the ground), and closes out three HIGH-severity engine bugs (double-init dedup, NaN-safe construction, resize self-heal), atop v0.3's configurable color band, v0.2's declared parameter schemas and generated control-surface panel (src/params, src/panel), v0.1's torus-knot engine seams, headless golden-op regression tests, and versioned figure specs.",
+  "description": "Mathematical design library \u2014 parameterized eigenform rendering. v0.4: the engine no longer owns any background/reference color (opts.bg, setParam('bg', ...), and data-bg are gone \u2014 the host page owns the ground), and closes out three HIGH-severity engine bugs (double-init dedup, NaN-safe construction, resize self-heal), atop v0.3's configurable color band, v0.2's declared parameter schemas and generated control-surface panel (src/params, src/panel), v0.1's torus-knot engine seams, headless golden-op regression tests, and versioned figure specs.",
   "main": "src/eigen-form.js",
-  "files": ["src/", "README.md", "LICENSE"],
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE",
+    "dist/"
+  ],
   "license": "MIT",
   "homepage": "https://github.com/myrgic/eigen-form",
-  "keywords": ["eigenform", "torus-knot", "design-system", "myrgic", "scientific-visualization"],
+  "keywords": [
+    "eigenform",
+    "torus-knot",
+    "design-system",
+    "myrgic",
+    "scientific-visualization"
+  ],
   "author": "Myrgic Labs",
   "scripts": {
     "golden": "node tools/golden.js",
@@ -14,6 +25,16 @@
     "lab:build": "node tools/lab_build.js --write",
     "lab:check": "node tools/lab_build.js --check",
     "test": "node tests/params.js && node tests/engine.js",
-    "check": "npm run test && npm run golden:check && npm run lab:check"
+    "check": "npm run test && npm run golden:check && npm run lab:check",
+    "build": "esbuild src/eigen-form.js --bundle --format=iife --outfile=dist/eigen-form.js",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  },
+  "browser": "dist/eigen-form.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/myrgic/eigen-form.git"
   }
 }
