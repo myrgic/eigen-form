@@ -326,6 +326,24 @@ hidden.
    scatter and diffuse/decay both reproduce almost exactly given no
    branch to diverge on.
 
+## What the GPU backend does not yet cover
+
+Scope carried by this delivery, named plainly rather than silently
+dropped (mirrors `webgl2.js`'s own header comment):
+
+- The reactions vocabulary (source/sink/decay/monod/product) is
+  CPU-only; a spec with a non-empty `reactions` array throws on the
+  GPU backend rather than silently drifting from the reference.
+- The `'rescale'` weld effect (`read.mode: 'level'`) is CPU-only; a
+  weld using it throws for the same reason.
+- `advectedBy` (semi-Lagrangian advection) and vector-channel
+  projection ARE implemented in `webgl2.js`, but neither of the two
+  twin specs (`apps/aquarium/twin.html`: physarum, boids) exercises
+  them, so they are unverified by the twin harness in this delivery.
+
+Every one of these throws with a message naming exactly what is
+missing, rather than quietly producing a wrong number.
+
 ## Promotion path into `src/dynamics/`
 
 This engine is deliberately NOT wired into `src/dynamics/` or any
