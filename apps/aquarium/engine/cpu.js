@@ -30,6 +30,9 @@
    ===================================================================== */
 
 import { rand01 } from './rng.js';
+import { STENCIL_1D } from './kernel.js';
+
+const [ST_A, ST_B, ST_C] = STENCIL_1D; // kernel.js's declared 1D box-3 weights
 
 /* ---- boundary-aware single-cell read/write --------------------------
    The one place every stencil, every bilinear sample, and every deposit
@@ -196,7 +199,7 @@ function diffuseInPlace(grid, scratchH, scratchV, W, H, boundary, rate) {
       const l = readCell(grid, x - 1, y, W, H, boundary);
       const c = grid[r + x];
       const rt = readCell(grid, x + 1, y, W, H, boundary);
-      scratchH[r + x] = (l + c + rt) / 3;
+      scratchH[r + x] = l * ST_A + c * ST_B + rt * ST_C;
     }
   }
   for (let y = 0; y < H; y++) {
@@ -205,7 +208,7 @@ function diffuseInPlace(grid, scratchH, scratchV, W, H, boundary, rate) {
       const u = readCell(scratchH, x, y - 1, W, H, boundary);
       const c = scratchH[r + x];
       const d = readCell(scratchH, x, y + 1, W, H, boundary);
-      scratchV[r + x] = (u + c + d) / 3;
+      scratchV[r + x] = u * ST_A + c * ST_B + d * ST_C;
     }
   }
   for (let i = 0; i < grid.length; i++) {
@@ -387,6 +390,12 @@ function meanAbsDivergence(spec, state, channelName) {
 /* ---- agent pass: welds, then integrate; deposit pass follows separately ---- */
 
 const STREAM_TIEBREAK_BASE = 5000; // + weld index
+// Deadband on the gradient-weld's F/L/R sensor comparisons — see the
+// comment at its use site in stepAgents for why this exists and what it
+// costs. Must match webgl2.js's GLSL constant of the same name exactly:
+// this is the one number both backends agree the reference kernel means
+// by "close enough to call a tie".
+const TIE_EPS = 1e-3;
 
 function stepAgents(spec, state, stepIndex) {
   const { population, width: W, height: H, seed } = spec;
@@ -412,14 +421,32 @@ function stepAgents(spec, state, stepIndex) {
         const L = bilinearSample(grid, x + Math.cos(heading - sa) * so, y + Math.sin(heading - sa) * so, W, H, ch.boundary);
         const R = bilinearSample(grid, x + Math.cos(heading + sa) * so, y + Math.sin(heading + sa) * so, W, H, ch.boundary);
         const gain = weld.effect.gain;
-        if (F > L && F > R) {
+        // TIE_EPS: a deadband around every comparison, not just the exact
+        // F===L===R tie the physarum reference motor logic already
+        // hysteresis-handles. Verified empirically (.scratch/debug4.html,
+        // not committed): without it, a sensor pair within a few ULPs of
+        // each other can compare > on the CPU and <= on the GPU (native
+        // cos/sin differ in their last bit between backends per docs/
+        // executable-experiments-design.md's tier-1 "Determinism,
+        // honestly"), flipping which way that one agent turns that step.
+        // That is a discrete branch flip, not a small numeric one, and it
+        // compounds: a flipped agent's whole future trajectory and
+        // deposits diverge, other agents sense its now-different trail
+        // and can flip too, and by 200 steps by field mean |divergence|
+        // was over 50% relL2 (2171/3000 agents' headings had diverged).
+        // TIE_EPS trades a small amount of motor sensitivity (a sensor
+        // pair within TIE_EPS of each other now reads as a tie, same as
+        // the reference already treats an exact tie) for removing that
+        // ULP-driven coin flip at its source — see
+        // docs/agent-substrate-engine.md, "The twin protocol".
+        if (F > L + TIE_EPS && F > R + TIE_EPS) {
           // straight
-        } else if (F < L && F < R) {
+        } else if (F < L - TIE_EPS && F < R - TIE_EPS) {
           const flip = rand01(seed, i, stepIndex, STREAM_TIEBREAK_BASE + w) < 0.5;
           heading += flip ? gain : -gain;
-        } else if (L > R) {
+        } else if (L > R + TIE_EPS) {
           heading -= gain;
-        } else if (R > L) {
+        } else if (R > L + TIE_EPS) {
           heading += gain;
         } else {
           const flip = rand01(seed, i, stepIndex, STREAM_TIEBREAK_BASE + w) < 0.5;
