@@ -131,8 +131,9 @@ comparisons.
 ## Step order (fixed, always)
 
 1. **Substrate pass**, per channel, **in declared order**: diffuse (2-pass
-   separable 3x3 tent stencil, weights `[1,2,1]/4` each pass — see
-   `kernel.js`'s `STENCIL_1D`), decay (multiplicative, from `halfLife`),
+   separable 3x3 box mean, weights `[1/3,1/3,1/3]` each pass, giving a
+   uniform 1/9 per cell as a full 2D kernel — see `kernel.js`'s
+   `STENCIL_1D`), decay (multiplicative, from `halfLife`),
    advect (semi-Lagrangian: sample the declared momentum channel
    grid-aligned at the destination cell, trace back, bilinear-sample the
    source). Then **reactions**, in declared order, once all channels have

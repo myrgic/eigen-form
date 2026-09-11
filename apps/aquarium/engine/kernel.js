@@ -257,13 +257,13 @@ function defineSubstrate(spec) {
 }
 
 /* ---- the declared diffusion stencil --------------------------------
-   A separable 3x3 tent (weights [1,2,1]/4 each pass = 1/16,2/16,1/16;
-   2/16,4/16,2/16; 1/16,2/16,1/16 as a full 2D kernel), computed as two
-   1D box-3 averages the way apps/welded_fields/index.html's diffuseDecay
-   does it. Declared once, here, so cpu.js and webgl2.js apply the exact
-   same weights in the exact same two-pass order — "declared weights" per
-   the deliverable, not two independent reimplementations that happen to
-   agree today. */
+   A separable 3x3 box mean (weights [1/3,1/3,1/3] each pass, giving a
+   uniform 1/9 per cell as a full 2D kernel), computed as two 1D box-3
+   averages the way apps/welded_fields/index.html's diffuseDecay does it
+   ("separable box mean on a torus"). Declared once, here, so cpu.js and
+   webgl2.js apply the exact same weights in the exact same two-pass
+   order — "declared weights" per the deliverable, not two independent
+   reimplementations that happen to agree today. */
 const STENCIL_1D = Object.freeze([1 / 3, 1 / 3, 1 / 3]);
 
 export {
