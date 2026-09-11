@@ -125,8 +125,46 @@ function channelMap(spec) {
   return m;
 }
 
+/** Allocate one population's agent arrays. Shared by the singular
+ *  `population` field and every entry of the plural `populations` array
+ *  — same shape either way, see kernel.js's "Capabilities added for the
+ *  aquarium". */
+function allocateAgents(popSpec) {
+  const N = popSpec.count;
+  const scalarsBase = {};
+  const scalars = {};
+  for (const name of Object.keys(popSpec.scalars)) {
+    scalarsBase[name] = new Float32Array(N);
+    scalars[name] = new Float32Array(N);
+  }
+  return {
+    count: N,
+    x: new Float32Array(N),
+    y: new Float32Array(N),
+    heading: new Float32Array(N),
+    speed: new Float32Array(N),
+    scalarsBase,
+    scalars
+  };
+}
+
+/** Every (name, spec) population pair this spec declares, in the fixed
+ *  execution order both backends use: the singular `population` first
+ *  (name 'default', for backward compatibility with state.agents — see
+ *  below), then each named entry of `populations` in declared order.
+ *  `salt` seeds this population's own RNG address space (see
+ *  resetAgents/stepAgents) so two populations sharing a spec.seed don't
+ *  draw identical "random" streams just because their agent indices
+ *  overlap. */
+function populationList(spec) {
+  const list = [];
+  if (spec.population) list.push({ name: 'default', spec: spec.population, salt: 0 });
+  (spec.populations || []).forEach((p, i) => list.push({ name: p.name, spec: p, salt: i + 1 }));
+  return list;
+}
+
 function createState(spec) {
-  const { width: W, height: H, channels, population } = spec;
+  const { width: W, height: H, channels } = spec;
   const n = W * H;
   const fields = {};
   for (const ch of channels) {
@@ -144,27 +182,18 @@ function createState(spec) {
     scratchH: new Float32Array(n),
     scratchV: new Float32Array(n),
     scratchAdvect: new Float32Array(n),
+    scratchReact: new Float32Array(n),
     proj: { div: new Float32Array(n), p: new Float32Array(n) },
-    agents: null
+    agents: null,
+    // Named populations (kernel.js's plural `populations`), keyed by
+    // name — populated below alongside the legacy singular `agents`.
+    populationsByName: {}
   };
 
-  if (population) {
-    const N = population.count;
-    const scalarsBase = {};
-    const scalars = {};
-    for (const name of Object.keys(population.scalars)) {
-      scalarsBase[name] = new Float32Array(N);
-      scalars[name] = new Float32Array(N);
-    }
-    state.agents = {
-      count: N,
-      x: new Float32Array(N),
-      y: new Float32Array(N),
-      heading: new Float32Array(N),
-      speed: new Float32Array(N),
-      scalarsBase,
-      scalars
-    };
+  for (const { name, spec: popSpec } of populationList(spec)) {
+    const agents = allocateAgents(popSpec);
+    if (name === 'default') state.agents = agents;
+    state.populationsByName[name] = agents;
   }
 
   return state;
@@ -172,20 +201,30 @@ function createState(spec) {
 
 /* ---- agent init: pure function of spec.seed, no Math.random ---------- */
 const STREAM_INIT_X = 101, STREAM_INIT_Y = 102, STREAM_INIT_HEADING = 103;
+// Per-population salt, folded into every init/tie-break stream id so
+// two populations sharing one spec.seed don't draw identical "random"
+// sequences just because their agent indices both start at 0 — see
+// populationList() above. 97 is arbitrary but large enough that a
+// realistic weld count (<< 97) never collides with the next salt's
+// tie-break stream range (STREAM_TIEBREAK_BASE + salt*97 + weldIndex).
+const SALT_STRIDE = 97;
 
 function resetAgents(spec, state) {
-  const { population, width: W, height: H, seed } = spec;
-  if (!population || !state.agents) return;
-  const A = state.agents;
-  for (let i = 0; i < A.count; i++) {
-    A.x[i] = rand01(seed, i, 0, STREAM_INIT_X) * W;
-    A.y[i] = rand01(seed, i, 0, STREAM_INIT_Y) * H;
-    A.heading[i] = rand01(seed, i, 0, STREAM_INIT_HEADING) * Math.PI * 2;
-    A.speed[i] = population.speed;
-  }
-  for (const [name, def] of Object.entries(population.scalars)) {
-    A.scalarsBase[name].fill(def);
-    A.scalars[name].fill(def);
+  const { width: W, height: H, seed } = spec;
+  for (const { name, spec: popSpec, salt } of populationList(spec)) {
+    const A = state.populationsByName[name];
+    if (!A) continue;
+    const s = salt * SALT_STRIDE;
+    for (let i = 0; i < A.count; i++) {
+      A.x[i] = rand01(seed, i, 0, STREAM_INIT_X + s) * W;
+      A.y[i] = rand01(seed, i, 0, STREAM_INIT_Y + s) * H;
+      A.heading[i] = rand01(seed, i, 0, STREAM_INIT_HEADING + s) * Math.PI * 2;
+      A.speed[i] = popSpec.speed;
+    }
+    for (const [scalarName, def] of Object.entries(popSpec.scalars)) {
+      A.scalarsBase[scalarName].fill(def);
+      A.scalars[scalarName].fill(def);
+    }
   }
 }
 
@@ -267,8 +306,20 @@ function applyReactions(spec, state) {
   const { width: W } = spec;
   for (const r of spec.reactions) {
     if (r.type === 'source') {
-      const grid = state.fields[r.channel];
-      for (const [cx, cy] of r.cells) grid[cy * W + cx] += r.rate;
+      if (r.vector) {
+        // Aquarium addition: a source on a vector channel (filter jet /
+        // intake) — add a fixed direction*rate at each declared cell.
+        const vec = state.fields[r.channel];
+        const [rx, ry] = r.vector;
+        for (const [cx, cy] of r.cells) {
+          const idx = cy * W + cx;
+          vec.x[idx] += rx * r.rate;
+          vec.y[idx] += ry * r.rate;
+        }
+      } else {
+        const grid = state.fields[r.channel];
+        for (const [cx, cy] of r.cells) grid[cy * W + cx] += r.rate;
+      }
     } else if (r.type === 'sink') {
       const grid = state.fields[r.channel];
       for (let i = 0; i < grid.length; i++) {
@@ -290,6 +341,43 @@ function applyReactions(spec, state) {
     } else if (r.type === 'product') {
       const A = state.fields[r.a], B = state.fields[r.b], into = state.fields[r.into];
       for (let i = 0; i < into.length; i++) into[i] += r.rate * A[i] * B[i];
+    } else if (r.type === 'buoyancy') {
+      // Boussinesq: velocity.y -= beta * (T - reference). Purely local,
+      // no neighbour reads — see kernel.js's grammar addendum.
+      const vec = state.fields[r.velocity], T = state.fields[r.temperature];
+      for (let i = 0; i < T.length; i++) vec.y[i] -= r.beta * (T[i] - r.reference);
+    } else if (r.type === 'relax') {
+      // channel += rate * mask * (target - channel). Newton cooling is
+      // this with mask = 1 at the surface row, 0 elsewhere.
+      const grid = state.fields[r.channel], mask = state.fields[r.mask];
+      for (let i = 0; i < grid.length; i++) grid[i] += r.rate * mask[i] * (r.target - grid[i]);
+    } else if (r.type === 'exchange') {
+      // Like `relax`, but the rate is additionally scaled by a vector
+      // channel's local magnitude ("agitation") — surface gas exchange
+      // is faster where the flow is more turbulent.
+      const grid = state.fields[r.channel], driver = state.fields[r.driver], mask = state.fields[r.mask];
+      for (let i = 0; i < grid.length; i++) {
+        const agitation = Math.hypot(driver.x[i], driver.y[i]);
+        grid[i] += r.rate * mask[i] * agitation * (r.target - grid[i]);
+      }
+    } else if (r.type === 'nitrify') {
+      // Monod uptake of `substrate` into `product` by a spatial
+      // `bacteria` population that grows logistically on that same
+      // substrate, both gated by a static `mask` (filter media
+      // occupancy). See kernel.js's grammar addendum for the derivation.
+      const S = state.fields[r.substrate], P = state.fields[r.product];
+      const B = state.fields[r.bacteria], mask = state.fields[r.mask];
+      for (let i = 0; i < S.length; i++) {
+        const m = mask[i];
+        if (m <= 0) continue;
+        const s = S[i], b = B[i];
+        const mu = r.growthRate * s / (s + r.halfSaturation + 1e-12);
+        const uptake = mu * b * m;
+        S[i] = Math.max(0, s - uptake);
+        P[i] += uptake * r.yieldFactor;
+        const growth = (mu * (1 - b / r.carryingCapacity) - r.deathRate) * b * m;
+        B[i] = Math.max(0, b + growth);
+      }
     }
   }
 }
@@ -397,12 +485,11 @@ const STREAM_TIEBREAK_BASE = 5000; // + weld index
 // by "close enough to call a tie".
 const TIE_EPS = 1e-3;
 
-function stepAgents(spec, state, stepIndex) {
-  const { population, width: W, height: H, seed } = spec;
-  if (!population) return;
-  const A = state.agents;
+function stepOnePopulation(spec, state, stepIndex, population, A, salt) {
+  const { width: W, height: H, seed } = spec;
   const boundary = population.boundary;
   const welds = population.welds;
+  const tieBase = STREAM_TIEBREAK_BASE + salt * SALT_STRIDE;
 
   for (let i = 0; i < A.count; i++) {
     let heading = A.heading[i];
@@ -442,14 +529,14 @@ function stepAgents(spec, state, stepIndex) {
         if (F > L + TIE_EPS && F > R + TIE_EPS) {
           // straight
         } else if (F < L - TIE_EPS && F < R - TIE_EPS) {
-          const flip = rand01(seed, i, stepIndex, STREAM_TIEBREAK_BASE + w) < 0.5;
+          const flip = rand01(seed, i, stepIndex, tieBase + w) < 0.5;
           heading += flip ? gain : -gain;
         } else if (L > R + TIE_EPS) {
           heading -= gain;
         } else if (R > L + TIE_EPS) {
           heading += gain;
         } else {
-          const flip = rand01(seed, i, stepIndex, STREAM_TIEBREAK_BASE + w) < 0.5;
+          const flip = rand01(seed, i, stepIndex, tieBase + w) < 0.5;
           heading += flip ? gain : -gain;
         }
       } else if (weld.read.mode === 'vector') {
@@ -462,12 +549,15 @@ function stepAgents(spec, state, stepIndex) {
         }
         dx += vx * weld.effect.advect;
         dy += vy * weld.effect.advect;
-      } else { // 'level'
+      } else if (weld.read.mode === 'level') {
         const grid = state.fields[weld.channel];
         const level = bilinearSample(grid, x, y, W, H, ch.boundary);
         const scalar = weld.effect.scalar;
         const base = A.scalarsBase[scalar][i];
         A.scalars[scalar][i] = base * (1 + weld.effect.gain * (level - 1));
+      } else { // 'none' + effect 'wobble' — pure RNG, no field read at all
+        const draw = rand01(seed, i, stepIndex, tieBase + w) * 2 - 1; // signed [-1, 1)
+        heading += draw * weld.effect.amount;
       }
     }
 
@@ -494,10 +584,24 @@ function stepAgents(spec, state, stepIndex) {
   }
 }
 
-function depositAgents(spec, state) {
-  const { population, width: W, height: H } = spec;
-  if (!population) return;
-  const A = state.agents;
+/** Run every declared population's agent pass, in populationList()'s
+ *  fixed order (singular `population` first, then `populations` in
+ *  declared order) — see kernel.js's "Capabilities added for the
+ *  aquarium". A later population's welds read channels as of AFTER an
+ *  earlier population's deposit pass has already run for this step
+ *  (depositOnePopulation is interleaved the same way, below), a
+ *  declared, backend-identical ordering choice, not an incidental one. */
+function stepAgents(spec, state, stepIndex) {
+  for (const { name, spec: popSpec, salt } of populationList(spec)) {
+    const A = state.populationsByName[name];
+    if (!A) continue;
+    stepOnePopulation(spec, state, stepIndex, popSpec, A, salt);
+    depositOnePopulation(spec, state, popSpec, A);
+  }
+}
+
+function depositOnePopulation(spec, state, population, A) {
+  const { width: W, height: H } = spec;
   const welds = population.welds;
 
   for (let i = 0; i < A.count; i++) {
@@ -519,13 +623,19 @@ function depositAgents(spec, state) {
   }
 }
 
-/** One full, fixed-order step: substrate -> projection -> agents -> deposit.
- *  Mutates `state` in place; allocates nothing. */
+/** One full, fixed-order step: substrate -> projection -> (agents ->
+ *  deposit) per population, in populationList() order. For a spec with
+ *  at most one population (every physarum/boids spec, and every spec
+ *  from before this file's aquarium additions) this is byte-identical
+ *  to the original two-top-level-calls form: stepAgents() below folds
+ *  the deposit pass into the per-population loop instead of running it
+ *  as a second top-level pass, but with one population there is nothing
+ *  in between the two calls either way. Mutates `state` in place;
+ *  allocates nothing. */
 function step(spec, state) {
   substratePass(spec, state);
   projectionPass(spec, state);
   stepAgents(spec, state, state.step);
-  depositAgents(spec, state);
   state.step += 1;
 }
 
@@ -551,6 +661,9 @@ export {
   divergenceField,
   meanAbsDivergence,
   decayFactor,
-  angDiff
+  angDiff,
+  populationList,
+  SALT_STRIDE,
+  STREAM_TIEBREAK_BASE
 };
-export default { createState, resetAgents, step, run, bilinearSample, meanAbsDivergence };
+export default { createState, resetAgents, step, run, bilinearSample, meanAbsDivergence, populationList };

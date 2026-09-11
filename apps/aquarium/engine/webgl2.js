@@ -44,6 +44,14 @@
 
 import { GLSL_HASH } from './rng.js';
 import { STENCIL_1D } from './kernel.js';
+// populationList/SALT_STRIDE/STREAM_TIEBREAK_BASE: cpu.js's own ordering
+// and RNG-salting rules for the plural `populations` grammar (kernel.js,
+// "Capabilities added for the aquarium") — imported rather than
+// reimplemented so the two backends can never independently drift on
+// which population runs in which order or which stream id it draws
+// from. cpu.js has no DOM and no side effects at import time, same as
+// every other engine module.
+import { populationList, SALT_STRIDE, STREAM_TIEBREAK_BASE } from './cpu.js';
 
 // kernel.js's declared 1D box-3 weights, formatted as GLSL float literals
 // (a bare integer division like `/ 3` reads as integer division to a
@@ -290,8 +298,7 @@ void main() {
    through a shared placeholder, since different welds in the same
    population can reference channels with different boundary modes. --- */
 
-function buildAgentProgram(gl, spec) {
-  const { population } = spec;
+function buildAgentProgram(gl, spec, population, salt) {
   const channelsByName = new Map(spec.channels.map((c) => [c.name, c]));
 
   for (const weld of population.welds) {
@@ -300,12 +307,15 @@ function buildAgentProgram(gl, spec) {
     }
   }
 
-  const usedChannels = [...new Set(population.welds.map((w) => w.channel))];
+  // read.mode 'none' (wobble) declares no channel at all (kernel.js) —
+  // exclude it from the used-channel/uniform set instead of asking for
+  // a sampler that doesn't exist.
+  const usedChannels = [...new Set(population.welds.filter((w) => w.read.mode !== 'none').map((w) => w.channel))];
   const uniformName = (name) => `u_ch_${name}`;
 
   const body = population.welds.map((weld, i) => {
-    const ch = channelsByName.get(weld.channel);
-    return weldGLSLDirect(weld, i, uniformName(weld.channel), ch.boundary);
+    const ch = weld.read.mode === 'none' ? null : channelsByName.get(weld.channel);
+    return weldGLSLDirect(weld, i, ch ? uniformName(weld.channel) : null, ch ? ch.boundary : null, salt);
   }).join('\n');
 
   const uniformDecls = usedChannels.map((name) => `uniform sampler2D ${uniformName(name)};`).join('\n');
@@ -360,9 +370,12 @@ ${body}
  *  threaded through a placeholder — see buildAgentProgram's comment for
  *  why the first approach (string-replace substitution) was rejected in
  *  favor of this direct one. */
-function weldGLSLDirect(weld, index, samplerName, boundary) {
-  const mode = BOUNDARY_CODE[boundary];
-  const stream = 5000 + index;
+function weldGLSLDirect(weld, index, samplerName, boundary, salt) {
+  const mode = boundary != null ? BOUNDARY_CODE[boundary] : 0;
+  // Must match cpu.js's tieBase = STREAM_TIEBREAK_BASE + salt*SALT_STRIDE
+  // exactly — see cpu.js's stepOnePopulation and kernel.js's
+  // "Capabilities added for the aquarium".
+  const stream = STREAM_TIEBREAK_BASE + salt * SALT_STRIDE + index;
   if (weld.read.mode === 'gradient') {
     const so = weld.read.sensorDist.toFixed(8);
     const sa = weld.read.sensorAngle.toFixed(8);
@@ -413,6 +426,18 @@ function weldGLSLDirect(weld, index, samplerName, boundary) {
     }
     dx += v_${index}.x * ${advect};
     dy += v_${index}.y * ${advect};
+  }
+`;
+  }
+  if (weld.read.mode === 'none') {
+    // 'wobble': heading += amount * a signed hash-RNG draw, no field
+    // read at all — the direct GLSL port of cpu.js's stepOnePopulation
+    // 'none' branch.
+    const amount = weld.effect.amount.toFixed(8);
+    return `
+  {
+    float rr_${index} = efRand01(u_seed, uint(i), u_step, ${stream}u);
+    heading += (rr_${index} * 2.0 - 1.0) * ${amount};
   }
 `;
   }
@@ -482,14 +507,316 @@ void main() {
   return linkProgram(gl, vs, fs);
 }
 
+/* ---- reactions: the same declared vocabulary applyReactions() (cpu.js)
+   executes, ported as plain per-cell fullscreen passes. Every reaction
+   this engine declares reads only the CURRENT cell (texelFetch at
+   gl_FragCoord, no neighbour stencil at all), which is what makes this
+   port mechanical: no boundary mode, no bilinear sampling, no RNG — the
+   same handful of dependency textures in, one new value out, exactly
+   like cpu.js's per-cell loop body. One program per TYPE is built once
+   (buildReactionPrograms) and reused across every instance of that type
+   the spec declares; per-instance numbers (rate, target, beta, ...)
+   flow through as uniforms via floatVal so an integer-valued float
+   parameter (target: 20, halfSaturation: 1) is never misrouted to
+   gl.uniform1i (see floatVal's comment below).
+
+   Ordering matches cpu.js's applyReactions exactly: reactions run in
+   spec.reactions' declared order, each one fully applied (read -> swap)
+   before the next reaction reads anything, so a later reaction sees an
+   earlier one's output — same as the reference's single sequential
+   loop over one mutable state.fields object. A reaction touching more
+   than one channel (monod: from+to; nitrify: substrate+product+
+   bacteria) computes every one of ITS OWN new values from the SAME
+   pre-reaction textures (never an already-updated sibling channel from
+   this same reaction), then swaps every touched channel together —
+   the direct GPU equivalent of cpu.js reading `s = S[i], b = B[i]`
+   once before writing S[i] and B[i] in the same loop body. ---------- */
+
+function buildSourceProgram(gl, isVector) {
+  // Cell list rendered as GL_POINTS (one vertex per declared cell),
+  // additively blended straight into the channel's CURRENT texture —
+  // no ping-pong swap needed, matching cpu.js's `grid[idx] += rate`
+  // (an in-place add, not a full-field recompute). MAX_SOURCE_CELLS
+  // bounds the uniform array; a spec needing more would raise it here,
+  // in both this file and kernel.js's validation, together.
+  const vs = `#version 300 es
+uniform vec2 u_cells[${MAX_SOURCE_CELLS}];
+uniform ivec2 u_gridSize;
+void main() {
+  vec2 cell = u_cells[gl_VertexID];
+  vec2 ndc = (cell + 0.5) / vec2(u_gridSize) * 2.0 - 1.0;
+  gl_Position = vec4(ndc, 0.0, 1.0);
+  gl_PointSize = 1.0;
+}
+`;
+  const fs = `#version 300 es
+precision highp float;
+uniform float u_rate;
+uniform vec2 u_vector;
+out vec4 outColor;
+void main() {
+  ${isVector ? 'outColor = vec4(u_vector * u_rate, 0.0, 1.0);' : 'outColor = vec4(u_rate, 0.0, 0.0, 1.0);'}
+}
+`;
+  return linkProgram(gl, vs, fs);
+}
+
+const MAX_SOURCE_CELLS = 32; // kernel.js does not otherwise bound reactions[].cells.length
+
+function buildReactionPrograms(gl, spec) {
+  const types = new Set(spec.reactions.map((r) => r.type));
+  const programs = {};
+  const fsHead = `#version 300 es\nprecision highp float;\n`;
+
+  if (types.has('sink')) {
+    programs.sink = linkProgram(gl, FULLSCREEN_VS, fsHead + `
+uniform sampler2D u_src;
+uniform float u_rate;
+out vec4 outColor;
+void main() {
+  vec4 v = texelFetch(u_src, ivec2(gl_FragCoord.xy), 0);
+  outColor = max(v * (1.0 - u_rate), vec4(0.0));
+}
+`);
+  }
+  if (types.has('decay')) {
+    programs.decay = linkProgram(gl, FULLSCREEN_VS, fsHead + `
+uniform sampler2D u_src;
+uniform float u_rate;
+out vec4 outColor;
+void main() {
+  vec4 v = texelFetch(u_src, ivec2(gl_FragCoord.xy), 0);
+  outColor = v * (1.0 - u_rate);
+}
+`);
+  }
+  if (types.has('monod')) {
+    programs.monodFrom = linkProgram(gl, FULLSCREEN_VS, fsHead + `
+uniform sampler2D u_from;
+uniform float u_rate;
+uniform float u_halfSaturation;
+out vec4 outColor;
+void main() {
+  float a = texelFetch(u_from, ivec2(gl_FragCoord.xy), 0).r;
+  float delta = u_rate * a / (a + u_halfSaturation + 1e-12);
+  outColor = vec4(max(0.0, a - delta), 0.0, 0.0, 1.0);
+}
+`);
+    programs.monodTo = linkProgram(gl, FULLSCREEN_VS, fsHead + `
+uniform sampler2D u_from;
+uniform sampler2D u_to;
+uniform float u_rate;
+uniform float u_halfSaturation;
+out vec4 outColor;
+void main() {
+  float a = texelFetch(u_from, ivec2(gl_FragCoord.xy), 0).r;
+  float b = texelFetch(u_to, ivec2(gl_FragCoord.xy), 0).r;
+  float delta = u_rate * a / (a + u_halfSaturation + 1e-12);
+  outColor = vec4(b + delta, 0.0, 0.0, 1.0);
+}
+`);
+  }
+  if (types.has('product')) {
+    programs.product = linkProgram(gl, FULLSCREEN_VS, fsHead + `
+uniform sampler2D u_a;
+uniform sampler2D u_b;
+uniform sampler2D u_into;
+uniform float u_rate;
+out vec4 outColor;
+void main() {
+  float a = texelFetch(u_a, ivec2(gl_FragCoord.xy), 0).r;
+  float b = texelFetch(u_b, ivec2(gl_FragCoord.xy), 0).r;
+  float into = texelFetch(u_into, ivec2(gl_FragCoord.xy), 0).r;
+  outColor = vec4(into + u_rate * a * b, 0.0, 0.0, 1.0);
+}
+`);
+  }
+  if (types.has('buoyancy')) {
+    programs.buoyancy = linkProgram(gl, FULLSCREEN_VS, fsHead + `
+uniform sampler2D u_velocity;
+uniform sampler2D u_temperature;
+uniform float u_beta;
+uniform float u_reference;
+out vec4 outColor;
+void main() {
+  vec2 v = texelFetch(u_velocity, ivec2(gl_FragCoord.xy), 0).rg;
+  float t = texelFetch(u_temperature, ivec2(gl_FragCoord.xy), 0).r;
+  v.y -= u_beta * (t - u_reference);
+  outColor = vec4(v, 0.0, 1.0);
+}
+`);
+  }
+  if (types.has('relax')) {
+    programs.relax = linkProgram(gl, FULLSCREEN_VS, fsHead + `
+uniform sampler2D u_channel;
+uniform sampler2D u_mask;
+uniform float u_target;
+uniform float u_rate;
+out vec4 outColor;
+void main() {
+  float c = texelFetch(u_channel, ivec2(gl_FragCoord.xy), 0).r;
+  float m = texelFetch(u_mask, ivec2(gl_FragCoord.xy), 0).r;
+  outColor = vec4(c + u_rate * m * (u_target - c), 0.0, 0.0, 1.0);
+}
+`);
+  }
+  if (types.has('exchange')) {
+    programs.exchange = linkProgram(gl, FULLSCREEN_VS, fsHead + `
+uniform sampler2D u_channel;
+uniform sampler2D u_driver;
+uniform sampler2D u_mask;
+uniform float u_target;
+uniform float u_rate;
+out vec4 outColor;
+void main() {
+  float c = texelFetch(u_channel, ivec2(gl_FragCoord.xy), 0).r;
+  vec2 d = texelFetch(u_driver, ivec2(gl_FragCoord.xy), 0).rg;
+  float m = texelFetch(u_mask, ivec2(gl_FragCoord.xy), 0).r;
+  outColor = vec4(c + u_rate * m * length(d) * (u_target - c), 0.0, 0.0, 1.0);
+}
+`);
+  }
+  if (types.has('nitrify')) {
+    const head = fsHead + `
+uniform sampler2D u_substrate;
+uniform sampler2D u_product;
+uniform sampler2D u_bacteria;
+uniform sampler2D u_mask;
+uniform float u_growthRate;
+uniform float u_halfSaturation;
+uniform float u_carryingCapacity;
+uniform float u_yieldFactor;
+uniform float u_deathRate;
+out vec4 outColor;
+`;
+    programs.nitrifySubstrate = linkProgram(gl, FULLSCREEN_VS, head + `
+void main() {
+  float s = texelFetch(u_substrate, ivec2(gl_FragCoord.xy), 0).r;
+  float b = texelFetch(u_bacteria, ivec2(gl_FragCoord.xy), 0).r;
+  float m = texelFetch(u_mask, ivec2(gl_FragCoord.xy), 0).r;
+  float mu = u_growthRate * s / (s + u_halfSaturation + 1e-12);
+  float uptake = mu * b * m;
+  outColor = vec4(max(0.0, s - uptake), 0.0, 0.0, 1.0);
+}
+`);
+    programs.nitrifyProduct = linkProgram(gl, FULLSCREEN_VS, head + `
+void main() {
+  float s = texelFetch(u_substrate, ivec2(gl_FragCoord.xy), 0).r;
+  float b = texelFetch(u_bacteria, ivec2(gl_FragCoord.xy), 0).r;
+  float m = texelFetch(u_mask, ivec2(gl_FragCoord.xy), 0).r;
+  float p = texelFetch(u_product, ivec2(gl_FragCoord.xy), 0).r;
+  float mu = u_growthRate * s / (s + u_halfSaturation + 1e-12);
+  float uptake = mu * b * m;
+  outColor = vec4(p + uptake * u_yieldFactor, 0.0, 0.0, 1.0);
+}
+`);
+    programs.nitrifyBacteria = linkProgram(gl, FULLSCREEN_VS, head + `
+void main() {
+  float s = texelFetch(u_substrate, ivec2(gl_FragCoord.xy), 0).r;
+  float b = texelFetch(u_bacteria, ivec2(gl_FragCoord.xy), 0).r;
+  float m = texelFetch(u_mask, ivec2(gl_FragCoord.xy), 0).r;
+  float mu = u_growthRate * s / (s + u_halfSaturation + 1e-12);
+  float growth = (mu * (1.0 - b / u_carryingCapacity) - u_deathRate) * b * m;
+  outColor = vec4(max(0.0, b + growth), 0.0, 0.0, 1.0);
+}
+`);
+  }
+  if (types.has('source')) {
+    programs.sourceScalar = buildSourceProgram(gl, false);
+    programs.sourceVector = buildSourceProgram(gl, true);
+  }
+  return programs;
+}
+
+function runSourceReaction(gl, glState, r) {
+  const { spec, reactionPrograms: RP } = glState;
+  const { width: W, height: H } = spec;
+  if (r.cells.length > MAX_SOURCE_CELLS) {
+    throw new Error(`aquarium/webgl2: reaction (source) declares ${r.cells.length} cells, more than MAX_SOURCE_CELLS (${MAX_SOURCE_CELLS})`);
+  }
+  const pp = glState.fields[r.channel];
+  const isVector = !!r.vector;
+  const program = isVector ? RP.sourceVector : RP.sourceScalar;
+  gl.useProgram(program);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, currentFBO(pp));
+  gl.viewport(0, 0, W, H);
+  const cellsFlat = new Float32Array(r.cells.length * 2);
+  r.cells.forEach(([cx, cy], i) => { cellsFlat[i * 2] = cx; cellsFlat[i * 2 + 1] = cy; });
+  gl.uniform2fv(gl.getUniformLocation(program, 'u_cells'), cellsFlat);
+  gl.uniform2i(gl.getUniformLocation(program, 'u_gridSize'), W, H);
+  gl.uniform1f(gl.getUniformLocation(program, 'u_rate'), r.rate);
+  if (isVector) gl.uniform2f(gl.getUniformLocation(program, 'u_vector'), r.vector[0], r.vector[1]);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArrays(gl.POINTS, 0, r.cells.length);
+  gl.disable(gl.BLEND);
+}
+
+function reactionsPassGL(gl, glState) {
+  const { spec, reactionPrograms: RP } = glState;
+  const { width: W, height: H } = spec;
+  for (const r of spec.reactions) {
+    if (r.type === 'source') {
+      runSourceReaction(gl, glState, r);
+    } else if (r.type === 'sink' || r.type === 'decay') {
+      const pp = glState.fields[r.channel];
+      const program = r.type === 'sink' ? RP.sink : RP.decay;
+      runFullscreen(gl, program, backFBO(pp), W, H, { u_src: tex(currentTex(pp)), u_rate: floatVal(r.rate) });
+      swap(pp);
+    } else if (r.type === 'monod') {
+      const A = glState.fields[r.from], B = glState.fields[r.to];
+      const uniforms = { u_rate: floatVal(r.rate), u_halfSaturation: floatVal(r.halfSaturation) };
+      runFullscreen(gl, RP.monodFrom, backFBO(A), W, H, { u_from: tex(currentTex(A)), ...uniforms });
+      runFullscreen(gl, RP.monodTo, backFBO(B), W, H, { u_from: tex(currentTex(A)), u_to: tex(currentTex(B)), ...uniforms });
+      swap(A); swap(B);
+    } else if (r.type === 'product') {
+      const A = glState.fields[r.a], B = glState.fields[r.b], into = glState.fields[r.into];
+      runFullscreen(gl, RP.product, backFBO(into), W, H, {
+        u_a: tex(currentTex(A)), u_b: tex(currentTex(B)), u_into: tex(currentTex(into)), u_rate: floatVal(r.rate)
+      });
+      swap(into);
+    } else if (r.type === 'buoyancy') {
+      const vel = glState.fields[r.velocity], T = glState.fields[r.temperature];
+      runFullscreen(gl, RP.buoyancy, backFBO(vel), W, H, {
+        u_velocity: tex(currentTex(vel)), u_temperature: tex(currentTex(T)),
+        u_beta: floatVal(r.beta), u_reference: floatVal(r.reference)
+      });
+      swap(vel);
+    } else if (r.type === 'relax') {
+      const ch = glState.fields[r.channel], mask = glState.fields[r.mask];
+      runFullscreen(gl, RP.relax, backFBO(ch), W, H, {
+        u_channel: tex(currentTex(ch)), u_mask: tex(currentTex(mask)), u_target: floatVal(r.target), u_rate: floatVal(r.rate)
+      });
+      swap(ch);
+    } else if (r.type === 'exchange') {
+      const ch = glState.fields[r.channel], driver = glState.fields[r.driver], mask = glState.fields[r.mask];
+      runFullscreen(gl, RP.exchange, backFBO(ch), W, H, {
+        u_channel: tex(currentTex(ch)), u_driver: tex(currentTex(driver)), u_mask: tex(currentTex(mask)),
+        u_target: floatVal(r.target), u_rate: floatVal(r.rate)
+      });
+      swap(ch);
+    } else if (r.type === 'nitrify') {
+      const S = glState.fields[r.substrate], P = glState.fields[r.product];
+      const B = glState.fields[r.bacteria], mask = glState.fields[r.mask];
+      const uniforms = {
+        u_substrate: tex(currentTex(S)), u_product: tex(currentTex(P)), u_bacteria: tex(currentTex(B)), u_mask: tex(currentTex(mask)),
+        u_growthRate: floatVal(r.growthRate), u_halfSaturation: floatVal(r.halfSaturation),
+        u_carryingCapacity: floatVal(r.carryingCapacity), u_yieldFactor: floatVal(r.yieldFactor), u_deathRate: floatVal(r.deathRate)
+      };
+      // All three read the SAME pre-reaction S/B/mask (via the uniforms
+      // object built once, above) — see this section's header comment.
+      runFullscreen(gl, RP.nitrifySubstrate, backFBO(S), W, H, uniforms);
+      runFullscreen(gl, RP.nitrifyProduct, backFBO(P), W, H, uniforms);
+      runFullscreen(gl, RP.nitrifyBacteria, backFBO(B), W, H, uniforms);
+      swap(S); swap(P); swap(B);
+    }
+  }
+}
+
 /* ---- state: allocate every texture/program a spec's execution needs -- */
 
 function createGLState(gl, spec) {
-  const { width: W, height: H, channels, population } = spec;
-
-  for (const r of spec.reactions) {
-    throw new Error(`aquarium/webgl2: reaction type "${r.type}" is CPU-only in this backend — createGLState refuses a spec with any declared reactions`);
-  }
+  const { width: W, height: H, channels } = spec;
 
   const fields = {};
   const diffusePrograms = {};
@@ -502,11 +829,21 @@ function createGLState(gl, spec) {
     if (ch.projection && ch.projection.enabled) projectionPrograms[ch.name] = buildProjectionPrograms(gl, BOUNDARY_CODE[ch.boundary]);
   }
 
-  let agents = null, agentProgram = null, depositProgram = null;
-  if (population) {
-    agents = pingPong(gl, population.count, 1);
-    agentProgram = buildAgentProgram(gl, spec);
-    depositProgram = buildDepositProgram(gl);
+  // One agent ping-pong + one agent program + one deposit program per
+  // declared population (kernel.js's plural `populations`, plus the
+  // legacy singular `population` normalized into the same list by
+  // cpu.js's populationList()) — see "Capabilities added for the
+  // aquarium". Keyed by name so agentPassGL/depositPassGL/readback can
+  // address each population independently.
+  const populations = {};
+  for (const { name, spec: popSpec, salt } of populationList(spec)) {
+    populations[name] = {
+      popSpec,
+      salt,
+      agents: pingPong(gl, popSpec.count, 1),
+      agentProgram: buildAgentProgram(gl, spec, popSpec, salt),
+      depositProgram: buildDepositProgram(gl)
+    };
   }
 
   const scratch = { tex: createFloatTexture(gl, W, H), fbo: null };
@@ -516,9 +853,11 @@ function createGLState(gl, spec) {
     : null;
   if (projScratch) projScratch.divFbo = createFBO(gl, projScratch.div);
 
+  const reactionPrograms = buildReactionPrograms(gl, spec);
+
   return {
-    gl, spec, fields, agents, agentProgram, depositProgram,
-    diffusePrograms, advectPrograms, projectionPrograms,
+    gl, spec, fields, populations,
+    diffusePrograms, advectPrograms, projectionPrograms, reactionPrograms,
     scratch, projScratch,
     channelsByName: new Map(channels.map((c) => [c.name, c])),
     step: 0
@@ -547,16 +886,55 @@ function uploadInitialState(gl, glState, cpuState) {
     gl.bindTexture(gl.TEXTURE_2D, currentTex(pp));
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, W, H, gl.RGBA, gl.FLOAT, buf);
   }
-  if (spec.population && cpuState.agents) {
-    const N = spec.population.count;
+  for (const { name, spec: popSpec } of populationList(spec)) {
+    const A = cpuState.populationsByName[name];
+    const pop = glState.populations[name];
+    if (!A || !pop) continue;
+    const N = popSpec.count;
     const buf = new Float32Array(N * 4);
-    const A = cpuState.agents;
     for (let i = 0; i < N; i++) {
       buf[i * 4] = A.x[i]; buf[i * 4 + 1] = A.y[i]; buf[i * 4 + 2] = A.heading[i]; buf[i * 4 + 3] = A.speed[i];
     }
-    gl.bindTexture(gl.TEXTURE_2D, currentTex(glState.agents));
+    gl.bindTexture(gl.TEXTURE_2D, currentTex(pop.agents));
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, N, 1, gl.RGBA, gl.FLOAT, buf);
   }
+}
+
+/** Upload a single population's agent state (x, y, heading, speed) —
+ *  the same wire format uploadInitialState uses, exposed standalone so
+ *  a consuming page can write agent state back after an app-level
+ *  per-frame adjustment (e.g. the aquarium's plankton speed-by-light
+ *  rescale, or a bubble recycled at the surface) without re-uploading
+ *  every channel and every population. */
+function uploadPopulation(gl, glState, name, agents) {
+  const pop = glState.populations[name];
+  if (!pop) throw new Error(`aquarium/webgl2: no population named "${name}"`);
+  const N = agents.x.length;
+  const buf = new Float32Array(N * 4);
+  for (let i = 0; i < N; i++) {
+    buf[i * 4] = agents.x[i]; buf[i * 4 + 1] = agents.y[i]; buf[i * 4 + 2] = agents.heading[i]; buf[i * 4 + 3] = agents.speed[i];
+  }
+  gl.bindTexture(gl.TEXTURE_2D, currentTex(pop.agents));
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, N, 1, gl.RGBA, gl.FLOAT, buf);
+}
+
+/** Upload a single channel's full field, in cpu.js's state.fields shape
+ *  (scalar -> flat Float32Array; vector -> {x, y}) — the read-modify-
+ *  write counterpart to readback(), for an app-level per-frame process
+ *  (the aquarium's chemistry/caustics/plant coupling) that mutates a
+ *  channel outside the declared kernel step. */
+function uploadChannel(gl, glState, channelName, data) {
+  const ch = glState.channelsByName.get(channelName);
+  const { width: W, height: H } = glState.spec;
+  const pp = glState.fields[channelName];
+  const buf = new Float32Array(W * H * 4);
+  if (ch.kind === 'scalar') {
+    for (let i = 0; i < data.length; i++) buf[i * 4] = data[i];
+  } else {
+    for (let i = 0; i < data.x.length; i++) { buf[i * 4] = data.x[i]; buf[i * 4 + 1] = data.y[i]; }
+  }
+  gl.bindTexture(gl.TEXTURE_2D, currentTex(pp));
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, W, H, gl.RGBA, gl.FLOAT, buf);
 }
 
 function tex(t) { return { __texture__: true, tex: t }; }
@@ -566,6 +944,16 @@ function tex(t) { return { __texture__: true, tex: t }; }
 // GLSL_HASH), so they need this wrapper to route to uniform1ui rather
 // than silently going through uniform1i.
 function uintVal(n) { return { __uint__: true, value: n >>> 0 }; }
+// Aquarium addition: a reaction's declared numeric parameters (rate,
+// target, beta, reference, halfSaturation, carryingCapacity, ...) are
+// GLSL `float` uniforms whose JS values frequently happen to be
+// integer-valued (target: 20, halfSaturation: 1, reference: 0) —
+// runFullscreen's bare-number branch below dispatches on
+// Number.isInteger(), which would wrongly route an integer-valued float
+// parameter to gl.uniform1i (silently failing on a `uniform float`
+// location). floatVal forces the correct uniform1f call regardless of
+// whether the JS number happens to look like an integer.
+function floatVal(n) { return { __float__: true, value: n }; }
 
 function runFullscreen(gl, program, targetFBO, w, h, uniforms) {
   gl.useProgram(program);
@@ -582,6 +970,8 @@ function runFullscreen(gl, program, targetFBO, w, h, uniforms) {
       unit++;
     } else if (value && value.__uint__) {
       gl.uniform1ui(loc, value.value);
+    } else if (value && value.__float__) {
+      gl.uniform1f(loc, value.value);
     } else if (Array.isArray(value)) {
       gl.uniform2i(loc, value[0] | 0, value[1] | 0);
     } else if (typeof value === 'number') {
@@ -602,17 +992,27 @@ function substratePassGL(gl, glState) {
       runFullscreen(gl, progs.horizontal, glState.scratch.fbo, W, H, {
         u_src: tex(currentTex(pp)), u_size: [W, H]
       });
+      // Pre-existing bug, found while adding the aquarium's own channels
+      // (2026-09-11): a channel with halfLife: Infinity makes
+      // decayFactor exactly the JS integer 1, and runFullscreen's bare-
+      // number branch dispatches on Number.isInteger() — an integer-
+      // valued `float` uniform (u_decay here, u_rate just below) was
+      // silently misrouted to gl.uniform1i on a `uniform float`
+      // location (GL_INVALID_OPERATION, silently leaving the uniform at
+      // its default). Neither the physarum nor boids twin spec has a
+      // halfLife: Infinity channel, so this never fired before. Fixed
+      // with floatVal, the same wrapper the reaction passes above use.
       const decayFactor = ch.halfLife === Infinity ? 1 : Math.pow(0.5, 1 / ch.halfLife);
       runFullscreen(gl, progs.verticalBlend, backFBO(pp), W, H, {
         u_scratch: tex(glState.scratch.tex), u_orig: tex(currentTex(pp)), u_size: [W, H],
-        u_rate: ch.diffuse, u_decay: decayFactor
+        u_rate: floatVal(ch.diffuse), u_decay: floatVal(decayFactor)
       });
       swap(pp);
     } else if (ch.halfLife !== Infinity) {
       const decayFactor = Math.pow(0.5, 1 / ch.halfLife);
       runFullscreen(gl, progs.verticalBlend, backFBO(pp), W, H, {
         u_scratch: tex(currentTex(pp)), u_orig: tex(currentTex(pp)), u_size: [W, H],
-        u_rate: 0, u_decay: decayFactor
+        u_rate: floatVal(0), u_decay: floatVal(decayFactor)
       });
       swap(pp);
     }
@@ -653,40 +1053,41 @@ function projectionPassGL(gl, glState) {
   }
 }
 
-function agentPassGL(gl, glState) {
-  const { spec, agents, agentProgram } = glState;
-  if (!agents) return;
-  const { population, width: W, height: H } = spec;
-  const N = population.count;
+function agentPassGL(gl, glState, name) {
+  const { spec } = glState;
+  const pop = glState.populations[name];
+  const { width: W, height: H } = spec;
+  const N = pop.popSpec.count;
   const uniforms = {
-    u_agentsOld: tex(currentTex(agents)),
+    u_agentsOld: tex(currentTex(pop.agents)),
     u_gridSize: [W, H],
     u_seed: uintVal(spec.seed),
     u_step: uintVal(glState.step)
   };
-  for (const name of agentProgram.usedChannels) {
-    uniforms[`u_ch_${name}`] = tex(currentTex(glState.fields[name]));
+  for (const chName of pop.agentProgram.usedChannels) {
+    uniforms[`u_ch_${chName}`] = tex(currentTex(glState.fields[chName]));
   }
-  runFullscreen(gl, agentProgram.program, backFBO(agents), N, 1, uniforms);
-  swap(agents);
+  runFullscreen(gl, pop.agentProgram.program, backFBO(pop.agents), N, 1, uniforms);
+  swap(pop.agents);
 }
 
-function depositPassGL(gl, glState) {
-  const { spec, agents, depositProgram } = glState;
-  if (!agents) return;
-  const { population, width: W, height: H } = spec;
-  const N = population.count;
+function depositPassGL(gl, glState, name) {
+  const { spec } = glState;
+  const pop = glState.populations[name];
+  const { width: W, height: H } = spec;
+  const N = pop.popSpec.count;
+  const depositProgram = pop.depositProgram;
   gl.useProgram(depositProgram);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE);
-  for (const weld of population.welds) {
+  for (const weld of pop.popSpec.welds) {
     if (!weld.deposit) continue;
     const ch = glState.channelsByName.get(weld.deposit.channel);
     const target = glState.fields[weld.deposit.channel];
     gl.bindFramebuffer(gl.FRAMEBUFFER, currentFBO(target));
     gl.viewport(0, 0, W, H);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, currentTex(agents));
+    gl.bindTexture(gl.TEXTURE_2D, currentTex(pop.agents));
     gl.uniform1i(gl.getUniformLocation(depositProgram, 'u_agents'), 0);
     gl.uniform2i(gl.getUniformLocation(depositProgram, 'u_gridSize'), W, H);
     gl.uniform1f(gl.getUniformLocation(depositProgram, 'u_amount'), weld.deposit.amount);
@@ -697,13 +1098,22 @@ function depositPassGL(gl, glState) {
   gl.disable(gl.BLEND);
 }
 
-/** One full GPU step, mirroring cpu.js's step(): substrate -> projection
- *  -> agents -> deposit. */
+/** One full GPU step, mirroring cpu.js's step(): substrate (diffuse,
+ *  decay, advect, then reactions) -> projection -> (agents -> deposit)
+ *  per population, in populationList() order — the same fixed order
+ *  cpu.js's step()/stepAgents() use, see kernel.js's "Capabilities
+ *  added for the aquarium" for why deposit is interleaved per
+ *  population rather than run as one pass after every population's
+ *  agent pass. */
 function stepGL(gl, glState) {
   substratePassGL(gl, glState);
+  reactionsPassGL(gl, glState);
   projectionPassGL(gl, glState);
-  agentPassGL(gl, glState);
-  depositPassGL(gl, glState);
+  for (const { name } of populationList(glState.spec)) {
+    if (!glState.populations[name]) continue;
+    agentPassGL(gl, glState, name);
+    depositPassGL(gl, glState, name);
+  }
   glState.step += 1;
 }
 
@@ -727,10 +1137,17 @@ function readback(gl, glState, channelName) {
   return { x, y };
 }
 
-/** Read agent state back, shaped like cpu.js's state.agents. */
-function readAgents(gl, glState) {
-  const N = glState.spec.population.count;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, currentFBO(glState.agents));
+/** Read one population's agent state back, shaped like cpu.js's
+ *  state.agents / state.populationsByName[name]. `name` defaults to
+ *  'default' (the legacy singular `population` field) so every caller
+ *  written before the plural `populations` grammar existed — twin.js's
+ *  agentPositionError, apps/aquarium/twin.html's physarum/boids specs —
+ *  keeps working unchanged. */
+function readAgents(gl, glState, name = 'default') {
+  const pop = glState.populations[name];
+  if (!pop) throw new Error(`aquarium/webgl2: no population named "${name}"`);
+  const N = pop.popSpec.count;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, currentFBO(pop.agents));
   const buf = new Float32Array(N * 4);
   gl.readPixels(0, 0, N, 1, gl.RGBA, gl.FLOAT, buf);
   const x = new Float32Array(N), y = new Float32Array(N), heading = new Float32Array(N), speed = new Float32Array(N);
@@ -738,5 +1155,5 @@ function readAgents(gl, glState) {
   return { x, y, heading, speed };
 }
 
-export { createGLState, uploadInitialState, stepGL, readback, readAgents };
-export default { createGLState, uploadInitialState, stepGL, readback, readAgents };
+export { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents };
+export default { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents };

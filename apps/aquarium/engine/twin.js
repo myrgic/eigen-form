@@ -16,7 +16,7 @@
    headless test harness could supply one from any other source.
    ===================================================================== */
 
-import { createState as cpuCreateState, resetAgents as cpuResetAgents, step as cpuStep } from './cpu.js';
+import { createState as cpuCreateState, resetAgents as cpuResetAgents, step as cpuStep, populationList } from './cpu.js';
 import { createGLState, uploadInitialState, stepGL, readback as glReadback, readAgents as glReadAgents } from './webgl2.js';
 
 function flatten(fieldValue) {
@@ -173,17 +173,30 @@ function snapshotComparison(spec, gl, glState, cpuState, relL2Bound, maxAbsBound
     if (!pass) allPass = false;
   }
 
+  // agentPos: the legacy singular-population shape, unchanged, so every
+  // physarum/boids consumer of this field keeps working byte-for-byte.
+  // agentPosByPopulation: the aquarium addition — every population this
+  // spec declares (the singular one, keyed 'default', plus every named
+  // entry of `populations`), gating `pass` the same way agentPos always
+  // did. For a spec with only the singular population the two fields
+  // report the identical number twice; nothing here changes what a
+  // physarum/boids spec's twin report means.
   let agentPos = null;
-  if (spec.population) {
-    const gpuAgents = glReadAgents(gl, glState);
-    const wrap = spec.population.boundary === 'wrap';
-    const err = agentPositionError(cpuState.agents, gpuAgents, spec.width, spec.height, wrap);
+  const agentPosByPopulation = {};
+  for (const { name, spec: popSpec } of populationList(spec)) {
+    const cpuAgents = cpuState.populationsByName[name];
+    if (!cpuAgents) continue;
+    const gpuAgents = glReadAgents(gl, glState, name);
+    const wrap = popSpec.boundary === 'wrap';
+    const err = agentPositionError(cpuAgents, gpuAgents, spec.width, spec.height, wrap);
     const pass = err.max <= spec.tolerance.agentPos;
-    agentPos = { ...err, pass };
+    const entry = { ...err, pass };
+    agentPosByPopulation[name] = entry;
+    if (name === 'default') agentPos = entry;
     if (!pass) allPass = false;
   }
 
-  return { channels, agentPos, pass: allPass };
+  return { channels, agentPos, agentPosByPopulation, pass: allPass };
 }
 
 function variance(arr) {
@@ -217,8 +230,13 @@ function evaluateAggregate(check, spec, gl, glState, cpuState) {
     cpuValue = variance(cpuState.fields[check.field]);
     gpuValue = variance(glReadback(gl, glState, check.field));
   } else if (check.metric === 'orderParameter') {
-    cpuValue = orderParameter(cpuState.agents.heading);
-    gpuValue = orderParameter(glReadAgents(gl, glState).heading);
+    // check.population (optional, aquarium addition): which named
+    // population's headings to compare, defaulting to 'default' (the
+    // legacy singular `population` field) so every existing spec's
+    // aggregate check is unchanged.
+    const popName = check.population || 'default';
+    cpuValue = orderParameter(cpuState.populationsByName[popName].heading);
+    gpuValue = orderParameter(glReadAgents(gl, glState, popName).heading);
   } else {
     throw new Error(`aquarium/twin: unknown aggregate metric "${check.metric}"`);
   }

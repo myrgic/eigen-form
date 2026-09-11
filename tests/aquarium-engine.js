@@ -220,6 +220,162 @@ test('cpu: boids spec raises the velocity order parameter above 0.5 from a rando
   assert.ok(order800 > 0.5, `order parameter after 800 steps (${order800}) did not rise above 0.5`);
 });
 
+test('cpu: two named populations share one substrate, each with its own RNG stream', async ({ kernel, cpu }) => {
+  // Two named populations declared via the plural `populations` field
+  // (kernel.js's "Capabilities added for the aquarium") sharing one
+  // scalar channel and one seed. Neither population declares the
+  // legacy singular `population` field at all.
+  const spec = kernel.defineSubstrate({
+    width: 32, height: 32, seed: 21,
+    channels: [{ name: 'trail', kind: 'scalar', diffuse: 0.2, halfLife: 30, boundary: 'wrap', advectedBy: null }],
+    populations: [
+      {
+        name: 'alpha', count: 50, boundary: 'wrap', speed: 1, scalars: {},
+        welds: [{
+          channel: 'trail',
+          read: { mode: 'gradient', sensorDist: 3, sensorAngle: 0.5 },
+          effect: { type: 'steerByAngle', gain: 0.2 },
+          deposit: { channel: 'trail', amount: 5 }
+        }]
+      },
+      {
+        name: 'beta', count: 50, boundary: 'wrap', speed: 1, scalars: {},
+        welds: [{
+          channel: 'trail',
+          read: { mode: 'gradient', sensorDist: 3, sensorAngle: 0.5 },
+          effect: { type: 'steerByAngle', gain: 0.2 },
+          deposit: { channel: 'trail', amount: 5 }
+        }]
+      }
+    ]
+  });
+  const state = cpu.createState(spec);
+  cpu.resetAgents(spec, state);
+  const alpha0 = Array.from(state.populationsByName.alpha.x);
+  const beta0 = Array.from(state.populationsByName.beta.x);
+  // Two populations of otherwise-identical spec, same spec.seed: their
+  // per-population RNG salt (cpu.js's populationList()) must still draw
+  // different initial positions, not the same "random" layout twice.
+  assert.notDeepStrictEqual(alpha0, beta0, 'two named populations drew identical initial positions — salt is not differentiating streams');
+
+  for (let i = 0; i < 100; i++) cpu.step(spec, state);
+  assertAllFinite(state.populationsByName.alpha.x, 'alpha.x');
+  assertAllFinite(state.populationsByName.beta.x, 'beta.x');
+  assertAllFinite(state.fields.trail, 'trail');
+
+  // A second full run from the same spec (fresh state, same seed) must
+  // reproduce both populations exactly — determinism holds across
+  // multiple named populations, not just a single one.
+  const state2 = cpu.createState(spec);
+  cpu.resetAgents(spec, state2);
+  for (let i = 0; i < 100; i++) cpu.step(spec, state2);
+  assert.deepStrictEqual(Array.from(state.populationsByName.alpha.x), Array.from(state2.populationsByName.alpha.x), 'alpha diverged across identical runs');
+  assert.deepStrictEqual(Array.from(state.populationsByName.beta.heading), Array.from(state2.populationsByName.beta.heading), 'beta diverged across identical runs');
+});
+
+test('cpu: wobble effect (read.mode "none") perturbs heading from RNG alone', async ({ kernel, cpu }) => {
+  const spec = kernel.defineSubstrate({
+    width: 16, height: 16, seed: 8,
+    channels: [{ name: 'dummy', kind: 'scalar', diffuse: 0, halfLife: Infinity, boundary: 'wall', advectedBy: null }],
+    populations: [{
+      name: 'bubbles', count: 20, boundary: 'absorb', speed: 0.4, scalars: {},
+      welds: [{ read: { mode: 'none' }, effect: { type: 'wobble', amount: 0.3 }, deposit: null }]
+    }]
+  });
+  const state = cpu.createState(spec);
+  cpu.resetAgents(spec, state);
+  const h0 = Array.from(state.populationsByName.bubbles.heading);
+  cpu.step(spec, state);
+  const h1 = Array.from(state.populationsByName.bubbles.heading);
+  assert.ok(h0.some((v, i) => v !== h1[i]), 'wobble did not perturb any heading after one step');
+  assertAllFinite(state.populationsByName.bubbles.heading, 'bubbles.heading');
+});
+
+test('cpu: buoyancy/relax/exchange reactions push a scalar toward its declared target', async ({ kernel, cpu }) => {
+  const spec = kernel.defineSubstrate({
+    width: 12, height: 12, seed: 1,
+    channels: [
+      { name: 'temperature', kind: 'scalar', diffuse: 0, halfLife: Infinity, boundary: 'wall', advectedBy: null },
+      { name: 'momentum', kind: 'vector', diffuse: 0, halfLife: Infinity, boundary: 'wall', advectedBy: null },
+      { name: 'mask', kind: 'scalar', diffuse: 0, halfLife: Infinity, boundary: 'wall', advectedBy: null }
+    ],
+    reactions: [
+      { type: 'buoyancy', velocity: 'momentum', temperature: 'temperature', beta: 0.1, reference: 20 },
+      { type: 'relax', channel: 'temperature', mask: 'mask', target: 20, rate: 0.05 },
+      { type: 'exchange', channel: 'temperature', driver: 'momentum', mask: 'mask', target: 20, rate: 0.02 }
+    ]
+  });
+  const state = cpu.createState(spec);
+  state.fields.mask.fill(1);
+  state.fields.temperature.fill(30); // 10 above target
+  for (let i = 0; i < 300; i++) cpu.step(spec, state);
+  assertAllFinite(state.fields.temperature, 'temperature');
+  assertAllFinite(state.fields.momentum.x, 'momentum.x');
+  const mean = Array.from(state.fields.temperature).reduce((a, b) => a + b, 0) / (12 * 12);
+  assert.ok(Math.abs(mean - 20) < 1, `relax/exchange did not pull temperature (mean ${mean}) near target 20`);
+  // Buoyancy should have driven momentum.y negative on average (warm
+  // fluid rising, up = -y) before relax/exchange cooled it back down.
+  const meanVy = Array.from(state.fields.momentum.y).reduce((a, b) => a + b, 0) / (12 * 12);
+  assert.ok(Number.isFinite(meanVy), 'momentum.y not finite');
+});
+
+test('cpu: nitrify reaction cycles substrate through a logistic bacteria population', async ({ kernel, cpu }) => {
+  const spec = kernel.defineSubstrate({
+    width: 10, height: 10, seed: 4,
+    channels: [
+      { name: 'ammonia', kind: 'scalar', diffuse: 0, halfLife: Infinity, boundary: 'wall', advectedBy: null },
+      { name: 'nitrite', kind: 'scalar', diffuse: 0, halfLife: Infinity, boundary: 'wall', advectedBy: null },
+      { name: 'bacteria', kind: 'scalar', diffuse: 0, halfLife: Infinity, boundary: 'wall', advectedBy: null },
+      { name: 'mask', kind: 'scalar', diffuse: 0, halfLife: Infinity, boundary: 'wall', advectedBy: null }
+    ],
+    reactions: [{
+      type: 'nitrify', substrate: 'ammonia', product: 'nitrite', bacteria: 'bacteria', mask: 'mask',
+      growthRate: 0.4, halfSaturation: 1, carryingCapacity: 1, yieldFactor: 1, deathRate: 0.02
+    }]
+  });
+  const state = cpu.createState(spec);
+  state.fields.mask.fill(1);
+  state.fields.ammonia.fill(2);
+  state.fields.bacteria.fill(0.01); // a fresh filter needs a nonzero seed population to bootstrap
+  const ammonia0 = state.fields.ammonia[0];
+  const bacteria0 = state.fields.bacteria[0];
+  // 60 steps: a fixed, non-replenished ammonia pool (no fish depositing
+  // more) is consumed by step ~80 in this parameterization — a
+  // continuously-fed real aquarium never reaches that regime, but this
+  // test's whole point is the BOOTSTRAP window ("a fresh tank cycles"),
+  // where a small seed bacteria population should already be visibly
+  // outgrowing its seed value while there is still substrate to eat.
+  for (let i = 0; i < 60; i++) cpu.step(spec, state);
+  assertAllFinite(state.fields.ammonia, 'ammonia');
+  assertAllFinite(state.fields.nitrite, 'nitrite');
+  assertAllFinite(state.fields.bacteria, 'bacteria');
+  assert.ok(state.fields.ammonia[0] < ammonia0, `ammonia (${state.fields.ammonia[0]}) did not fall from its seed value (${ammonia0})`);
+  assert.ok(state.fields.nitrite[0] > 0, 'nitrite did not accumulate from ammonia uptake');
+  assert.ok(state.fields.bacteria[0] > bacteria0, `bacteria (${state.fields.bacteria[0]}) did not grow from its seed population (${bacteria0}) during the bootstrap window`);
+  for (const v of state.fields.bacteria) assert.ok(v <= 1.0001, `bacteria ${v} exceeded its declared carrying capacity 1`);
+  // Left to run past substrate depletion, the population must decline
+  // (starvation: mu -> 0 as ammonia -> 0, leaving growth = -deathRate*b),
+  // not sit frozen or blow up — the other half of "a fresh tank cycles"
+  // is that it doesn't cycle forever on a one-time ammonia pool.
+  const bacteriaPeak = state.fields.bacteria[0];
+  for (let i = 0; i < 340; i++) cpu.step(spec, state);
+  assertAllFinite(state.fields.bacteria, 'bacteria');
+  assert.ok(state.fields.bacteria[0] < bacteriaPeak, `bacteria (${state.fields.bacteria[0]}) did not decline after substrate depletion (peak ${bacteriaPeak})`);
+});
+
+test('cpu: vector source reaction (filter jet) injects fixed-direction momentum at declared cells', async ({ kernel, cpu }) => {
+  const spec = kernel.defineSubstrate({
+    width: 8, height: 8, seed: 2,
+    channels: [{ name: 'momentum', kind: 'vector', diffuse: 0, halfLife: Infinity, boundary: 'wall', advectedBy: null }],
+    reactions: [{ type: 'source', channel: 'momentum', rate: 0.5, cells: [[3, 3]], vector: [1, 0] }]
+  });
+  const state = cpu.createState(spec);
+  cpu.step(spec, state);
+  const idx = 3 * 8 + 3;
+  assert.ok(Math.abs(state.fields.momentum.x[idx] - 0.5) < 1e-9, `momentum.x at source cell was ${state.fields.momentum.x[idx]}, expected 0.5`);
+  assert.strictEqual(state.fields.momentum.y[idx], 0, 'vector source injected a y-component it was not declared to');
+});
+
 test('cpu: energy (every field + agent scalar) stays finite for 2000 steps', async ({ kernel, cpu }) => {
   const spec = boidsSpec(kernel.defineSubstrate);
   const state = cpu.createState(spec);
