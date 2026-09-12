@@ -100,6 +100,20 @@ function validateApp(id, goldenHashes) {
   const appDir = path.join(APPS_DIR, id);
   const manifestPath = path.join(appDir, 'app.json');
   if (!fs.existsSync(manifestPath)) {
+    // A directory under apps/ with no app.json AND no index.html isn't a
+    // lab app yet by the contract's own definition (docs/lab-design.md,
+    // "Layout": an app directory's entry point is index.html) — it's
+    // in-progress supporting work (e.g. an engine module tree and its own
+    // headless test harness landing ahead of the page that will consume
+    // them) that hasn't reached the point of declaring itself an app.
+    // Silently excluded from the registry (deriveRegistry's own
+    // .filter(Boolean) already drops a null manifest), not an error: only
+    // a directory that already looks like it's trying to be an app (has
+    // an entry page) but is missing its manifest is a real validation
+    // failure.
+    if (!fs.existsSync(path.join(appDir, 'index.html'))) {
+      return null;
+    }
     fail(`${id}: missing app.json`);
     return null;
   }

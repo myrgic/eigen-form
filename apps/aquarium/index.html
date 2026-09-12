@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aquarium: eigen-form lab</title>
+<link rel="stylesheet" href="../../src/panel/tokens.css">
+<link rel="stylesheet" href="../../src/panel/panel.css">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    display: grid; grid-template-columns: 1fr 340px; gap: 28px;
+    padding: 28px; background: var(--bg); color: var(--fg); font-family: var(--sans);
+  }
+  .stage-col { display: flex; flex-direction: column; gap: 14px; min-height: 80vh; }
+  .stage {
+    width: 100%; max-width: 920px; aspect-ratio: 112 / 70;
+    border: 1px solid var(--line); border-radius: var(--radius-3);
+    overflow: hidden; background: #030b12; position: relative;
+  }
+  canvas#tank { width: 100%; height: 100%; display: block; }
+  .meta .title { font-size: 20px; letter-spacing: 0.04em; }
+  .meta .tagline { margin-top: 4px; font-size: 12px; color: var(--faint); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .actions button {
+    background: transparent; border: 1px solid var(--line); border-radius: var(--radius-1);
+    padding: var(--space-2) var(--space-3); font: 11px var(--mono); color: var(--dim);
+    cursor: pointer; letter-spacing: 0.03em; transition: border-color 120ms, color 120ms;
+  }
+  .actions button:hover { color: var(--fg); border-color: var(--accent); }
+  .note { font-size: 12px; line-height: 1.6; color: var(--dim); max-width: 78ch; }
+  .note strong { color: var(--fg); }
+  #panel {
+    border: 1px solid var(--line); border-radius: var(--radius-3);
+    position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow: auto;
+  }
+  #observables {
+    font: 10.5px var(--mono); color: var(--faint); background: #0a0f14;
+    border: 1px solid var(--line); border-radius: var(--radius-2);
+    padding: 10px 12px; max-height: 220px; overflow: auto; white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+  <div class="stage-col">
+    <div class="stage"><canvas id="tank" width="896" height="560"></canvas></div>
+    <div class="meta">
+      <div class="title">Aquarium</div>
+      <div class="tagline">the agent-substrate engine's first configuration — momentum, heat, chemistry, and three populations sharing one tank</div>
+    </div>
+    <p class="note">
+      <strong>The equations, in words.</strong> Water is an incompressible
+      velocity field (projected divergence-free every step) carrying heat by
+      advection; a heater sources temperature, a Boussinesq term
+      (beta&middot;&Delta;T) turns warmer water buoyant, and the surface loses
+      heat back toward room temperature. Ammonia (from fish) becomes nitrite
+      then nitrate through two Monod-limited, logistically-growing bacteria
+      populations confined to the filter media &mdash; the nitrogen cycle a
+      real fresh tank runs, sped up by a declared time-scale multiplier so it
+      plays out in minutes rather than weeks. Fish are boids on their own
+      density/velocity field, reading the current for rheotaxis and a nutrient
+      gradient for food; plankton are a physarum weld on that same nutrient
+      field &mdash; they grow it, fish graze it down. Bubbles rise at a
+      radius-dependent terminal speed with a random walk and pop at the
+      surface. Plants are the one hand-stepped exception: small Verlet chains
+      reading the current and the light field, not a declared population.
+      <strong>The CPU reference implementation (engine/cpu.js) is the
+      instrument of record</strong> &mdash; the WebGL2 backend is a checked
+      projection of it, verified within a declared tolerance
+      (<a href="twin.html" style="color:var(--accent)">twin.html</a>), never
+      trusted past that tolerance (docs/aquarium-design.md).
+    </p>
+    <div class="actions">
+      <button type="button" id="btn-feed">feed</button>
+      <button type="button" id="btn-waterchange">water change</button>
+      <button type="button" id="btn-reset">reset (new seed)</button>
+    </div>
+    <pre id="observables">warming up&hellip;</pre>
+  </div>
+
+  <div class="panel" id="panel"></div>
+
+<script type="module">
+import { defineParams } from '../../src/params/define.js';
+import { renderPanel } from '../../src/panel/render.js';
+import { createAnimationLoop, prefersReducedMotion } from '../../src/lifecycle/mount.js';
+
+import { SCHEMA, CHANNELS, buildAquariumSpec, seedAquarium, bubbleRadius } from './spec.js';
+import { createSurface, stepSurface, castCaustics } from './surface.js';
+import { createPlants, stepPlants, plantDepositPoints } from './plants.js';
+import { rand01 } from './engine/rng.js';
+import * as cpuEngine from './engine/cpu.js';
+import { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents, scatterAdd, clampChannelFloor, MAX_SCATTER_POINTS } from './engine/webgl2.js';
+
+const store = defineParams(SCHEMA);
+const canvas = document.getElementById('tank');
+const ctx = canvas.getContext('2d');
+const offscreen = document.createElement('canvas');
+const octx = offscreen.getContext('2d', { willReadFrequently: true });
+
+let world = null; // the live simulation — rebuilt by setup()
+let seedCounter = 1;
+
+// A dedicated offscreen WebGL2 canvas — the visible <canvas> stays a 2D
+// context (the rendered scene); the GL context that runs the substrate
+// lives on its own canvas nobody draws to directly, exactly the
+// separation apps/aquarium/twin.html already uses (a hidden 4x4 canvas
+// for the sim, a real page for the report).
+const glCanvas = document.createElement('canvas');
+function ensureGL() {
+  if (glCanvas.__gl) return glCanvas.__gl;
+  const gl = glCanvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: false });
+  if (!gl) throw new Error('aquarium: WebGL2 context unavailable');
+  if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('aquarium: EXT_color_buffer_float unavailable');
+  gl.getExtension('EXT_float_blend');
+  glCanvas.__gl = gl;
+  return gl;
+}
+
+/* ---- backend-agnostic accessors ---------------------------------
+   Everything below `setup()` that needs field or agent data asks
+   `world.getField(name)` / `world.getAgents(popName)` / mutates via
+   `world.setAgents(popName, agents)` / `world.addPoints(channel, pts)`
+   — for backend 'cpu' these are direct references into
+   cpuEngine.createState's own arrays (no copy); for 'webgl2' they are
+   a per-rendered-frame cached readback (see refreshFrameCache below)
+   and an explicit re-upload. Neither surface.js nor plants.js, nor any
+   of the physics/render code past this point, ever imports cpu.js or
+   webgl2.js directly — see spec.js's and surface.js's own headers for
+   why this seam matters (the app-level physics layer is backend-
+   agnostic by construction, not by discipline). ------------------- */
+
+function setup(seed) {
+  const values = store.values();
+  const { spec, meta } = buildAquariumSpec(values, seed);
+  const cpuState = cpuEngine.createState(spec);
+  seedAquarium(spec, cpuState, meta, values);
+  cpuEngine.resetAgents(spec, cpuState);
+
+  const backend = values.backend;
+  let gl = null, glState = null;
+  if (backend === 'webgl2') {
+    gl = ensureGL();
+    glState = createGLState(gl, spec);
+    uploadInitialState(gl, glState, cpuState);
+  }
+
+  const surface = createSurface(spec.width);
+  const plants = createPlants(values.plantCount, values.plantSegments, values.plantSegLength, meta);
+
+  // Bubble radius is drawing-only (never uploaded to the GPU agent
+  // texture — see spec.js's bubbleRadius comment); computed once here,
+  // the same pure function seedAquarium used to derive terminal speed.
+  const bubbleRadii = new Float32Array(values.bubbleCount);
+  for (let i = 0; i < bubbleRadii.length; i++) bubbleRadii[i] = bubbleRadius(spec.seed, i, values.bubbleMinRadius, values.bubbleMaxRadius);
+
+  return {
+    values, spec, meta, backend, gl, glState, cpuState, surface, plants, bubbleRadii,
+    t: 0, steps: 0, stepAccumulator: 0,
+    frameCache: null, // { momentum, light, fish, plankton, bubbles } — one per rendered frame
+    lastVerdict: 'settling in'
+  };
+}
+
+function getFieldDirect(w, name) {
+  return w.backend === 'cpu' ? w.cpuState.fields[name] : readback(w.gl, w.glState, name);
+}
+function getAgentsDirect(w, popName) {
+  return w.backend === 'cpu' ? w.cpuState.populationsByName[popName] : readAgents(w.gl, w.glState, popName);
+}
+
+/** Two-tier per-frame cache, because a GPU readback (readPixels) is a
+ *  pipeline-synchronizing call — cheap in bandwidth at this grid size,
+ *  expensive in latency, and MUCH more expensive again under a
+ *  software WebGL fallback (SwiftShader; this project's own headless-
+ *  Chromium verification environment has no real GPU adapter — see
+ *  the build brief). Fetching every channel this app ever needs, every
+ *  rendered frame, made a 15s virtual-time run take minutes of real
+ *  wall-clock time under SwiftShader; measured and fixed here, not
+ *  guessed at.
+ *
+ *  FAST tier (every rendered frame): momentum, light, and every
+ *  population's agent state — what stepAppPhysics and the water/plant/
+ *  bubble/fish-position rendering genuinely need every frame.
+ *
+ *  SLOW tier (every SLOW_CACHE_PERIOD frames, ~6/sec at 60fps): every
+ *  chemistry channel plus fish-schooling density — used for fish
+ *  stress coloring, the overlay modes, and the observables panel, none
+ *  of which need per-frame precision (a chemistry field's own halfLife
+ *  and reaction rates are already slow relative to 1/6s). */
+const SLOW_CACHE_PERIOD = 10;
+
+function refreshFrameCache(w) {
+  w.frameCache = {
+    momentum: getFieldDirect(w, CHANNELS.MOMENTUM),
+    light: getFieldDirect(w, CHANNELS.LIGHT),
+    fish: getAgentsDirect(w, 'fish'),
+    plankton: getAgentsDirect(w, 'plankton'),
+    bubbles: getAgentsDirect(w, 'bubbles')
+  };
+}
+
+function refreshSlowCache(w, force) {
+  if (!force && w.slowCache && (w.steps - w.slowCache.atStep) < SLOW_CACHE_PERIOD) return;
+  w.slowCache = {
+    atStep: w.steps,
+    temperature: getFieldDirect(w, CHANNELS.TEMPERATURE),
+    ammonia: getFieldDirect(w, CHANNELS.AMMONIA),
+    nitrite: getFieldDirect(w, CHANNELS.NITRITE),
+    nitrate: getFieldDirect(w, CHANNELS.NITRATE),
+    oxygen: getFieldDirect(w, CHANNELS.OXYGEN),
+    nutrient: getFieldDirect(w, CHANNELS.NUTRIENT),
+    bacteriaA: getFieldDirect(w, CHANNELS.BACTERIA_A),
+    bacteriaB: getFieldDirect(w, CHANNELS.BACTERIA_B),
+    fishDensity: getFieldDirect(w, CHANNELS.FISH_DENSITY)
+  };
+}
+
+function addScatterPoints(w, channel, points) {
+  if (points.length === 0) return;
+  if (w.backend === 'cpu') {
+    const grid = w.cpuState.fields[channel];
+    const { width: W, height: H } = w.spec;
+    for (const [x, y, amount] of points) {
+      cpuEngine.bilinearDeposit(grid, x, y, W, H, 'wall', amount);
+    }
+  } else {
+    for (let i = 0; i < points.length; i += MAX_SCATTER_POINTS) {
+      scatterAdd(w.gl, w.glState, channel, points.slice(i, i + MAX_SCATTER_POINTS));
+    }
+  }
+}
+
+/** Floor a channel at `floor` in place, either backend — the same
+ *  discipline cpu.js's own declared 'nitrify' reaction already applies
+ *  to its substrate/bacteria outputs (Math.max(0, ...)). A scatter
+ *  deposit that can go negative (a plant consuming nitrate that isn't
+ *  there yet) must not leave a chemical concentration below zero;
+ *  addScatterPoints itself has no such floor (it mirrors the engine's
+ *  own unconditional additive deposit), so a page that needs one calls
+ *  this right after. */
+function clampFieldFloor(w, channel, floor) {
+  if (w.backend === 'cpu') {
+    const grid = w.cpuState.fields[channel];
+    for (let i = 0; i < grid.length; i++) {
+      if (grid[i] < floor) grid[i] = floor;
+    }
+  } else {
+    clampChannelFloor(w.gl, w.glState, channel, floor);
+  }
+}
+
+function sampleScalar(field, x, y, W, H) {
+  return cpuEngine.bilinearSample(field, x, y, W, H, 'wall');
+}
+function sampleVector(field, x, y, W, H) {
+  return [cpuEngine.bilinearSample(field.x, x, y, W, H, 'wall'), cpuEngine.bilinearSample(field.y, x, y, W, H, 'wall')];
+}
+
+/* ---- one engine step, either backend ------------------------------ */
+function engineStep(w) {
+  if (w.backend === 'cpu') cpuEngine.step(w.spec, w.cpuState);
+  else stepGL(w.gl, w.glState);
+  w.steps += 1;
+  w.t += 1;
+}
+
+/* ---- app-level physics, once per rendered frame -------------------
+   Surface wave + caustics, plant Verlet + deposits, bubble surface
+   recycling, plankton light-speed coupling. All backend-agnostic
+   through the accessors above. */
+function stepAppPhysics(w) {
+  const { width: W, height: H } = w.spec;
+  const c = w.frameCache;
+  const values = w.values;
+
+  // Surface: forced by the substrate's own vertical velocity at row 0.
+  // g (gravity restoring coefficient) is surface.js's own stability
+  // fix — see its header, "Stability, named plainly" — passed here
+  // explicitly rather than left to that module's default so this call
+  // site names the same number the module's own doc comment does.
+  stepSurface(w.surface, { c: 0.18, gamma: 0.06, k: 0.4, g: 0.03 }, (x) => c.momentum.y[Math.round(Math.max(0, Math.min(W - 1, x)))], w.pendingPops || []);
+  w.pendingPops = [];
+
+  const causticHits = castCaustics(w.surface, W, H, values.causticRays, values.surfaceIOR, values.causticIntensity);
+  addScatterPoints(w, CHANNELS.LIGHT, causticHits);
+
+  // Plants: Verlet step, then deposit oxygen (proportional to light at
+  // each segment) and consume nitrate.
+  if (w.plants.length) {
+    stepPlants(w.plants, { drag: values.plantDrag, iterations: values.plantStiffIters, segLength: values.plantSegLength }, (x, y) => sampleVector(c.momentum, x, y, W, H));
+    const { oxygenPoints, nitratePoints } = plantDepositPoints(w.plants, (x, y) => sampleScalar(c.light, x, y, W, H), values.plantOxygenRate, values.plantNitrateRate);
+    addScatterPoints(w, CHANNELS.OXYGEN, oxygenPoints);
+    addScatterPoints(w, CHANNELS.NITRATE, nitratePoints);
+    clampFieldFloor(w, CHANNELS.NITRATE, 0);
+  }
+
+  // Bubbles: pop and recycle at the surface.
+  const bubbles = c.bubbles;
+  let bubblesChanged = false;
+  for (let i = 0; i < bubbles.x.length; i++) {
+    if (bubbles.y[i] <= 0.5) {
+      w.pendingPops.push({ x: bubbles.x[i], amount: -0.6 });
+      bubbles.y[i] = H - 1 - (i % 4);
+      bubbles.x[i] = rand01(w.spec.seed, i, w.steps, 90101) * W;
+      bubbles.heading[i] = -Math.PI / 2;
+      bubblesChanged = true;
+    }
+  }
+  if (bubblesChanged && w.backend === 'webgl2') uploadPopulation(w.gl, w.glState, 'bubbles', bubbles);
+
+  // Plankton: speed rescaled by the local light level (the 'rescale'
+  // weld formula, applied at app level — see spec.js's header on why
+  // plankton's light-speed coupling isn't a declared weld).
+  const plankton = c.plankton;
+  for (let i = 0; i < plankton.x.length; i++) {
+    const level = sampleScalar(c.light, plankton.x[i], plankton.y[i], W, H);
+    plankton.speed[i] = values.planktonSpeed * (1 + values.planktonLightGain * Math.min(2, level));
+  }
+  if (w.backend === 'webgl2') uploadPopulation(w.gl, w.glState, 'plankton', plankton);
+}
+
+/* ---- rendering ------------------------------------------------------ */
+
+const RAMPS = {
+  velocity:    { hue: 205 }, vorticity: { hue: 280 }, temperature: { hue: 18 },
+  ammonia:     { hue: 95 },  oxygen:    { hue: 190 }, nutrient:    { hue: 140 },
+  light:       { hue: 45 }
+};
+
+function rampColor(hue, t) {
+  t = Math.max(0, Math.min(1, t));
+  const l = 6 + t * 88;
+  const s = 62;
+  return `hsl(${hue}, ${s}%, ${l}%)`;
+}
+
+function beerLambert(depthFrac, lightLevel) {
+  const kR = 2.4, kG = 1.0, kB = 0.32;
+  const glow = Math.min(1, lightLevel * 0.7);
+  const r = 10 * Math.exp(-kR * depthFrac) + glow * 60;
+  const g = 60 * Math.exp(-kG * depthFrac) + glow * 90 + 8;
+  const b = 92 * Math.exp(-kB * depthFrac) + glow * 70 + 30;
+  return [Math.min(255, r), Math.min(255, g), Math.min(255, b)];
+}
+
+function computeStress(oxygen, ammonia, density) {
+  // Declared function (the brief's own phrase): stress rises as oxygen
+  // falls below saturation-ish levels, ammonia rises, or local density
+  // (crowding) rises — clamped to [0, 1], not fed back into the sim.
+  const oStress = Math.max(0, 1 - oxygen / 6);
+  const aStress = Math.min(1, ammonia * 8);
+  const dStress = Math.min(1, density / 40);
+  return Math.max(0, Math.min(1, 0.45 * oStress + 0.4 * aStress + 0.15 * dStress));
+}
+
+// overlay name -> its slow-cache key, for the four chemistry overlays
+// that live in the slow tier (velocity/vorticity read momentum, in the
+// fast tier, directly; light reads the fast-tier light field).
+const OVERLAY_SLOW_KEY = { temperature: 'temperature', ammonia: 'ammonia', oxygen: 'oxygen', nutrient: 'nutrient' };
+
+function render(w) {
+  const { width: W, height: H } = w.spec;
+  const c = w.frameCache;
+  const s = w.slowCache;
+  const values = w.values;
+  offscreen.width = W; offscreen.height = H;
+  const img = octx.createImageData(W, H);
+  const overlayName = values.overlay;
+
+  let overlayField = null, overlayHue = 0;
+  if (overlayName !== 'none') {
+    overlayHue = RAMPS[overlayName].hue;
+    if (overlayName === 'velocity') {
+      overlayField = { vec: c.momentum };
+    } else if (overlayName === 'vorticity') {
+      overlayField = { vec: c.momentum, vorticity: true };
+    } else if (overlayName === 'light') {
+      overlayField = { scalar: c.light };
+    } else {
+      overlayField = { scalar: s[OVERLAY_SLOW_KEY[overlayName]] };
+    }
+  }
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const idx = y * W + x;
+      let r, g, b;
+      if (overlayField) {
+        let t;
+        if (overlayField.vorticity) {
+          const l = cpuEngine.bilinearSample(overlayField.vec.y, x - 1, y, W, H, 'wall');
+          const rr = cpuEngine.bilinearSample(overlayField.vec.y, x + 1, y, W, H, 'wall');
+          const u = cpuEngine.bilinearSample(overlayField.vec.x, x, y - 1, W, H, 'wall');
+          const d = cpuEngine.bilinearSample(overlayField.vec.x, x, y + 1, W, H, 'wall');
+          const curl = (rr - l) - (d - u);
+          t = 0.5 + curl * 2;
+        } else if (overlayField.vec) {
+          const mag = Math.hypot(overlayField.vec.x[idx], overlayField.vec.y[idx]);
+          t = Math.min(1, mag * 1.5);
+        } else {
+          t = Math.min(1, Math.max(0, overlayField.scalar[idx] / (overlayName === 'temperature' ? 30 : overlayName === 'ammonia' ? 2 : overlayName === 'oxygen' ? 10 : overlayName === 'light' ? 3 : 20)));
+        }
+        [r, g, b] = hslToRgb(overlayHue, 62, 6 + Math.max(0, Math.min(1, t)) * 88);
+      } else {
+        const depthFrac = y / (H - 1);
+        [r, g, b] = beerLambert(depthFrac, c.light[idx]);
+      }
+      const o = idx * 4;
+      img.data[o] = r; img.data[o + 1] = g; img.data[o + 2] = b; img.data[o + 3] = 255;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(offscreen, 0, 0, W, H, 0, 0, canvas.width, canvas.height);
+
+  const sx = canvas.width / W, sy = canvas.height / H;
+
+  // Plants
+  ctx.strokeStyle = 'rgba(70, 200, 130, 0.85)';
+  ctx.lineWidth = Math.max(1, sx * 0.18);
+  for (const plant of w.plants) {
+    ctx.beginPath();
+    ctx.moveTo(plant.points[0].x * sx, plant.points[0].y * sy);
+    for (let i = 1; i < plant.points.length; i++) ctx.lineTo(plant.points[i].x * sx, plant.points[i].y * sy);
+    ctx.stroke();
+  }
+
+  // Bubbles
+  ctx.fillStyle = 'rgba(220, 240, 255, 0.55)';
+  const bubbles = c.bubbles;
+  for (let i = 0; i < bubbles.x.length; i++) {
+    const radius = w.bubbleRadii[i] || 1;
+    ctx.beginPath();
+    ctx.arc(bubbles.x[i] * sx, bubbles.y[i] * sy, Math.max(1, radius * sx * 0.35), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Fish
+  const fish = c.fish;
+  const oxygenField = s.oxygen, ammoniaField = s.ammonia, densityField = s.fishDensity;
+  const tailPhase = (w.steps % 20) / 20;
+  for (let i = 0; i < fish.x.length; i++) {
+    const x = fish.x[i], y = fish.y[i], heading = fish.heading[i];
+    const o2 = cpuEngine.bilinearSample(oxygenField, x, y, W, H, 'wall');
+    const nh3 = cpuEngine.bilinearSample(ammoniaField, x, y, W, H, 'wall');
+    const density = cpuEngine.bilinearSample(densityField, x, y, W, H, 'wall');
+    const stress = computeStress(o2, nh3, density);
+    const bodyColor = `hsl(${28 - stress * 28}, 70%, ${55 - stress * 15}%)`;
+    const px = x * sx, py = y * sy;
+    const len = sx * 2.6, wid = sy * 0.9;
+    const tailWag = Math.sin((tailPhase + i * 0.13) * Math.PI * 2) * 0.35;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(heading);
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, len * 0.5, wid * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-len * 0.5, 0);
+    ctx.lineTo(-len * 0.9, -wid * 0.45 * (1 + tailWag));
+    ctx.lineTo(-len * 0.9, wid * 0.45 * (1 - tailWag));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Plankton haze — a diffuse scatter of small, translucent points; the
+  // "haze" reading depends on there being enough of them relative to
+  // their own size that they read as a texture rather than individual
+  // dots, which is why this is additive-ish (globalCompositeOperation
+  // 'lighter') rather than flat alpha over flat alpha.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = 'rgba(120, 235, 150, 0.5)';
+  const plankton = c.plankton;
+  const pr = Math.max(1.1, sx * 0.03);
+  for (let i = 0; i < plankton.x.length; i += 1) {
+    ctx.beginPath();
+    ctx.arc(plankton.x[i] * sx, plankton.y[i] * sy, pr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Surface line
+  ctx.strokeStyle = 'rgba(210, 240, 255, 0.8)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let x = 0; x < W; x++) {
+    const py = (0 - w.surface.h[x] * 3) * sy;
+    if (x === 0) ctx.moveTo(x * sx, py); else ctx.lineTo(x * sx, py);
+  }
+  ctx.stroke();
+}
+
+function hslToRgb(h, s, l) {
+  s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}
+
+/* ---- observables ------------------------------------------------------
+   Recomputed alongside the slow cache (refreshSlowCache's own period),
+   not every rendered frame — see refreshFrameCache's comment on why. */
+function computeObservables(w) {
+  const { width: W, height: H } = w.spec;
+  const c = w.frameCache;
+  const s = w.slowCache;
+  const sum = (a) => { let acc = 0; for (let i = 0; i < a.length; i++) acc += a[i]; return acc; };
+  const mean = (a) => sum(a) / a.length;
+
+  const out = new Float32Array(W * H);
+  cpuEngine.divergenceField(c.momentum, out, W, H, 'wall');
+  let divAcc = 0; for (let i = 0; i < out.length; i++) divAcc += Math.abs(out[i]);
+  const meanAbsDivergence = divAcc / out.length;
+
+  let ke = 0;
+  for (let i = 0; i < c.momentum.x.length; i++) ke += 0.5 * (c.momentum.x[i] ** 2 + c.momentum.y[i] ** 2);
+
+  // Enstrophy: curl via direct wall-clamped neighbour indexing (cells
+  // are already on-grid integers here, so a full bilinear sample would
+  // just be doing floor()+lerp-by-zero busywork).
+  let enstrophy = 0;
+  const mx = c.momentum.x, my = c.momentum.y;
+  for (let y = 0; y < H; y++) {
+    const yl = y > 0 ? y - 1 : 0, yr = y < H - 1 ? y + 1 : H - 1;
+    for (let x = 0; x < W; x++) {
+      const xl = x > 0 ? x - 1 : 0, xr = x < W - 1 ? x + 1 : W - 1;
+      const l = my[y * W + xl], r = my[y * W + xr];
+      const u = mx[yl * W + x], d = mx[yr * W + x];
+      const curl = (r - l) - (d - u);
+      enstrophy += 0.5 * curl * curl;
+    }
+  }
+
+  const { temperature, ammonia, nitrite, nitrate, oxygen, nutrient, bacteriaA, bacteriaB, fishDensity } = s;
+
+  const fish = c.fish;
+  let fishInside = 0;
+  for (let i = 0; i < fish.x.length; i++) {
+    if (fish.x[i] >= 0 && fish.x[i] <= W && fish.y[i] >= 0 && fish.y[i] <= H) fishInside++;
+  }
+
+  const oxygenSurfaceRms = (() => {
+    let acc = 0;
+    for (let x = 0; x < W; x++) acc += w.surface.h[x] * w.surface.h[x];
+    return Math.sqrt(acc / W);
+  })();
+
+  // plantTilt: mean angle of every plant segment from vertical, in
+  // degrees — the observable plants.js's own "Standing up, named
+  // plainly" acceptance check (docs/aquarium-design.md) reads.
+  const plantTilt = (() => {
+    let sumDeg = 0, n = 0;
+    for (const plant of w.plants) {
+      const pts = plant.points;
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        sumDeg += Math.atan2(Math.abs(dx), Math.abs(dy)) * 180 / Math.PI;
+        n++;
+      }
+    }
+    return n ? sumDeg / n : 0;
+  })();
+
+  let stressAcc = 0;
+  for (let i = 0; i < fish.x.length; i++) {
+    const o2 = cpuEngine.bilinearSample(oxygen, fish.x[i], fish.y[i], W, H, 'wall');
+    const nh3 = cpuEngine.bilinearSample(ammonia, fish.x[i], fish.y[i], W, H, 'wall');
+    const d = cpuEngine.bilinearSample(fishDensity, fish.x[i], fish.y[i], W, H, 'wall');
+    stressAcc += computeStress(o2, nh3, d);
+  }
+  const meanStress = fish.x.length ? stressAcc / fish.x.length : 0;
+
+  let verdict = 'settling in';
+  const meanBac = mean(bacteriaA) + mean(bacteriaB);
+  // Threshold rescaled 2026-09-11 alongside spec.js's nitrifyHalfSat
+  // fix (see that SCHEMA entry's comment): bacteriaA/bacteriaB only
+  // ever live in the filter-media mask (a small fraction of the whole
+  // grid, currently 81 of 7840 cells at BASE_WIDTH x BASE_HEIGHT), so
+  // even a healthy, fully-established population's MEAN OVER THE WHOLE
+  // GRID tops out around 0.006-0.008, not the old 0.01 — that old
+  // threshold could never be crossed regardless of bacteria health,
+  // which is why the verdict used to get stuck at "nitrogen cycle not
+  // yet started" even once bacteria were established. 0.002 sits well
+  // above the bootstrap seed's own whole-grid mean (~0.0004) and well
+  // below the achieved-healthy mean, so it actually discriminates.
+  if (w.t < 120) verdict = 'filling and warming up';
+  else if (meanBac < 0.002) verdict = 'nitrogen cycle not yet started';
+  else if (sum(ammonia) > 0.5 && sum(nitrite) < 0.01) verdict = 'cycling: ammonia rising, bacteria establishing';
+  else if (sum(nitrite) > 0.01 && sum(nitrate) < 0.01) verdict = 'cycling: nitrite spike';
+  else if (sum(nitrate) > 0.01) verdict = 'cycling: nitrate accumulating, tank stabilizing';
+
+  return {
+    t: w.t, steps: w.steps, backend: w.backend,
+    kineticEnergy: ke, enstrophy, meanAbsDivergence,
+    meanT: mean(temperature), surfaceRms: oxygenSurfaceRms,
+    nh3: sum(ammonia), no2: sum(nitrite), no3: sum(nitrate), o2: mean(oxygen), nutrient: sum(nutrient),
+    bacteriaA: mean(bacteriaA), bacteriaB: mean(bacteriaB),
+    fishCount: fish.x.length, fishInside,
+    meanStress, planktonCount: c.plankton.x.length, bubbles: c.bubbles.x.length,
+    plantTilt,
+    verdict, fps: w.fps || 0
+  };
+}
+
+/* ---- lifecycle -------------------------------------------------------- */
+
+// Headless Chromium under --virtual-time-budget has no real compositor
+// to pace against, and was measured (2026-09-11, this delivery) calling
+// requestAnimationFrame far faster than 60/sec — a naive "one frame's
+// work per rAF callback" design turns every one of those extra calls
+// into a full engine step + several GPU readbacks, which is what took
+// a 15s virtual-time run past ten real CPU-minutes before this fix. A
+// real browser tab throttles rAF to the display's refresh rate on its
+// own; this doesn't hold in a headless/virtual-time context, so the
+// page enforces its own floor here rather than trusting the host to.
+const MIN_FRAME_INTERVAL_MS = 1000 / 60;
+
+let lastFrameTime = null;
+function tick(now) {
+  if (!world) return;
+  if (lastFrameTime != null && now - lastFrameTime < MIN_FRAME_INTERVAL_MS) return;
+  if (lastFrameTime != null) {
+    const dt = now - lastFrameTime;
+    if (dt > 0) world.fps = Math.round((world.fps || 60) * 0.9 + (1000 / dt) * 0.1);
+  }
+  lastFrameTime = now;
+
+  const reduced = prefersReducedMotion();
+  if (!reduced) {
+    world.stepAccumulator += world.values.simSpeed;
+    let guard = 0;
+    while (world.stepAccumulator >= 1 && guard < 240) {
+      engineStep(world);
+      world.stepAccumulator -= 1;
+      guard++;
+    }
+  }
+  refreshFrameCache(world);
+  if (!reduced) stepAppPhysics(world);
+  refreshSlowCache(world, world.slowCache == null);
+  render(world);
+  if (world.slowCache.atStep === world.steps || world.lastObservables == null) {
+    const obs = computeObservables(world);
+    if (reduced) obs.verdict = 'reduced motion: the real system stopped';
+    world.lastObservables = obs;
+  }
+  document.getElementById('observables').textContent = JSON.stringify(world.lastObservables, null, 2);
+}
+
+const loop = createAnimationLoop(tick);
+
+function rebuild() {
+  world = setup((seedCounter++) * 104729 + 7);
+  loop.start();
+}
+
+/* ---- actions ------------------------------------------------------- */
+document.getElementById('btn-feed').addEventListener('click', () => {
+  if (!world) return;
+  const { width: W, height: H } = world.spec;
+  const pts = [];
+  for (let i = 0; i < 12; i++) {
+    const x = W * (0.2 + 0.6 * ((i + 0.5) / 12));
+    const y = H * 0.08;
+    pts.push([x, y, 2.5]);
+  }
+  addScatterPoints(world, CHANNELS.NUTRIENT, pts);
+});
+
+document.getElementById('btn-waterchange').addEventListener('click', () => {
+  if (!world) return;
+  const scaleDown = (name, fraction) => {
+    if (world.backend === 'cpu') {
+      const grid = world.cpuState.fields[name];
+      for (let i = 0; i < grid.length; i++) grid[i] *= fraction;
+    } else {
+      const data = readback(world.gl, world.glState, name);
+      for (let i = 0; i < data.length; i++) data[i] *= fraction;
+      uploadChannel(world.gl, world.glState, name, data);
+    }
+  };
+  scaleDown(CHANNELS.AMMONIA, 0.3);
+  scaleDown(CHANNELS.NITRITE, 0.3);
+  scaleDown(CHANNELS.NITRATE, 0.5);
+  scaleDown(CHANNELS.NUTRIENT, 0.6);
+});
+
+document.getElementById('btn-reset').addEventListener('click', rebuild);
+
+/* ---- panel + backend/overlay changes trigger a rebuild -------------- */
+const panelEl = document.getElementById('panel');
+renderPanel(store, panelEl);
+store.subscribe((key) => {
+  if (key === 'backend') rebuild();
+  // Every other param takes effect on the NEXT reset, matching
+  // apps/mark's "prereg only applies at construction" idiom — a live
+  // kernel spec is frozen (Object.freeze) by design, so knobs that
+  // change channel/reaction/population shape can't be hot-applied
+  // without rebuilding the spec anyway. Documented, not silently
+  // ignored: docs/aquarium-design.md.
+});
+
+rebuild();
+</script>
+</body>
+</html>
