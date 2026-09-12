@@ -122,9 +122,20 @@ function agentPositionError(cpuAgents, gpuAgents, width, height, wrap) {
  *      full step count — reported for transparency (the honest, large
  *      numbers this file's history found), never gating `pass`.
  */
-function runTwin(spec, steps, gl) {
+function runTwin(spec, steps, gl, seedFn) {
   const cpuState = cpuCreateState(spec);
   cpuResetAgents(spec, cpuState);
+  // seedFn (aquarium addition, 2026-09-11): an optional
+  // (cpuState, spec) => void hook called once, right after the
+  // engine's own zero-default create+reset, before either backend
+  // steps — for a consuming app (apps/aquarium/spec.js's
+  // seedAquarium) whose initial condition needs more than the engine's
+  // own "every field starts at zero" default (a static filter-media
+  // mask, a bootstrap bacteria population, room-temperature water —
+  // see spec.js's seedAquarium for the full list and why each is
+  // needed). Optional and last-positioned so every existing call site
+  // (apps/aquarium/twin.html's physarum/boids fixtures) is unaffected.
+  if (seedFn) seedFn(cpuState, spec);
 
   if (!gl) {
     for (let i = 0; i < steps; i++) cpuStep(spec, cpuState);

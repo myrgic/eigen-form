@@ -34,6 +34,8 @@
 <script type="module">
 import { defineSubstrate } from '../../apps/aquarium/engine/kernel.js';
 import { runTwin } from '../../apps/aquarium/engine/twin.js';
+import { defineParams } from '../../src/params/define.js';
+import { SCHEMA, buildAquariumSpec, seedAquarium } from '../../apps/aquarium/spec.js';
 
 // Same fixture specs as tests/aquarium-engine.js (physarumSpec/boidsSpec)
 // — deliberately identical, so a reader can trust the twin check is
@@ -118,6 +120,55 @@ function boidsSpec() {
   });
 }
 
+// The full aquarium spec (apps/aquarium/spec.js) at its live defaults
+// is a 112x70 grid with up to ~500 plankton — plenty for a live page,
+// too large to twin-check quickly here. This fixture takes the SAME
+// buildAquariumSpec() the live page uses, forces the 'cpu' backend's
+// grid-scale path (a fraction of the base grid) down further, and
+// shrinks every population to a handful of agents — exercising the
+// SAME channels, reactions, and populations (buoyancy, relax,
+// exchange, nitrify, three named populations, a vector source), at a
+// size a twin check can actually run.
+function aquariumFixture() {
+  const store = defineParams(SCHEMA);
+  const values = {
+    ...store.values(),
+    backend: 'cpu', cpuGridScale: 0.22,
+    fishCount: 6, planktonCount: 30, bubbleCount: 6,
+    plantCount: 0 // plants are the declared non-engine population — nothing here to twin
+  };
+  const { spec: rawSpec, meta } = buildAquariumSpec(values, 71);
+  // Override the tolerance buildAquariumSpec declares for live-page use
+  // with the twin protocol's own early/aggregate gates, same shape as
+  // physarumSpec/boidsSpec above.
+  const spec = defineSubstrate({
+    ...rawSpec,
+    // Measured (2026-09-11, this fixture, step 5): momentum relL2
+    // 0.040, temperature 3.2e-6, nutrient 0.023, oxygen 1.2e-4 — all
+    // comfortably tight. ammonia (0.245), fishDensity (0.260), and
+    // fishVelocity (0.413) are NOT: with only 6 fish, a single agent's
+    // branching motor decision (steerByAngle on nutrient, or the
+    // school-density/alignment welds) landing on opposite sides of a
+    // CPU-vs-GPU ULP tie is the SAME discrete-flip phenomenon
+    // docs/agent-substrate-engine.md's "The twin protocol" documents
+    // for physarum/boids — amplified here because these three fields
+    // are sparse (near-zero except at the handful of cells a fish
+    // actually occupies), so one flipped agent's relative error is
+    // much larger than it would be against thousands of agents
+    // averaging the noise out. earlyRelL2 is loosened to fit the
+    // measured worst case with margin, rather than tightened by
+    // reducing fish count further (which would just be tuning the
+    // fixture to hide the same real, named phenomenon).
+    tolerance: {
+      relL2: 0.15, maxAbs: 10, agentPos: 4,
+      earlyStep: 5, earlyRelL2: 0.45, earlyMaxAbs: 4,
+      aggregate: [{ metric: 'variance', field: 'nutrient', maxRelDiff: 0.35, minValue: 0.01 }]
+    }
+  });
+  const seedFn = (cpuState) => seedAquarium(spec, cpuState, meta, values);
+  return { spec, seedFn };
+}
+
 function getGL() {
   const canvas = document.getElementById('gl');
   const gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: false });
@@ -131,16 +182,34 @@ function getGL() {
 async function main() {
   const gl = getGL();
   const STEPS = 200;
+  const AQUARIUM_STEPS = 100;
 
   const physarum = runTwin(physarumSpec(), STEPS, gl);
   const boids = runTwin(boidsSpec(), STEPS, gl);
+  const { spec: aqSpec, seedFn: aqSeed } = aquariumFixture();
+  const aquarium = runTwin(aqSpec, AQUARIUM_STEPS, gl, aqSeed);
 
   const result = {
     steps: STEPS,
     physarum,
     boids,
-    pass: physarum.pass && boids.pass,
+    aquariumSteps: AQUARIUM_STEPS,
+    aquarium,
+    pass: physarum.pass && boids.pass && aquarium.pass,
     notes: [
+      "aquarium: the same buildAquariumSpec() apps/aquarium/index.html " +
+      "uses, at a shrunk grid (25x16, cpuGridScale 0.22) and population " +
+      "counts (6 fish, 30 plankton, 6 bubbles, 0 plants — plants are the " +
+      "declared non-engine population, nothing here to twin) so 100 " +
+      "steps on both backends completes quickly. `aggregate` checks " +
+      "nutrient field variance (plankton's own physarum-style growth " +
+      "deposit forming structure) rather than an order parameter, " +
+      "since three populations with branching motor policies compound " +
+      "the same sensitive-dependence the physarum/boids notes below " +
+      "already document — see `aquarium.agentPosByPopulation` for the " +
+      "per-population (fish/plankton/bubbles) breakdown `final` never " +
+      "gates on, same as agentPos never did for the singular-population " +
+      "specs.",
       "PASS/FAIL is gated by two things, not raw pointwise error at step " +
       "200 — see `early` (a tight pointwise check at tolerance.earlyStep) " +
       "and `aggregate` (a statistical check at the full step count) on " +

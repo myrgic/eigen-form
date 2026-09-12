@@ -1155,5 +1155,71 @@ function readAgents(gl, glState, name = 'default') {
   return { x, y, heading, speed };
 }
 
-export { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents };
-export default { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents };
+/* ---- app-level point scatter (aquarium addition, 2026-09-11) ---------
+   NOT part of the declared kernel step — a consuming page's own
+   per-frame physics (apps/aquarium/spec.js's surface caustics and plant
+   coupling) needs to additively scatter a handful of values into a
+   scalar channel from JS-computed positions that change every frame
+   (ray hits, plant segment positions), which isn't expressible as a
+   declared, fixed-cells 'source' reaction. This mirrors the engine's
+   OWN deposit primitive (bilinear scatter from a dynamic position) but
+   at nearest-cell precision rather than bilinear, since these are
+   cosmetic/small couplings where the simpler shader is the honest
+   trade — see docs/aquarium-design.md. cpu.js's bilinearDeposit/addCell
+   are the CPU-side equivalent a page uses directly against
+   state.fields when backend is 'cpu'; this is the GPU-side one. */
+const MAX_SCATTER_POINTS = 64;
+
+function buildScatterProgram(gl) {
+  const vs = `#version 300 es
+uniform vec3 u_points[${MAX_SCATTER_POINTS}]; // x, y, amount — grid space
+uniform ivec2 u_gridSize;
+out float vAmount;
+void main() {
+  vec3 p = u_points[gl_VertexID];
+  vec2 cell = floor(p.xy + 0.5);
+  vec2 ndc = (cell + 0.5) / vec2(u_gridSize) * 2.0 - 1.0;
+  gl_Position = vec4(ndc, 0.0, 1.0);
+  gl_PointSize = 1.0;
+  vAmount = p.z;
+}
+`;
+  const fs = `#version 300 es
+precision highp float;
+in float vAmount;
+out vec4 outColor;
+void main() { outColor = vec4(vAmount, 0.0, 0.0, 1.0); }
+`;
+  return linkProgram(gl, vs, fs);
+}
+
+/** Additively scatter `points` (an array of [x, y, amount] in grid
+ *  space, nearest-cell) into `channelName`'s CURRENT texture — no swap,
+ *  same in-place-add semantics as a reaction's 'source'. `points.length`
+ *  must not exceed MAX_SCATTER_POINTS (64); a page needing more should
+ *  batch multiple scatterAdd calls rather than raise this without also
+ *  raising it here deliberately. */
+function scatterAdd(gl, glState, channelName, points) {
+  if (points.length === 0) return;
+  if (points.length > MAX_SCATTER_POINTS) {
+    throw new Error(`aquarium/webgl2: scatterAdd got ${points.length} points, more than MAX_SCATTER_POINTS (${MAX_SCATTER_POINTS})`);
+  }
+  if (!glState.scatterProgram) glState.scatterProgram = buildScatterProgram(gl);
+  const program = glState.scatterProgram;
+  const pp = glState.fields[channelName];
+  const { width: W, height: H } = glState.spec;
+  const flat = new Float32Array(points.length * 3);
+  points.forEach(([x, y, a], i) => { flat[i * 3] = x; flat[i * 3 + 1] = y; flat[i * 3 + 2] = a; });
+  gl.useProgram(program);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, currentFBO(pp));
+  gl.viewport(0, 0, W, H);
+  gl.uniform3fv(gl.getUniformLocation(program, 'u_points'), flat);
+  gl.uniform2i(gl.getUniformLocation(program, 'u_gridSize'), W, H);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArrays(gl.POINTS, 0, points.length);
+  gl.disable(gl.BLEND);
+}
+
+export { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents, scatterAdd, MAX_SCATTER_POINTS };
+export default { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents, scatterAdd, MAX_SCATTER_POINTS };
