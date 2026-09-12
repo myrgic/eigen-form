@@ -22,6 +22,26 @@
       }
     },
     {
+      "id": "aquarium",
+      "title": "Aquarium",
+      "description": "A live aquarium on the agent-substrate engine: fluid, heat, the nitrogen cycle, and three populations sharing one tank.",
+      "path": "../apps/aquarium/index.html",
+      "kind": "sdk-page",
+      "provenance": {
+        "builtOn": "eigen-form@0.4.0 25602f8"
+      },
+      "pwa": {
+        "installable": false
+      },
+      "sdk": {
+        "eigen-form": ">=0.2.0"
+      },
+      "display": {
+        "order": 2,
+        "accent": "#4fb2d9"
+      }
+    },
+    {
       "id": "commit_field",
       "title": "Commit Field",
       "description": "A causal backtest: three stigmergic heat models replayed over real git history and scored on whether they predict the files each next commit actually touched.",
