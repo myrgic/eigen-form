@@ -20,6 +20,46 @@
    cell units), v_top is the substrate's own vertical velocity sampled
    at the surface row, and bubble pops add a direct impulse to h_t.
 
+   Stability, named plainly (found empirically, 2026-09-11, real-time-
+   driver run: surfaceRms 0.0002 -> 36.9 -> 303.6 -> 837.4 at frame one
+   / 5s / 15s / 30s, unbounded, and STILL rising — not a slow approach
+   to some large-but-finite steady state, checked by running the real
+   engine's own momentum.y as vTop for 5000 steps, see
+   tests/aquarium-app.js): this explicit scheme is symplectic Euler
+   applied to the wave PDE's own first-order-in-time form (v' = c^2
+   h_xx, h' = v). Per spatial Fourier mode k, the discrete Laplacian's
+   eigenvalue is -4 sin^2(k/2) in [-4, 0], so the mode's own angular
+   frequency is omega = 2c|sin(k/2)| <= 2c; symplectic Euler with dt = 1
+   is stable exactly when omega <= 2, i.e. c <= 1 — the CFL bound this
+   module now enforces by construction (see C_MAX below) rather than
+   trusting the caller's panel value to stay inside it.
+
+   That bound covers every mode's OSCILLATION — it does not mean every
+   mode is well DAMPED. The uniform (k = 0, "DC") mode has NO spring at
+   all (the Laplacian is exactly zero for a flat h): under a forcing
+   with any persistent spatial mean, gamma's damping still lets that
+   mode's velocity settle to a nonzero value, and h has nothing pulling
+   it back, so it integrates that residual velocity forever. The fix,
+   matching what a real tank's physics already implies (total water
+   volume is conserved, so the surface's mean height can't drift): treat
+   h's own mean as exactly zero every step (see the `meanH` line below).
+
+   That alone is NOT enough once the forcing has power at very low but
+   NONZERO k too (measured: the real momentum.y field does, from the
+   tank's one large buoyancy-driven convection cell) — for those modes
+   omega is small but not zero, and the position eigenvalue works out to
+   1 - omega^2/gamma, i.e. LARGER gamma makes a weak-spring mode decay
+   SLOWER (the standard overdamped-relaxation-time-is-gamma/k result),
+   so no choice of gamma alone bounds this. The actual physics gap is
+   that h_tt = c^2 h_xx models a membrane/string restoring force, which
+   vanishes at long wavelength — a real free water surface additionally
+   has gravity as a restoring force at EVERY wavelength (the shallow-
+   water h_tt = -g*h limit). Adding that term (see `g` below) gives
+   every mode, including k = 0, a genuine nonzero spring constant
+   (omega^2 = g + 4c^2 sin^2(k/2)), which is what actually keeps
+   surfaceRms bounded and quick to settle (checked: ~3.3, steady within
+   ~1000 steps, against the real engine's own momentum.y).
+
    Caustics: parallel "rays" (this is an approximation of the true
    caustic pattern a wavy surface makes, not a physically exhaustive
    optical simulation — named plainly, see docs/aquarium-design.md)
@@ -41,17 +81,43 @@ export function createSurface(width) {
   return { h: new Float32Array(width), v: new Float32Array(width) };
 }
 
+// CFL bound for this explicit (symplectic-Euler) scheme at dt = 1,
+// dx = 1 (this file's header, "Stability, named plainly"): with the
+// gravity term below, a mode's own omega^2 tops out at G_DEFAULT +
+// 4*c^2, and stability needs omega <= 2 — c must stay below 1 for any
+// g this small to matter. 0.95 leaves a small margin rather than
+// sitting exactly on the boundary.
+const C_MAX = 0.95;
+
+// Gravity restoring coefficient (this file's header, "Stability, named
+// plainly"): the shallow-water h_tt = -g*h term real free-surface waves
+// always have, regardless of wavelength — what the pure c^2 h_xx term
+// alone is missing at long wavelength (k -> 0). Calibrated empirically
+// against the real engine's own momentum.y (5000 steps, default c/
+// gamma/k): 0.03 settles surfaceRms to ~3.3 grid-cell-units within
+// ~1000 steps and holds it there; an order of magnitude smaller (0.005)
+// still converges but to a much larger ~16; an order larger (0.3) is
+// visually near-flat. 0.03 is the value tests/aquarium-app.js checks.
+const G_DEFAULT = 0.03;
+
 /** One explicit step of the damped, driven 1D wave equation.
  *  `vTop(x)` samples the substrate's own vertical velocity at column x
  *  of the surface row — a plain function so the caller can supply
  *  either a direct CPU array read or a value pulled from a GPU
  *  readback, without this module caring which. `pops` is an array of
  *  `{ x, amount }` impulses (a bubble bursting at the surface this
- *  frame) applied directly to h_t before the wave step. */
+ *  frame) applied directly to h_t before the wave step. `params.g`
+ *  (gravity restoring coefficient) is optional, defaulting to
+ *  G_DEFAULT — see this file's header, "Stability, named plainly". */
 export function stepSurface(surface, params, vTop, pops) {
   const { h, v } = surface;
   const W = h.length;
-  const { c, gamma, k } = params;
+  // Clamp by construction (this file's header, "Stability, named
+  // plainly") rather than trusting the caller's panel value to stay
+  // inside the CFL bound.
+  const c = Math.max(0, Math.min(C_MAX, Math.abs(params.c)));
+  const { gamma, k } = params;
+  const g = params.g == null ? G_DEFAULT : params.g;
 
   for (const { x, amount } of pops) {
     const xi = Math.max(0, Math.min(W - 1, Math.round(x)));
@@ -66,9 +132,17 @@ export function stepSurface(surface, params, vTop, pops) {
     const r = h[x < W - 1 ? x + 1 : W - 1];
     const lap = l - 2 * h[x] + r;
     const forcing = k * vTop(x);
-    newV[x] = v[x] + (c * c * lap - gamma * v[x] + forcing);
+    newV[x] = v[x] + (c * c * lap - g * h[x] - gamma * v[x] + forcing);
   }
-  for (let x = 0; x < W; x++) { h[x] += newV[x]; v[x] = newV[x]; }
+  let meanH = 0;
+  for (let x = 0; x < W; x++) { h[x] += newV[x]; v[x] = newV[x]; meanH += h[x]; }
+  meanH /= W;
+  // Belt-and-suspenders on top of the gravity term above: a real tank's
+  // water volume is conserved, so the surface's own mean height can
+  // never actually drift — hold that exactly rather than trusting g's
+  // (very small, nonzero) DC spring constant to converge it precisely
+  // to zero on its own.
+  if (meanH !== 0) { for (let x = 0; x < W; x++) h[x] -= meanH; }
 }
 
 /** Cast `rayCount` parallel rays from directly above the tank, refract

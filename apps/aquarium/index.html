@@ -276,7 +276,11 @@ function stepAppPhysics(w) {
   const values = w.values;
 
   // Surface: forced by the substrate's own vertical velocity at row 0.
-  stepSurface(w.surface, { c: 0.18, gamma: 0.06, k: 0.4 }, (x) => c.momentum.y[Math.round(Math.max(0, Math.min(W - 1, x)))], w.pendingPops || []);
+  // g (gravity restoring coefficient) is surface.js's own stability
+  // fix — see its header, "Stability, named plainly" — passed here
+  // explicitly rather than left to that module's default so this call
+  // site names the same number the module's own doc comment does.
+  stepSurface(w.surface, { c: 0.18, gamma: 0.06, k: 0.4, g: 0.03 }, (x) => c.momentum.y[Math.round(Math.max(0, Math.min(W - 1, x)))], w.pendingPops || []);
   w.pendingPops = [];
 
   const causticHits = castCaustics(w.surface, W, H, values.causticRays, values.surfaceIOR, values.causticIntensity);
