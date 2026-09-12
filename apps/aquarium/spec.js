@@ -127,7 +127,21 @@ export const SCHEMA = {
   o2Saturation:      { type: 'number', min: 4, max: 12, step: 0.5, default: 8, group: 'chemistry', label: 'O2 saturation' },
   o2ExchangeRate:    { type: 'number', min: 0, max: 0.1, step: 0.002, default: 0.02, group: 'chemistry', label: 'O2 exchange rate' },
   nitrifyGrowth:     { type: 'number', min: 0.05, max: 1, step: 0.01, default: 0.4, group: 'chemistry', label: 'bacteria growth rate' },
-  nitrifyHalfSat:    { type: 'number', min: 0.1, max: 3, step: 0.05, default: 1, group: 'chemistry', label: 'Monod half-saturation' },
+  // Rescaled 2026-09-11 (found empirically, real-time-driver run:
+  // bacteriaA/bacteriaB -> 0 within ~60 steps at the old default of 1,
+  // never recovering — see seedAquarium's nitrify note and
+  // tests/aquarium-app.js's bacteria-establish test). The old [0.1, 3]
+  // range assumed a local-ammonia-at-the-filter-media concentration
+  // scale the simulation never actually reaches: measured (5000 CPU-
+  // engine steps, default params, filter-mask cells only) local
+  // ammonia there stays in the 1e-4..1e-2 range, two to three orders of
+  // magnitude below the old minimum half-saturation — so Monod uptake
+  // (mu = growthRate * s / (s + halfSaturation)) was always small
+  // relative to nitrifyDeathRate there, and the bootstrap population
+  // (seedAquarium, 0.02) died faster than ammonia could ever arrive.
+  // Rescaled to the concentration scale actually achieved, not the one
+  // originally assumed.
+  nitrifyHalfSat:    { type: 'number', min: 0.0005, max: 0.05, step: 0.0005, default: 0.001, group: 'chemistry', label: 'Monod half-saturation' },
   nitrifyDeathRate:  { type: 'number', min: 0.001, max: 0.05, step: 0.001, default: 0.012, group: 'chemistry', label: 'bacteria death rate' },
 
   // -- time --------------------------------------------------------
@@ -376,6 +390,22 @@ export function seedAquarium(spec, state, meta, values) {
   // nitrify's carryingCapacity of 1 (see spec's reactions), a
   // deliberately modest seed so the cycle's rise is visible rather
   // than starting pre-saturated.
+  //
+  // This bootstrap population used to die before it ever got the
+  // chance to grow: at step 1 the filter media has essentially no
+  // ammonia yet (S ~ 0), so Monod growth (mu = growthRate * s / (s +
+  // halfSaturation)) is ~0, and ANY positive deathRate then dominates
+  // — cpu.js's `nitrify` branch computes `growth = (mu*(1-b/cap) -
+  // deathRate) * b`, so at S ~ 0 that's just `-deathRate * b`, pure
+  // exponential decay from the very first step. Measured: the 0.02
+  // seed was down two orders of magnitude within ~60 steps and never
+  // recovered (growth is proportional to the population itself — an
+  // extinct-in-practice population can't restart from a later rise in
+  // ammonia). The actual fix is SCHEMA's nitrifyHalfSat (see its own
+  // comment): rescaled to the concentration scale ammonia genuinely
+  // reaches in the filter media, so Monod growth is no longer
+  // structurally smaller than death the moment the bootstrap population
+  // exists.
   const bacA = state.fields[CHANNELS.BACTERIA_A], bacB = state.fields[CHANNELS.BACTERIA_B];
   for (let i = 0; i < filterMask.length; i++) {
     if (filterMask[i] > 0) { bacA[i] = 0.02; bacB[i] = 0.02; }
