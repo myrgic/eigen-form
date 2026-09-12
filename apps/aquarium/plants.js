@@ -23,6 +23,26 @@
    `x + (x - xPrev) * damping + acceleration`, then a fixed number of
    distance-constraint relaxation passes pulls each segment back toward
    its rest length, anchor point held fixed every pass.
+
+   Standing up, named plainly (found empirically, 2026-09-11, real-time-
+   driver run: mean segment tilt from vertical 39 -> 45 -> 60 -> 67
+   degrees at 5s/10s/15s/20s, every chain dragged flat by 30s): the
+   distance constraint alone only holds each segment's LENGTH — nothing
+   in the original step pulled a chain's SHAPE back toward standing up,
+   so `drag * momentum` (current, unbounded in the direction it points)
+   plus `driftBias` (a constant per-step nudge) had nothing opposing
+   them and just accumulated, frame after frame, into "lying flat" as
+   the only steady state. Real aquarium plants resist this the same way
+   a flexible rod does — bending stiffness that increases with
+   curvature, restoring straight-up as the rest pose once the current
+   relaxes — so each relaxation pass now also pulls every free point
+   toward "directly above the previous point at rest length" (see
+   `bendStiffness` in stepPlants), the same declared-rest-pose idea the
+   distance constraint already uses for length, applied to direction.
+   Checked (tests/aquarium-app.js): with the real engine's own momentum
+   field driving `sampleMomentum` at default `plantDrag`, mean tilt from
+   vertical stays under 30 degrees through 30s of real-time-equivalent
+   steps, instead of climbing to 67.
    ===================================================================== */
 
 /** `count` plants, each `segments` free points plus a fixed anchor,
@@ -54,7 +74,7 @@ export function createPlants(count, segments, segLength, meta) {
  *  standing in for the plant's own slight negative buoyancy /
  *  resistance to standing bolt upright — without it every plant looks
  *  identically rigid regardless of the current. */
-export function stepPlants(plants, { drag, iterations, segLength, damping = 0.985, driftBias = 0.006 }, sampleMomentum) {
+export function stepPlants(plants, { drag, iterations, segLength, damping = 0.985, driftBias = 0.006, bendStiffness = 0.05 }, sampleMomentum) {
   for (const plant of plants) {
     const pts = plant.points;
     for (let i = 1; i < pts.length; i++) {
@@ -81,6 +101,20 @@ export function stepPlants(plants, { drag, iterations, segLength, damping = 0.98
         const corrX = dx * 0.5 * diff, corrY = dy * 0.5 * diff;
         if (i > 0) { a.x += corrX; a.y += corrY; }
         b.x -= corrX; b.y -= corrY;
+      }
+      // Bending stiffness toward the rest pose (this file's header,
+      // "Standing up, named plainly"): pull each free point toward
+      // directly above the point below it, at rest length — the
+      // distance constraint above only fixes segment LENGTH, this
+      // fixes segment DIRECTION, the restoring term "current drag" had
+      // nothing to push against before. Anchor-relative (pts[0] is
+      // fixed every pass already), so this composes with the distance
+      // constraint rather than fighting it.
+      for (let i = 1; i < pts.length; i++) {
+        const below = pts[i - 1], pt = pts[i];
+        const targetX = below.x, targetY = below.y - segLength;
+        pt.x += (targetX - pt.x) * bendStiffness;
+        pt.y += (targetY - pt.y) * bendStiffness;
       }
       pts[0].x = plant.anchorX; pts[0].y = plant.anchorY;
     }

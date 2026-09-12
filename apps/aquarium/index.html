@@ -553,6 +553,23 @@ function computeObservables(w) {
     return Math.sqrt(acc / W);
   })();
 
+  // plantTilt: mean angle of every plant segment from vertical, in
+  // degrees — the observable plants.js's own "Standing up, named
+  // plainly" acceptance check (docs/aquarium-design.md) reads.
+  const plantTilt = (() => {
+    let sumDeg = 0, n = 0;
+    for (const plant of w.plants) {
+      const pts = plant.points;
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        sumDeg += Math.atan2(Math.abs(dx), Math.abs(dy)) * 180 / Math.PI;
+        n++;
+      }
+    }
+    return n ? sumDeg / n : 0;
+  })();
+
   let stressAcc = 0;
   for (let i = 0; i < fish.x.length; i++) {
     const o2 = cpuEngine.bilinearSample(oxygen, fish.x[i], fish.y[i], W, H, 'wall');
@@ -589,6 +606,7 @@ function computeObservables(w) {
     bacteriaA: mean(bacteriaA), bacteriaB: mean(bacteriaB),
     fishCount: fish.x.length, fishInside,
     meanStress, planktonCount: c.plankton.x.length, bubbles: c.bubbles.x.length,
+    plantTilt,
     verdict, fps: w.fps || 0
   };
 }
