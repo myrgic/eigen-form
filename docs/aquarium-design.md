@@ -192,16 +192,23 @@ coverage in `tests/aquarium-engine.js`:
   `sink`/`decay` for scalar channels). Named, not hidden — see
   `spec.js`'s `intakeVector` comment.
 - **A named limitation: unclamped consumption.** Fish oxygen
-  consumption, fish/plankton nutrient grazing, and plant nitrate uptake
-  are fixed-rate deposits (matching the engine's own agent-deposit
-  primitive, which has never clamped either — `cpu.js`'s
-  `depositOnePopulation` adds without a floor). A chemistry channel can
-  therefore read transiently negative very near a heavy, under-
-  supplied consumer (observed: `nitrate` briefly negative in the first
-  few steps of a fresh tank, before plants/bacteria establish supply).
-  Not gated by any acceptance check in this delivery; a future pass
-  could rate-limit consumption to locally-available supply the same
-  way `nitrify`'s Monod term already self-limits uptake.
+  consumption and fish/plankton nutrient grazing remain fixed-rate
+  deposits (matching the engine's own agent-deposit primitive, which
+  has never clamped either — `cpu.js`'s `depositOnePopulation` adds
+  without a floor); a chemistry channel driven that way can still read
+  transiently negative very near a heavy, under-supplied consumer. Not
+  gated by any acceptance check in this delivery; a future pass could
+  rate-limit consumption to locally-available supply the same way
+  `nitrify`'s Monod term already self-limits uptake. Plant nitrate
+  uptake was the one case this DID surface as a correctness bug rather
+  than a transient (`nitrate` reading negative from a fresh tank's
+  very first frame, before any nitrogen cycle had produced nitrate to
+  consume), and is fixed: `index.html`'s `stepAppPhysics` floors the
+  `nitrate` channel at zero right after the plant scatter deposit
+  (`clampFieldFloor`, CPU-direct on the reference instrument;
+  `webgl2.js`'s `clampChannelFloor` fullscreen pass on the GPU
+  projection), the same `max(0, ...)` discipline `nitrify`'s own
+  substrate/bacteria outputs already use.
 - **A named performance finding, not a correctness issue**: headless
   Chromium (`chrome-headless-shell`) under `--virtual-time-budget` +
   `--dump-dom`, with no real compositor to pace against, was measured

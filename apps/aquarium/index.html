@@ -91,7 +91,7 @@ import { createSurface, stepSurface, castCaustics } from './surface.js';
 import { createPlants, stepPlants, plantDepositPoints } from './plants.js';
 import { rand01 } from './engine/rng.js';
 import * as cpuEngine from './engine/cpu.js';
-import { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents, scatterAdd, MAX_SCATTER_POINTS } from './engine/webgl2.js';
+import { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents, scatterAdd, clampChannelFloor, MAX_SCATTER_POINTS } from './engine/webgl2.js';
 
 const store = defineParams(SCHEMA);
 const canvas = document.getElementById('tank');
@@ -232,6 +232,25 @@ function addScatterPoints(w, channel, points) {
   }
 }
 
+/** Floor a channel at `floor` in place, either backend — the same
+ *  discipline cpu.js's own declared 'nitrify' reaction already applies
+ *  to its substrate/bacteria outputs (Math.max(0, ...)). A scatter
+ *  deposit that can go negative (a plant consuming nitrate that isn't
+ *  there yet) must not leave a chemical concentration below zero;
+ *  addScatterPoints itself has no such floor (it mirrors the engine's
+ *  own unconditional additive deposit), so a page that needs one calls
+ *  this right after. */
+function clampFieldFloor(w, channel, floor) {
+  if (w.backend === 'cpu') {
+    const grid = w.cpuState.fields[channel];
+    for (let i = 0; i < grid.length; i++) {
+      if (grid[i] < floor) grid[i] = floor;
+    }
+  } else {
+    clampChannelFloor(w.gl, w.glState, channel, floor);
+  }
+}
+
 function sampleScalar(field, x, y, W, H) {
   return cpuEngine.bilinearSample(field, x, y, W, H, 'wall');
 }
@@ -270,6 +289,7 @@ function stepAppPhysics(w) {
     const { oxygenPoints, nitratePoints } = plantDepositPoints(w.plants, (x, y) => sampleScalar(c.light, x, y, W, H), values.plantOxygenRate, values.plantNitrateRate);
     addScatterPoints(w, CHANNELS.OXYGEN, oxygenPoints);
     addScatterPoints(w, CHANNELS.NITRATE, nitratePoints);
+    clampFieldFloor(w, CHANNELS.NITRATE, 0);
   }
 
   // Bubbles: pop and recycle at the surface.

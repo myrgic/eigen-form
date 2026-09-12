@@ -1221,5 +1221,37 @@ function scatterAdd(gl, glState, channelName, points) {
   gl.disable(gl.BLEND);
 }
 
-export { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents, scatterAdd, MAX_SCATTER_POINTS };
-export default { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents, scatterAdd, MAX_SCATTER_POINTS };
+function buildFloorProgram(gl) {
+  const fs = `#version 300 es
+precision highp float;
+uniform sampler2D u_src;
+uniform float u_floor;
+out vec4 outColor;
+void main() {
+  float v = texelFetch(u_src, ivec2(gl_FragCoord.xy), 0).r;
+  outColor = vec4(max(u_floor, v), 0.0, 0.0, 1.0);
+}
+`;
+  return linkProgram(gl, FULLSCREEN_VS, fs);
+}
+
+/** Floor `channelName`'s current value to >= `floor`, in place — the
+ *  GPU-side twin of a page doing `grid[i] = Math.max(floor, grid[i])`
+ *  against a CPU-backend field directly. Same discipline the declared
+ *  'nitrify' reaction already applies to its own outputs (see
+ *  programs.nitrifySubstrate/nitrifyBacteria's max(0.0, ...) above);
+ *  this exists because scatterAdd (just above) is an unconditional
+ *  additive scatter with no such floor of its own — a page consuming a
+ *  channel via scatterAdd (e.g. apps/aquarium/index.html's plant
+ *  nitrate uptake) needs to apply this afterward if that channel must
+ *  never go negative. */
+function clampChannelFloor(gl, glState, channelName, floor) {
+  if (!glState.floorProgram) glState.floorProgram = buildFloorProgram(gl);
+  const pp = glState.fields[channelName];
+  const { width: W, height: H } = glState.spec;
+  runFullscreen(gl, glState.floorProgram, backFBO(pp), W, H, { u_src: tex(currentTex(pp)), u_floor: floatVal(floor) });
+  swap(pp);
+}
+
+export { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents, scatterAdd, clampChannelFloor, MAX_SCATTER_POINTS };
+export default { createGLState, uploadInitialState, uploadPopulation, uploadChannel, stepGL, readback, readAgents, scatterAdd, clampChannelFloor, MAX_SCATTER_POINTS };
