@@ -209,25 +209,40 @@ coverage in `tests/aquarium-engine.js`:
   `webgl2.js`'s `clampChannelFloor` fullscreen pass on the GPU
   projection), the same `max(0, ...)` discipline `nitrify`'s own
   substrate/bacteria outputs already use.
-- **A named performance finding, not a correctness issue**: headless
-  Chromium (`chrome-headless-shell`) under `--virtual-time-budget` +
-  `--dump-dom`, with no real compositor to pace against, was measured
-  (2026-09-11) settling after essentially ONE serviced
-  `requestAnimationFrame` regardless of the budget value (confirmed
-  against a trivial rAF-counter fixture with no simulation at all —
-  `n` stayed 0 without `--run-all-compositor-stages-before-draw`, and
-  reached only 1-2 with it, for budgets from 1s to 15s). This is a
-  property of the verification tool, not of this page: in an
-  interactive browser tab (a real compositor pacing `requestAnimationFrame`
-  at the display's refresh rate), the page runs continuously at
-  `simSpeed`-scaled real time. The acceptance numbers in this
-  delivery's report were captured from whatever single settled frame
-  `chrome-headless-shell` actually produces with the literal command
-  line the build brief specifies, and hold at that frame; a fuller
-  multi-second run was separately verified with a purpose-built
-  headless harness driving `engine/cpu.js`/`engine/webgl2.js` directly
-  (900 steps, ~15s at 60fps) — see "The twin result" below for the
-  numbers that run produced.
+- **Verification: `--virtual-time-budget` dump-dom only ever sees frame
+  one, stated plainly, not softened.** headless Chromium
+  (`chrome-headless-shell`) under `--virtual-time-budget` has no real
+  compositor to pace `requestAnimationFrame` against, and this page's
+  own rAF loop does not advance under it regardless of the budget value
+  (confirmed 2026-09-11 against a trivial rAF-counter fixture with no
+  simulation at all: the counter never got past frame one, for budgets
+  from 1s to 15s, with or without
+  `--run-all-compositor-stages-before-draw`). Every dynamics defect
+  that only shows up after frame one is therefore invisible to a
+  `--dump-dom`-based check no matter how the budget is tuned. Three
+  such defects (surface height integrating without bound, the
+  nitrifying bacteria bootstrap dying before the cycle could start,
+  plant chains dragged flat by the current) shipped in this delivery
+  undetected until driven in real time (2026-09-11).
+
+  The real recipe, promoted into the repo as `tools/headless_drive.mjs`
+  (`npm run aquarium:drive`) rather than left as a one-off: launch
+  `chrome-headless-shell --headless --no-sandbox
+  --remote-debugging-port=<port> about:blank`, serve this repo with
+  `python3 -m http.server <port>`, `Page.navigate` to
+  `/apps/aquarium/`, connect over the DevTools protocol (plain
+  `WebSocket`/`fetch`, no packages), sleep in real wall-clock seconds,
+  and `Runtime.evaluate` the page's own `#observables` panel text at
+  each declared sample time, the same panel a human watching the page
+  would read. Measured (2026-09-11, this delivery, default params,
+  `webgl2` backend, software/SwiftShader GPU): about 1350 engine steps
+  at 47-50 fps over 30 real seconds. A `Page.captureScreenshot` at the
+  end gives a visual check (plants upright, floor caustics present,
+  fish and plankton visible) alongside the numbers. See
+  `tools/headless_drive.mjs`'s own header for the full option list; it
+  exits non-zero if `#observables` is ever missing or unparsable, or if
+  the engine's own step counter never advances, treating either as the
+  instrument itself being broken rather than a finding about the app.
 - **A genuine per-frame cost, named**: when `backend` is `webgl2`, the
   app-level physics/render layer reads a handful of channels/agent
   states back from the GPU every rendered frame (`index.html`'s
