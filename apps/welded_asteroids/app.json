@@ -1,0 +1,21 @@
+{
+  "id": "welded_asteroids",
+  "title": "Welded Asteroids",
+  "description": "Asteroids riding a closed-loop stigmergic field: the ship advects on agent-deposited momentum, the rocks are the trail's own beta_1 contours, both projected onto the quotient surfaces of the topology game.",
+  "version": "1.0.0",
+  "kind": "instrument-view",
+  "entry": "index.html",
+  "cogdoc": {
+    "type": "paper",
+    "id": "paper-welded-asteroids",
+    "embedded": "script[type=\"application/cogdoc+yaml\"]",
+    "claim": "A closed-loop stigmergic field is playable: the ship advects on the same agent-deposited momentum the field's own agents steer by, the obstacles are the coverage-masked beta_1 contours of the trail (so the asteroid count IS the topology readout), and the whole composition survives projection onto non-flat quotients because the field grid and the game already share torus semantics.",
+    "port": "window.__welded",
+    "verify": ".cog/bin/tools/cogdoc_verify.py"
+  },
+  "provenance": {
+    "builtOn": "eigen-form@0.4.0 04f57af"
+  },
+  "capabilities": { "emits": [], "accepts": [] },
+  "pwa": { "installable": false }
+}
