@@ -326,6 +326,14 @@ limitations:
   </div>
 
   <div class="grp">
+    <div class="hd">Slice scope</div>
+    <div class="ctl"><label>plane z <b id="v-slc">0.00</b></label>
+      <input type="range" id="slc" min="-0.44" max="0.44" step="0.01" value="0"></div>
+    <div class="ctl"><label><input type="checkbox" id="slcOn"> scope on</label></div>
+    <canvas id="sliceCv" width="280" height="120" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px"></canvas>
+  </div>
+
+  <div class="grp">
     <div class="hd">Measurement</div>
     <div class="ctl"><label>Mask coverage <b id="v-thr">8%</b></label>
       <input type="range" id="thr" min="1" max="40" step="1" value="8"></div>
@@ -831,6 +839,15 @@ bind('ns','ns', v=>v.toFixed(4));
 bind('dr','dr', v=>v.toFixed(4));
 bind('thr','thr',v=>v+'%', v=>v/100, v=>Math.round(v*100));
 bind('b1Target','b1Target', v=>String(v|0));
+document.getElementById('slc').addEventListener('input', e=>{
+  SL.c = parseFloat(e.target.value);
+  document.getElementById('v-slc').textContent = SL.c.toFixed(2);
+  if(SL.on) drawSlice();
+});
+document.getElementById('slcOn').addEventListener('change', e=>{
+  SL.on = e.target.checked;
+  if(SL.on) drawSlice();
+});
 document.getElementById('btnReset').addEventListener('click', ()=>{ resetField(); updateLevelNote(); });
 document.getElementById('btn3d').addEventListener('click', ()=>setView3d(!view3d));
 /* assigned by the 3D module once the mesh exists; stays a no-op if 3D is unavailable */
@@ -1028,6 +1045,61 @@ function drawAgents2D(){
   }
   octx.fill();
 }
+
+
+/* ── slice scope: planar section of the torus ────────────────────────
+   A plane z = c cuts the torus in two circles. Sample the trail on both,
+   take the per-θ difference, normalize by the CLAMPED DIMENSIONAL RADIUS
+   ρc = R + sqrt(max(0, r²−c²)) — the section's radial reach at height c.
+   Readout: flat ~0 toroidally uniform; +mean outer-wall loop; −mean bore
+   loop; sinusoidal = tilted/Villarceau band (phase = plane orientation).
+   Δ̄/ρc is the scalar summary (trail per radius). */
+const SL = { c: 0.0, on: false };
+const SLN = 128;
+function sliceSample(){
+  const R=1.0, r=0.45, c=Math.max(-r+1e-4, Math.min(r-1e-4, SL.c));
+  const phi=Math.asin(c/r), rhoC=R+Math.sqrt(Math.max(0, r*r-c*c));
+  const data=[], dout=[];
+  for(let k=0;k<SLN;k++){
+    const th=TAU*k/SLN;
+    const phis=[phi, Math.PI-phi];
+    const vals=phis.map(pp=>{
+      const v=((pp/TAU)+1)%1, u=th/TAU;
+      const gx=Math.min(W-1, (u*W)|0), gy=Math.min(H-1, (v*H)|0);
+      return grid[gy*W+gx];
+    });
+    const d=vals[0]-vals[1];
+    data.push(th, vals[0], vals[1], d); dout.push(d);
+  }
+  let mean=0; for(const d of dout) mean+=d; mean/=SLN;
+  let re=0, im=0;
+  for(let k=0;k<SLN;k++){ const d=dout[k], a=TAU*k/SLN; re+=d*Math.cos(a); im+=d*Math.sin(a); }
+  re/=SLN; im/=SLN;
+  return { rhoC, mean, norm: mean/rhoC, amp: 2*Math.hypot(re,im), phase: Math.atan2(im,re), data, c };
+}
+function drawSlice(){
+  const cv=document.getElementById('sliceCv'); if(!cv) return;
+  const g=cv.getContext('2d'), w=cv.width, h=cv.height;
+  g.clearRect(0,0,w,h);
+  const s=sliceSample();
+  let mx=1e-9; for(let k=0;k<s.data.length;k++) mx=Math.max(mx, Math.abs(s.data[k]));
+  const rows=[['hi','#4fe08a'],['lo','#2a9a5a'],['diff','#e0b04f']];
+  const rh=h/3;
+  rows.forEach((row,ri)=>{
+    const [lab,col]=row, y0=ri*rh;
+    g.strokeStyle='rgba(255,255,255,0.08)'; g.beginPath(); g.moveTo(0,y0+rh/2); g.lineTo(w,y0+rh/2); g.stroke();
+    g.strokeStyle=col; g.lineWidth=1.2; g.beginPath();
+    for(let k=0;k<SLN;k++){
+      const v=s.data[4*k+(ri===2?3:ri===0?1:2)], x=k*w/SLN, y=y0+rh/2-(v/mx)*(rh/2-3);
+      k? g.lineTo(x,y) : g.moveTo(x,y);
+    }
+    g.stroke();
+    g.fillStyle='rgba(255,255,255,0.55)'; g.font='10px monospace'; g.fillText(lab, 4, y0+12);
+  });
+  g.fillStyle='#e0b04f'; g.font='10px monospace';
+  g.fillText('\u03c1c='+s.rhoC.toFixed(2)+'  \u0394\u0304='+s.mean.toFixed(2)+'  \u0394\u0304/\u03c1c='+s.norm.toFixed(3)+'  amp='+s.amp.toFixed(2)+'  ph='+((s.phase*180/Math.PI).toFixed(0))+'\u00b0', 4, h-6);
+}
+function stepSlice(){ if(SL.on) drawSlice(); }
 
 /* ── Easter egg: the asteroids game, hidden ────────────────────────── */
 let egg = null;   // {x,y,vx,vy,a,hand,cool}
@@ -1365,7 +1437,7 @@ function simStep(dtReal){
   if(P.mass>0) diffuseDecayMom();
   stepAgents();
   if (egg) stepEgg(dtReal||0);
-  if(frame%20===0) measure(refs().cut);
+  if(frame%20===0){ measure(refs().cut); stepSlice(); }
   frame++;
 }
 
@@ -1416,7 +1488,7 @@ function loop(now){
 
 /* ── test port ─────────────────────────────────────────────────────── */
 window.__welded={
-  TOPOLOGIES, LEVELS, SURFACES, P,
+  TOPOLOGIES, LEVELS, SURFACES, P, slice: () => sliceSample(), SL,
   get topo(){return topo;}, get grid(){return grid;}, get W(){return W;}, get H(){return H;},
   get parts(){return parts;}, get B(){return B;}, get egg(){return egg;},
   get frames(){return frame;}, get refsNow(){return R;},
