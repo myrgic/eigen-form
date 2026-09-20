@@ -210,7 +210,8 @@ limitations:
   #panel{width:280px;flex:none;background:var(--panel);border-right:1px solid var(--line);
          padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:13px;scrollbar-width:thin}
   #stage{flex:1;display:flex;min-width:0;min-height:0}
-  #sq{position:relative;flex:1 1 50%;min-width:0}
+  #sq{position:relative;flex:1 1 50%;min-width:0;display:flex;align-items:center;justify-content:center;background:#000}
+  #sqbox{position:relative;width:100%;aspect-ratio:1/1;max-height:100%;flex:none}
   canvas#sim{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
   canvas#over{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
   #v3{flex:1 1 50%;position:relative;min-width:0;background:#000;border-left:1px solid var(--line)}
@@ -327,7 +328,7 @@ limitations:
 </div>
 
 <div id="stage">
-  <div id="sq"><canvas id="sim"></canvas><canvas id="over"></canvas></div>
+  <div id="sq"><div id="sqbox"><canvas id="sim"></canvas><canvas id="over"></canvas></div></div>
   <div id="v3"><canvas id="c3"></canvas><div id="hint3d">drag to orbit · wheel to zoom</div></div>
 </div>
 <div id="toast"></div>
@@ -521,26 +522,24 @@ function stepAgents(){
     else if(R>L)        { p.a += P.ra; }
     else                { p.a += Math.random()<0.5 ? P.ra : -P.ra; }
 
+    let nx, ny;
     if((ali>0 || adv>0) && (P.ng>0 || P.mass>0)){
       fieldAt(p.x, p.y, _f);
       const w=_f[2];
       if(ali>0 && w>0) p.a += angDiff(Math.atan2(_f[1],_f[0]), p.a)*ali*w;
-      const nx = p.x + Math.cos(p.a)*1 + _f[0]*adv*w;
-      const ny = p.y + Math.sin(p.a)*1 + _f[1]*adv*w;
-
-      if (topo.x.wrap) p.x = wrapc(nx, W); else p.x = Math.min(W-1e-4, Math.max(0, nx));
-      if (topo.y.wrap) p.y = wrapc(ny, H); else p.y = Math.min(H-1e-4, Math.max(0, ny));
-      /* the weld: a crossing transforms heading by the rule */
-      if (nx < 0 || nx >= W) { if (topo.x.wrap && topo.x.flip) p.a = Math.PI - p.a; }
-      if (nx < 0 || nx >= W) { if (topo.x.wrap && topo.x.flip) p.a = Math.PI - p.a; }
-      if (ny < 0 || ny >= H) { if (topo.y.wrap && topo.y.flip) p.a = -p.a; }
+      nx = p.x + Math.cos(p.a)*1 + _f[0]*adv*w;
+      ny = p.y + Math.sin(p.a)*1 + _f[1]*adv*w;
     } else {
-      const nx = p.x + Math.cos(p.a), ny = p.y + Math.sin(p.a);
-      if (topo.x.wrap) p.x = wrapc(nx, W); else p.x = Math.min(W-1e-4, Math.max(0, nx));
-      if (topo.y.wrap) p.y = wrapc(ny, H); else p.y = Math.min(H-1e-4, Math.max(0, ny));
-      if (nx < 0 || nx >= W) { if (topo.x.wrap && topo.x.flip) p.a = Math.PI - p.a; else if (!topo.x.wrap) p.a = Math.PI - p.a; }
-      if (ny < 0 || ny >= H) { if (topo.y.wrap && topo.y.flip) p.a = -p.a; else if (!topo.y.wrap) p.a = -p.a; }
+      nx = p.x + Math.cos(p.a);
+      ny = p.y + Math.sin(p.a);
     }
+    /* the weld: position AND heading transform together through the rule
+       (topo-asteroids' flipP protocol — mirroring the heading without
+       mirroring the position strands the agent at the wrong image of
+       itself, which used to trap it at the seam) */
+    const q = { x:nx, y:ny, a:p.a };
+    wrapPos(q);
+    p.x = q.x; p.y = q.y; p.a = q.a;
     const [gx, gy] = foldRead(p.x, p.y);
     grid[(Math.floor(gy)%H)*W + (Math.floor(gx)%W)] += dep;
     if (P.mass>0){
@@ -744,10 +743,13 @@ function resetField(){
 }
 window.addEventListener('resize', fitCanvases);
 function fitCanvases(){
-  const sq=document.getElementById('sq');
+  const sq=document.getElementById('sq'), box=document.getElementById('sqbox');
   cv.width=W; cv.height=H;
+  /* the fundamental polygon is square — render it as a square, letterboxed */
+  const s=Math.min(sq.clientWidth, sq.clientHeight);
+  box.style.width=s+'px'; box.style.height=s+'px';
   const DPR=Math.min(window.devicePixelRatio||1,2);
-  ov.width=Math.round(sq.clientWidth*DPR); ov.height=Math.round(sq.clientHeight*DPR);
+  ov.width=Math.round(s*DPR); ov.height=Math.round(s*DPR);
   octx.setTransform(DPR,0,0,DPR,0,0);
 }
 
