@@ -3,18 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Welded Asteroids</title>
+<title>Welded Asteroids — the field on the quotient surfaces</title>
 <script type="application/cogdoc+yaml">
 id: paper-welded-asteroids
 type: paper
-title: "Welded Asteroids: an Asteroids game riding a closed-loop stigmergic field, projected onto the quotient surfaces of the topology game"
+title: "Welded Asteroids: the closed-loop stigmergic field itself, living on the quotient surfaces of the topology game"
 description: >
-  topo-asteroids (Chaz Dinkle) welded onto welded_fields (Chaz Dinkle): the
-  ship flies on the agent-deposited momentum field, the rocks are marching-
-  squares contours of the coverage-thresholded trail mask, and both are drawn
-  on the same quotient surfaces (torus, Klein bottle, projective plane,
-  Moebius strip) the asteroids game already embeds. The field's own grid is
-  toroidal, so every periodic surface is a legal re-read of the same data.
+  welded_fields (Chaz Dinkle) re-homed onto the quotient surfaces of
+  topo-asteroids (Chaz Dinkle). The simulation is the artifact: the physarum
+  agents, their trail and their agent-deposited momentum all obey the
+  surface's gluing rule (mirrored re-entry on Klein/projective/Möbius,
+  walls on the strip's free edges). The SURFACES are the levels; the 18
+  declared parameter sliders drive the physarum; beta_1 is read on the
+  surface, not on a flat proxy. The asteroids game survives only as a
+  hidden Easter egg: press X once the field has closed 42 loops and a
+  nav-lighted ship spawns riding the agents' own wind.
 sector: reference
 status: draft
 created: 2026-09-19
@@ -23,192 +26,429 @@ salience: high
 authors:
   - cog (agent, myrgic/eigen-form)
   - chazmaniandinkle
-tags: [stigmergy, advection, topology, asteroids, quotient-space, marching-squares, eigen-form, executable-paper, closed-loop]
+tags: [stigmergy, advection, topology, quotient-space, physarum, betti, closed-loop, eigen-form, executable-paper, gluing-rule]
 claim: >
-  A closed-loop stigmergic field is playable. The ship advects on the same
-  agent-deposited momentum the field's own agents steer by (window.__sim's
-  momX/momY), the obstacles are the coverage-masked beta_1 contours of the
-  trail (so the asteroid count IS the topology readout), and the whole
-  composition survives projection onto non-flat quotients because the field
-  grid and the game already share torus semantics.
+  The closed-loop stigmergic field is not a 2D phenomenon that we choose to
+  LOOK at wrapped: it is a phenomenon whose native domain is a quotient
+  surface, and its topology readout is only honest when both the agent
+  writes and the agent reads obey that surface's gluing rule. Concretely —
+  the sim's wrap-on-both-axes boundary conditions are the torus; re-reading
+  the SAME agents under Klein/projective/Möbius gluing (mirrored field and
+  mirrored headings on twisted edges) produces surfaces whose beta_1 the
+  flat proxy cannot see, and the simulation itself provides the levels.
 method:
   - param: surface
     label: quotient surface
     range: [torus, klein, projective, mobius]
     default: torus
-    meaning: which fundamental polygon the game square is glued into; the field grid is resampled under the same gluing rule as the entities
-  - param: fieldOn
-    label: field layer
+    meaning: which fundamental polygon the sim square is glued into. Agent positions, headings and BOTH field reads/writes transform by the same rule (flipX: x→W−x, vx→−vx, a→π−a; flipY: y→H−y, vy→−vy, a→−a), so structures genuinely live on the surface — a Klein trail carries a real half-twist
+  - param: b1Target
+    label: level β₁ target
+    range: [0, 120]
+    default: 30
+    meaning: the level's goal — the sim is "solved" when the surface's β₁ (measured by the ancestor's b0−χ machinery on the coverage mask) reaches this count. Level completes; next preset fires
+  - param: levelMode
+    label: level script
+    range: [manual, tour]
+    default: tour
+    meaning: manual = the knobs are yours; tour = preset parameter sets fire in sequence, each with its own surface, target and note — the simulation provides the levels
+  - param: N
+    label: agents
+    range: [1000, 12000]
+    default: 7000
+    meaning: agent count, scaled down from the ancestor's 9000 so the sim and the 3D projection share a frame honestly
+  - param: sa
+    label: sensor angle
+    range: [5, 90]
+    default: 60
+    unit: degrees
+    meaning: angular offset of the left/right trail samples from heading (inherited verbatim from the ancestor)
+  - param: ra
+    label: rotation angle
+    range: [5, 90]
+    default: 18
+    unit: degrees
+    meaning: turn applied per step when a flank sample wins
+  - param: so
+    label: sensor distance
+    range: [1, 30]
+    default: 5
+    unit: cells
+    meaning: lookahead distance of the three trail samples
+  - param: dec
+    label: evaporation
+    range: [0.900, 0.999]
+    default: 0.990
+    meaning: per-frame trail decay; trail half-life is log(0.5)/log(dec)
+  - param: dep
+    label: deposit
+    range: [1, 60]
+    default: 25
+    meaning: trail written per agent per frame
+  - param: adv
+    label: advection (transport)
+    range: [0, 2]
+    default: 0.02
+    meaning: gain with which local momentum displaces the agent
+  - param: ali
+    label: alignment (rheotaxis)
+    range: [0, 1]
+    default: 0.02
+    meaning: gain with which the agent rotates its heading toward the local momentum direction
+  - param: mass
+    label: self-field mass
+    range: [0, 2]
+    default: 1.00
+    meaning: strength of velocity deposition into the momentum field; 0 reduces the system to plain stigmergy, above 0 the loop closes
+  - param: mdec
+    label: momentum decay
+    range: [0.700, 0.995]
+    default: 0.940
+    meaning: per-frame momentum decay; the governing quantity is the momentum/trail half-life ratio
+  - param: ng
+    label: noise gain (exogenous)
+    range: [0, 2]
+    default: 0.00
+    meaning: the ONLY exogenous driver; at 0 the loop is fully closed
+  - param: ns
+    label: noise scale
+    range: [0.001, 0.03]
+    default: 0.0060
+    meaning: spatial frequency of the exogenous noise
+  - param: dr
+    label: drift rate
+    range: [0, 0.05]
+    default: 0.0050
+    meaning: temporal advance of the exogenous noise
+  - param: thr
+    label: mask coverage
+    range: [1, 40]
+    default: 8
+    unit: percent
+    meaning: TARGET COVERAGE, not a level — the invariance that makes β₁ comparable
+  - param: proj3d
+    label: 3D view
     range: [0, 1]
     default: 1
-    meaning: 1 renders the live trail field as the terrain (violet), 0 reverts to plain black asteroids
-  - param: wind
-    label: momentum coupling
-    range: [0, 3]
-    default: 1
-    meaning: gain with which the local agent-deposited momentum vector accelerates the ship; 0 disconnects the game from the sim's closed loop
-  - param: rocksFromField
-    label: rocks from field
-    range: [0, 1]
-    default: 1
-    meaning: 1 spawns the wave's asteroids as closed contours of the trail mask at fixed coverage; 0 uses classic procedural rocks
-  - param: rockLevel
-    label: rock contour level
-    range: [0.2, 0.9]
-    default: 0.5
-    meaning: fraction of the sim's coverage-cut level at which contouring runs; higher = fewer, smaller rocks
-  - param: contourTrail
-    label: contour overlay
-    range: [0, 1]
-    default: 1
-    meaning: draws the sim's multi-level topographic contours under the game, in the smoke-ring ramp
+    meaning: 1 renders the live field as a texture on the surface's parametrization (vendored three.js, figure-8 Klein, Bryant–Kusner Boy's surface), plus marching-squares contours pushed through Pxy
 observables:
   port: window.__welded
   state: >
-    __welded.state() -> {ship, rocks, bullets, wave, score, crossings,
-    surface, b1} — ship pose, live rock count (should track beta_1 of the
-    source field), and the topology readout imported from the sim.
+    __welded.state() -> {surface, b0, b1, coverage, agents, level, levelName,
+    solved} — the topology readout measured ON the current surface, level
+    progress, and whether the level's β₁ target has been reached.
   field: >
-    __welded.fieldSample(x, y) -> [vx, vy] — the momentum vector the ship
-    feels at square coordinates (x, y), torus-wrapped, coarse-grid bilinear.
-  contours: >
-    __welded.rockContours() -> array of polylines in square coordinates —
-    the same paths the rock meshes were built from this frame.
+    __welded.fieldAt(x, y, out) -> [dirX, dirY, weight] — the combined
+    exogenous+endogenous field at square coordinates, folded by the
+    surface's gluing rule (this is the read the AGENTS use).
+  fold: >
+    __welded.fold(x, y) -> {x, y} — image a square point through one
+    boundary crossing of the current gluing rule; the invariant the 3D
+    pipeline and the tests both consume.
+  grid: >
+    __welded.grid / __welded.W / __welded.H — the trail field and its
+    square dimensions (the surface's fundamental polygon).
+  setSurface: >
+    __welded.setSurface(id) — switch quotient surface mid-run; the agents,
+    their headings and the fields re-read under the new rule immediately.
+  levels: >
+    __welded.LEVELS / __welded.loadLevel(i) — the tour: each entry binds a
+    surface, parameter presets and a β₁ target into one level.
 refs:
   - uri: app:welded_fields
     rel: derives-from
     desc: >
-      The simulation welded in: agents deposit trail and momentum on one
-      toroidal grid; this page reads grid/mask/momX/momY through the same
-      port its cogdoc declares (window.__sim) and renders them as terrain,
-      wind and rock geometry.
+      The entire simulation: agents, trail, momentum field, hormone
+      weather, robust percentile normalization, coverage-fixed mask, β₀/χ
+      measurement. Only the boundary conditions changed — wrap() now
+      applies the surface's gluing rule instead of plain torus wrapping,
+      and every field read samples through the same fold.
   - uri: app:topo-asteroids
     rel: derives-from
     desc: >
-      The game welded in: quotient-space wrapping with gluing-rule flips,
-      handedness semantics, the 3D surface panel (vendored three.js,
-      figure-8 Klein, Bryant-Kusner Boy's surface), and the
-      window.__topo export shape this page's own port mirrors.
+      The quotient-space machinery: the gluing-rule flips (flipX/flipY on
+      position, velocity and heading together), the surface catalogue
+      (torus, Klein, projective plane, Möbius), the 3D panel with vendored
+      three.js and the real embeddings (figure-8 Klein, Bryant–Kusner Boy's
+      surface), and the fold protocol the field texture and contours are
+      pushed through.
   - uri: cog://rfc/058
     rel: demonstrates
     desc: >
-      Declared observables as a decaying deposit medium: here the medium is
-      not only measurable but navigable — the game is an instrument that
-      flies through the field's own topology.
+      Declared observables as a decaying deposit medium — here the medium
+      is also the LEVEL: the tour binds parameter presets to β₁ targets and
+      lets the simulation itself provide the progression.
 limitations:
   - >
-    The sphere and disk are not offered: the field's wrap-on-both-axes
-    boundary conditions have no honest image under the envelope fold or a
-    walled square — resampling would fake continuity the data does not
-    have. Torus, Klein, projective plane and Moebius are the surfaces the
-    field's own semantics support (Moebius re-reads x with the y-mirror and
-    walls the top, the only surface here where the field is clipped).
+    Sphere and disk are not offered, exactly as v1 argued: the field's
+    wrap-on-both-axes semantics have no honest image under the envelope
+    fold or a walled square. Möbius is the one surface where the sim is
+    clipped (the strip's free edges are walls; agents bounce, the field
+    stops).
   - >
-    Rock contours are rebuilt every wave, not every frame: marching squares
-    over the pooled grid is cheap but collision meshes changing under the
-    player mid-flight is not a game. The field still moves; the rocks are
-    its topology at wave-spawn time.
+    β₁ on a twisted quotient is measured on the SQUARE (fundamental
+    polygon) mask — the honest computation on the glued manifold itself
+    would need persistent homology over the cell complex with
+    identifications; the square measurement is exact for the pixel complex
+    and is what the ancestor's verified machinery provides.
   - >
-    The sim runs headless in this page (no visible panel): one canvas, one
-    loop, the field stepped at half the game's frame rate to keep both
-    honest at 60fps on integrated GPUs.
+    The Easter egg is asserted but lightly verified: ship spawn, wind ride
+    and hand-mirroring reuse v1's tested code paths, but the β₁ ≥ 42 gate
+    was smoke-tested once, not given a dedicated test.
 ---
 </script>
 <style>
   :root {
-    --bg: #0b0a12; --panel: #141126; --line: #2a2440; --ink: #e8e3f2; --dim: #9a92ae;
-    --a: #4fa3ff; --b: #ff8a3d; --wall: #ff4d6d; --accent: #a78bfa;
+    --bg:#07060b; --panel:#100d18; --line:#241d33; --fg:#e8e3f2; --dim:#9a92ae; --faint:#655c7a;
+    --accent:#a78bfa; --trail:#6ee7b7; --warn:#fbbf24; --good:#6bff9a;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
   }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--bg); color: var(--ink);
-    font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  body { display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
-  #stage { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 12px; min-width: 0; min-height: 0; }
-  #c { background: #000; display: block;
-    width: min(100%, calc(100vh - 24px), calc(100dvh - 24px)); height: auto; aspect-ratio: 1;
-    box-shadow: 0 0 0 1px var(--line), 0 0 40px rgba(167,139,250,.12); }
-  body.with3d #c, body.with3d #view3d { width: min(calc((100% - 12px) / 2), calc(100vh - 24px), calc(100dvh - 24px)); }
-  #view3d { display: none; position: relative; aspect-ratio: 1; background: #000;
-    box-shadow: 0 0 0 1px var(--line), 0 0 40px rgba(167,139,250,.10); }
-  body.with3d #view3d { display: block; }
-  #c3 { width: 100%; height: 100%; display: block; cursor: grab; }
-  #c3:active { cursor: grabbing; }
-  #hint3d { position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: var(--dim); pointer-events: none; }
-  #side { flex: 0 0 330px; background: var(--panel); border-left: 1px solid var(--line); padding: 14px 16px;
-    overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-  h1 { font-size: 15px; margin: 0; letter-spacing: .04em; text-transform: uppercase; color: var(--accent);
-    display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  h2 { font-size: 11px; margin: 0 0 6px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
-  select, button { font: inherit; background: #1c1834; color: var(--ink); border: 1px solid var(--line);
-    border-radius: 6px; padding: 6px 8px; cursor: pointer; }
-  select { width: 100%; }
-  button:hover { border-color: var(--accent); }
-  .row { display: flex; gap: 6px; flex-wrap: wrap; }
-  .row button { flex: 1 1 auto; }
-  table { border-collapse: collapse; width: 100%; }
-  td { padding: 2px 0; vertical-align: top; }
-  td:first-child { color: var(--dim); width: 44%; }
-  #blurb { color: var(--dim); font-size: 12.5px; }
-  kbd { background: #221d3f; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; font-size: 12px; }
-  .keys { color: var(--dim); font-size: 12px; }
-  .keys div { margin: 2px 0; }
-  #fieldstat { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--line); font-size: 12.5px; color: var(--dim); }
-  #fieldstat b { color: var(--accent); font-weight: 600; }
-  a { color: var(--a); }
-  @media (max-width: 820px) {
-    body { flex-direction: column; height: auto; overflow: auto; }
-    #stage { flex: none; flex-wrap: wrap; }
-    #c, #view3d, body.with3d #c, body.with3d #view3d { width: min(100%, calc(100vh - 24px)); }
-    #side { flex: none; border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
-  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);display:flex;height:100vh;overflow:hidden;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+  #panel{width:280px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+         padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:13px;scrollbar-width:thin}
+  #stage{flex:1;display:flex;min-width:0;min-height:0}
+  #sq{position:relative;flex:1 1 50%;min-width:0}
+  canvas#sim{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
+  canvas#over{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  #v3{flex:1 1 50%;position:relative;min-width:0;background:#000;border-left:1px solid var(--line)}
+  canvas#c3{width:100%;height:100%;display:block;cursor:grab}
+  canvas#c3:active{cursor:grabbing}
+  #hint3d{position:absolute;right:10px;bottom:8px;font-size:11px;color:var(--faint);pointer-events:none;font-family:var(--mono)}
+
+  h1{margin:0;font-size:15px;font-weight:650;color:var(--accent);letter-spacing:-.01em}
+  h1 small{display:block;font-weight:400;font-size:11px;color:var(--faint);letter-spacing:0;margin-top:3px}
+  .grp{display:flex;flex-direction:column;gap:8px}
+  .grp>.hd{font:600 9.5px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--faint);
+           padding-bottom:5px;border-bottom:1px solid var(--line)}
+  .ctl{display:flex;flex-direction:column;gap:3px}
+  .ctl label{display:flex;justify-content:space-between;font-size:11.5px;color:var(--dim)}
+  .ctl label b{font:11px var(--mono);color:var(--fg);font-weight:500}
+  input[type=range]{width:100%;accent-color:var(--accent);height:16px}
+  select{width:100%;font:12px var(--mono);background:#1a1526;color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:5px 7px}
+  button{width:100%;padding:7px;border:1px solid var(--line);border-radius:5px;background:#1a1526;
+         color:var(--fg);font:inherit;font-size:12px;cursor:pointer}
+  button:hover{background:#241d33;border-color:#3a3050}
+  .row{display:flex;gap:8px;align-items:center;font-size:11.5px;color:var(--dim)}
+  .read{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font:11.5px var(--mono)}
+  .read .k{color:var(--faint)}
+  .read .v{color:var(--fg);text-align:right}
+  .read .v.big{font-size:15px;font-weight:700;color:var(--trail)}
+  .lvl{font-size:11px;color:var(--dim);line-height:1.5}
+  .lvl b{color:var(--accent)}
+  .lvl .done{color:var(--good)}
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
+         background:#1a1526;border:1px solid var(--accent);border-radius:8px;
+         padding:9px 16px;font:12.5px var(--mono);color:var(--fg);opacity:0;transition:opacity .4s;pointer-events:none;z-index:9}
+  .note{font-size:10.5px;line-height:1.45;color:var(--faint);margin:0}
+  .note b{color:var(--dim);font-weight:600}
 </style>
 </head>
 <body>
-<div id="stage">
-  <canvas id="c" width="720" height="720"></canvas>
-  <div id="view3d"><canvas id="c3"></canvas><div id="hint3d">drag to orbit · wheel to zoom</div></div>
-</div>
-<aside id="side">
-  <h1>Welded Asteroids</h1>
-  <div>
-    <h2>Surface</h2>
+<div id="panel">
+  <h1>Welded Asteroids<small>the field itself, on the quotient surfaces</small></h1>
+
+  <div class="grp">
+    <div class="hd">Surface</div>
     <select id="topo"></select>
+    <div class="lvl" id="surf-note"></div>
   </div>
-  <div id="fieldstat">field: <b id="f-b1">–</b> voids · coverage <b id="f-cov">–</b> · wind <b id="f-wind">–</b></div>
-  <div id="blurb"></div>
-  <div>
-    <h2>Field</h2>
-    <table>
-      <tr><td><label><input type="checkbox" id="fieldOn" checked> trail terrain</label></td>
-          <td><label><input type="checkbox" id="contourTrail" checked> contours</label></td></tr>
-      <tr><td><label><input type="checkbox" id="rocksFromField" checked> rocks = β₁ contours</label></td>
-          <td><label>wind <input type="range" id="wind" min="0" max="3" step="0.1" value="1" style="width:80px"></label></td></tr>
-    </table>
+
+  <div class="grp">
+    <div class="hd">Level</div>
+    <div class="row">
+      <select id="levelMode"><option value="tour">tour</option><option value="manual">manual</option></select>
+      <button id="btnLevel" style="width:auto;padding:6px 10px">next</button>
+    </div>
+    <div class="lvl" id="lvl-note"></div>
+    <div class="ctl"><label>β₁ target <b id="v-b1Target">30</b></label>
+      <input type="range" id="b1Target" min="0" max="120" step="1" value="30"></div>
   </div>
+
+  <div class="grp">
+    <div class="hd">Agents</div>
+    <div class="ctl"><label>Sensor angle <b id="v-sa">60°</b></label>
+      <input type="range" id="sa" min="5" max="90" step="1" value="60"></div>
+    <div class="ctl"><label>Rotation angle <b id="v-ra">18°</b></label>
+      <input type="range" id="ra" min="5" max="90" step="1" value="18"></div>
+    <div class="ctl"><label>Sensor distance <b id="v-so">5</b></label>
+      <input type="range" id="so" min="1" max="30" step="1" value="5"></div>
+    <div class="ctl"><label>Count <b id="v-N">7000</b></label>
+      <input type="range" id="N" min="1000" max="12000" step="500" value="7000"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Medium</div>
+    <div class="ctl"><label>Evaporation <b id="v-dec">0.990</b></label>
+      <input type="range" id="dec" min="0.900" max="0.999" step="0.001" value="0.990"></div>
+    <div class="ctl"><label>Deposit <b id="v-dep">25</b></label>
+      <input type="range" id="dep" min="1" max="60" step="1" value="25"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Field</div>
+    <div class="ctl"><label>Advection <b id="v-adv">0.02</b></label>
+      <input type="range" id="adv" min="0" max="2" step="0.02" value="0.02"></div>
+    <div class="ctl"><label>Alignment <b id="v-ali">0.02</b></label>
+      <input type="range" id="ali" min="0" max="1" step="0.01" value="0.02"></div>
+    <div class="ctl"><label>Self-field · mass <b id="v-mass">1.00</b></label>
+      <input type="range" id="mass" min="0" max="2" step="0.02" value="1"></div>
+    <div class="ctl"><label>Momentum decay <b id="v-mdec">0.940</b></label>
+      <input type="range" id="mdec" min="0.700" max="0.995" step="0.005" value="0.940"></div>
+    <div class="ctl"><label>Noise gain · exogenous <b id="v-ng">0.00</b></label>
+      <input type="range" id="ng" min="0" max="2" step="0.02" value="0"></div>
+    <div class="ctl"><label>Noise scale <b id="v-ns">0.0060</b></label>
+      <input type="range" id="ns" min="0.001" max="0.03" step="0.001" value="0.006"></div>
+    <div class="ctl"><label>Drift rate <b id="v-dr">0.0050</b></label>
+      <input type="range" id="dr" min="0" max="0.05" step="0.0005" value="0.005"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Measurement</div>
+    <div class="ctl"><label>Mask coverage <b id="v-thr">8%</b></label>
+      <input type="range" id="thr" min="1" max="40" step="1" value="8"></div>
+    <div class="read">
+      <span class="k">voids (β₁)</span><span class="v big" id="r-b1">–</span>
+      <span class="k">components (β₀)</span><span class="v" id="r-b0">–</span>
+      <span class="k">coverage</span><span class="v" id="r-cov">–</span>
+      <span class="k">trail τ½</span><span class="v" id="r-th">–</span>
+      <span class="k">momentum τ½</span><span class="v" id="r-tm">–</span>
+      <span class="k">ratio mom/trail</span><span class="v" id="r-mratio">–</span>
+    </div>
+  </div>
+
   <div class="row">
-    <button id="btn3d">3D view: on</button>
-    <button id="btnSandbox">Sandbox: off</button>
     <button id="btnReset">Reset</button>
+    <button id="btn3d">3D: on</button>
   </div>
-  <div class="keys">
-    <div><kbd>←</kbd><kbd>→</kbd> turn · <kbd>↑</kbd> thrust · <kbd>␣</kbd> fire (or <kbd>A</kbd><kbd>D</kbd><kbd>W</kbd>)</div>
-    <div><kbd>T</kbd> surface · <kbd>V</kbd> 3D view · <kbd>S</kbd> sandbox · <kbd>P</kbd> pause · <kbd>R</kbd> reset</div>
-    <div>The ship drifts on the agents' momentum. The rocks are the field's own closed contours — the voids the β₁ counter counts. Fly the loops.</div>
-  </div>
-</aside>
+  <p class="note"><b>Closed loop:</b> noise gain at 0 — every structure on screen is agents reading their own deposits, glued onto the selected quotient. The tour levels are the simulation's own.</p>
+</div>
+
+<div id="stage">
+  <div id="sq"><canvas id="sim"></canvas><canvas id="over"></canvas></div>
+  <div id="v3"><canvas id="c3"></canvas><div id="hint3d">drag to orbit · wheel to zoom</div></div>
+</div>
+<div id="toast"></div>
 <script>
 'use strict';
 /* =====================================================================
- * Welded Asteroids = topo-asteroids (game, quotient surfaces, 3D view)
- *                  + welded_fields (stigmergic trail + momentum field)
- * The sim runs headless in this page and publishes the same port the
- * welded_fields cogdoc declares; the game reads it every frame.
+ * Welded Asteroids v2 — welded_fields' simulation on topo-asteroids'
+ * quotient surfaces. No game: the field IS the artifact. The asteroids
+ * game survives as an Easter egg (press X when β1 >= 42).
  * ===================================================================== */
 
-// ─────────────────────────────────────────────────────────────────────────
-// FIELDS (lifted from welded_fields, unchanged in behavior; only the sim's
-// own DOM/panel code is dropped — this page is the panel)
-// ─────────────────────────────────────────────────────────────────────────
+/* ── topologies: the gluing rules, from topo-asteroids ─────────────── */
+const TOPOLOGIES = [
+  { id:'torus', name:'Torus', word:'a b a⁻¹ b⁻¹', orientable:true,
+    x:{wrap:true, flip:null}, y:{wrap:true, flip:null},
+    note:'Both pairs welded straight — the sim grid\'s native topology. This is welded_fields exactly as the ancestor ran it.' },
+  { id:'klein', name:'Klein bottle', word:'a b a b⁻¹', orientable:false,
+    x:{wrap:true, flip:null}, y:{wrap:true, flip:'x'},
+    note:'Top/bottom welded with a mirror. Agents crossing the seam re-enter flipped — heading and trail both — so the structures carry a real half-twist. β₁ reads differently than the flat proxy.' },
+  { id:'projective', name:'Projective plane', word:'a b a b', orientable:false,
+    x:{wrap:true, flip:'y'}, y:{wrap:true, flip:'x'},
+    note:'Both pairs mirrored: every crossing is a 180° turn of the world. The densest gluing here; loops close on themselves fastest.' },
+  { id:'mobius', name:'Möbius strip', word:'a b a⁻¹ c', orientable:false,
+    x:{wrap:true, flip:'y'}, y:{wrap:false, flip:null},
+    note:'One mirrored weld, one pair of walls — the only clipped surface. The field stops at the strip\'s edges; agents bounce off them.' },
+];
+let topo = TOPOLOGIES[0];
+
+/* flip a point-heading pair through one crossing (from topo-asteroids) */
+function flipP(p, which) {
+  if (which === 'x') { p.x = W - p.x; p.a = Math.PI - p.a; }
+  else               { p.y = H - p.y; p.a = -p.a; }
+}
+/* fold a field VECTOR through one crossing: the mirrored read */
+function flipV(vx, vy, which) {
+  if (which === 'x') return [-vx, vy];
+  return [vx, -vy];
+}
+
+/* ── sim state (ancestor's structure, fixed square dims) ───────────── */
+const W = 300, H = 300;                  // fundamental polygon, in cells
+const SCALE = 2;
+let grid, tmp, mask, img;
+let parts = [], time = 0, frame = 0;
+const hist = [];
+const CS = 3, cW = W/CS, cH = H/CS;
+let coarse;
+const MS = 8, mW = Math.floor(W/MS), mH = Math.floor(H/MS);
+let momX, momY, mtX, mtY, momRef = 1;
+let horm, hormRef = 1;
+
+/* defaults: the ancestor's operator regime */
+const P = { sa:60*Math.PI/180, ra:18*Math.PI/180, so:5,
+            dec:0.99, dep:25, adv:0.02, ali:0.02, ns:0.006, dr:0.005, thr:0.08,
+            mass:1, mdec:0.94, ng:0, N:7000, b1Target:30, levelMode:'tour' };
+
+/* ── THE WELD: wrap + fold under the gluing rule ─────────────────────
+   The ancestor's wrap was plain torus. Here every crossing transforms
+   position AND heading by the surface's rule, and every field READ of a
+   mirrored sample flips the vector it reads back into the square's frame. */
+function wrapPos(p) {                     // p has {x, y, a}
+  if (topo.x.wrap) {
+    while (p.x < 0) { p.x += W; if (topo.x.flip) flipP(p, topo.x.flip); }
+    while (p.x >= W) { p.x -= W; if (topo.x.flip) flipP(p, topo.x.flip); }
+  } else {
+    if (p.x < 0) { p.x = 0; }
+    if (p.x >= W) { p.x = W - 1e-4; }
+  }
+  if (topo.y.wrap) {
+    while (p.y < 0) { p.y += H; if (topo.y.flip) flipP(p, topo.y.flip); }
+    while (p.y >= H) { p.y -= H; if (topo.y.flip) flipP(p, topo.y.flip); }
+  } else {
+    if (p.y < 0) { p.y = 0; }
+    if (p.y >= H) { p.y = H - 1e-4; }
+  }
+}
+/* fold a square sample point for field reads: mirrored cells read the
+   field through the mirror (the read is of the SAME deposit, seen
+   through the seam's rule) */
+function foldRead(x, y) {
+  let fx = ((x % W) + W) % W, fy = ((y % H) + H) % H;
+  if (topo.x.flip && Math.floor((x % (2*W)) / W) === 1) fx = W - 1 - fx;
+  if (topo.y.flip && Math.floor((y % (2*H)) / H) === 1) fy = H - 1 - fy;
+  return [fx, fy];
+}
+/* trail read at a (possibly out-of-square) point, honoring the rule */
+function trailRead(x, y) {
+  const [fx, fy] = foldRead(x, y);
+  return grid[(Math.floor(fy) % H) * W + (Math.floor(fx) % W)];
+}
+/* momentum read: bilinear in the square, folded + vector-flipped */
+const _fm=[0,0];
+function momRead(x, y, out) {
+  const [fx, fy] = foldRead(x, y);
+  const fxp=fx/MS-0.5, fyp=fy/MS-0.5;
+  let i0=Math.floor(fxp), j0=Math.floor(fyp);
+  const tx=fxp-i0, ty=fyp-j0;
+  i0=((i0%mW)+mW)%mW; j0=((j0%mH)+mH)%mH;
+  const i1=(i0+1)%mW, j1=(j0+1)%mH;
+  const a=j0*mW, b=j1*mW;
+  const w00=(1-tx)*(1-ty), w10=tx*(1-ty), w01=(1-tx)*ty, w11=tx*ty;
+  let vx = momX[a+i0]*w00+momX[a+i1]*w10+momX[b+i0]*w01+momX[b+i1]*w11;
+  let vy = momY[a+i0]*w00+momY[a+i1]*w10+momY[b+i0]*w01+momY[b+i1]*w11;
+  /* the folded read: on mirrored cells the vector is read through the seam */
+  const cx = x - Math.floor(x/(2*W))*0, cy = y;   // mirrored iff foldRead flipped
+  if (topo.x.flip && Math.floor((((x%W)+W)%W + 0) / W) === 0 && Math.floor(((x % (2*W)) + 2*W) % (2*W) / W) === 1) { vx = -vx; }
+  if (topo.y.flip && Math.floor(((y % (2*H)) + 2*H) % (2*H) / H) === 1) { vy = -vy; }
+  out[0]=vx; out[1]=vy;
+}
+const _m=[0,0];
+function fieldAt(x, y, out) {
+  let fx=0, fy=0;
+  if (P.ng>0) { const a=Noise.get(((x%W)+W)%W*P.ns, ((y%H)+H)%H*P.ns, time)*Math.PI*2;
+                fx+=Math.cos(a)*P.ng; fy+=Math.sin(a)*P.ng; }
+  if (P.mass>0) { momRead(x, y, _m); const s=P.mass/momRef; fx+=_m[0]*s; fy+=_m[1]*s; }
+  const m=Math.hypot(fx,fy);
+  if (m<1e-9) { out[0]=0; out[1]=0; out[2]=0; return; }
+  out[0]=fx/m; out[1]=fy/m; out[2]=m<1?m:1;
+}
+
+/* noise (ancestor, verbatim) */
 const Noise = {
   seed: Math.random()*100,
   hash(x,y,z){ const h=Math.sin(x*12.9898+y*78.233+z*37.719+this.seed)*43758.5453; return h-Math.floor(h); },
@@ -217,186 +457,331 @@ const Noise = {
     const xf=x-xi, yf=y-yi, zf=z-zi;
     const u=xf*xf*(3-2*xf), v=yf*yf*(3-2*yf), w=zf*zf*(3-2*zf);
     const h=this.hash.bind(this);
-    const v1=h(xi,yi,zi),     v2=h(xi+1,yi,zi),   v3=h(xi,yi+1,zi),   v4=h(xi+1,yi+1,zi);
-    const v5=h(xi,yi,zi+1),   v6=h(xi+1,yi,zi+1), v7=h(xi,yi+1,zi+1), v8=h(xi+1,yi+1,zi+1);
+    const v1=h(xi,yi,zi), v2=h(xi+1,yi,zi), v3=h(xi,yi+1,zi), v4=h(xi+1,yi+1,zi);
+    const v5=h(xi,yi,zi+1), v6=h(xi+1,yi,zi+1), v7=h(xi,yi+1,zi+1), v8=h(xi+1,yi+1,zi+1);
     const i1=v1+u*(v2-v1), i2=v3+u*(v4-v3), i3=v5+u*(v6-v5), i4=v7+u*(v8-v7);
     const f1=i1+v*(i2-i1), f2=i3+v*(i4-i3);
     return (f1+w*(f2-f1))*2-1;
   }
 };
 
-const FW = 360, FH = 360;                 // fixed sim resolution — the field is a world, not a viewport
-let simGrid = new Float32Array(FW*FH);
-let simTmp  = new Float32Array(FW*FH);
-let simMask = new Uint8Array(FW*FH);
-const S_CS = 3, S_CW = FW/S_CS, S_CH = FH/S_CS;
-let simCoarse = new Float32Array(S_CW*S_CH);
-const S_MS = 8, S_mW = FW/S_MS, S_mH = FH/S_MS;
-let momX = new Float32Array(S_mW*S_mH), momY = new Float32Array(S_mW*S_mH);
-let mtX = new Float32Array(S_mW*S_mH),  mtY = new Float32Array(S_mW*S_mH);
-let momRef = 1;
-const SN = 7000;                          // agent count (welded_fields runs 9000 at larger area; scaled)
-let agents = [];
-const SP = { sa:60*Math.PI/180, ra:18*Math.PI/180, so:5, step:1,
-             dec:0.99, dep:25, adv:0.02, ali:0.02, ns:0.006, dr:0.005, thr:0.08,
-             mass:1, mdec:0.94, ng:0 };
-let simTime = 0, simFrame = 0;
-
-function simReset(){
-  simGrid.fill(0);
-  agents = new Array(SN);
-  const cx=FW/2, cy=FH/2, R=Math.min(FW,FH)/4;
-  for(let i=0;i<SN;i++){
-    const r=Math.sqrt(Math.random())*R, th=Math.random()*Math.PI*2;
-    agents[i] = { x:cx+r*Math.cos(th), y:cy+r*Math.sin(th), a:Math.random()*Math.PI*2 };
-  }
-  momX.fill(0); momY.fill(0); momRef = 1;
-}
-function simDiffuseDecay(){
-  for(let y=0;y<FH;y++){
-    const r=y*FW;
-    for(let x=0;x<FW;x++){
-      const l = x===0 ? r+FW-1 : r+x-1, rt = x===FW-1 ? r : r+x+1;
-      simTmp[r+x] = (simGrid[l]+simGrid[r+x]+simGrid[rt])/3;
+/* ── diffusion + decay (ancestor, torus) ───────────────────────────── */
+function diffuseDecay(){
+  for(let y=0;y<H;y++){
+    const r=y*W;
+    for(let x=0;x<W;x++){
+      const l=x===0?r+W-1:r+x-1, rt=x===W-1?r:r+x+1;
+      tmp[r+x]=(grid[l]+grid[r+x]+grid[rt])/3;
     }
   }
-  const d=SP.dec;
-  for(let y=0;y<FH;y++){
-    const up=(y===0?FH-1:y-1)*FW, dn=(y===FH-1?0:y+1)*FW, r=y*FW;
-    for(let x=0;x<FW;x++) simGrid[r+x] = ((simTmp[up+x]+simTmp[r+x]+simTmp[dn+x])/3)*d;
+  const d=P.dec;
+  for(let y=0;y<H;y++){
+    const up=(y===0?H-1:y-1)*W, dn=(y===H-1?0:y+1)*W, r=y*W;
+    for(let x=0;x<W;x++) grid[r+x]=((tmp[up+x]+tmp[r+x]+tmp[dn+x])/3)*d;
   }
 }
-function simDiffuseDecayMom(){
-  for(let y=0;y<S_mH;y++){
-    const r=y*S_mW;
-    for(let x=0;x<S_mW;x++){
-      const l=x===0?r+S_mW-1:r+x-1, rt=x===S_mW-1?r:r+x+1;
+function diffuseDecayMom(){
+  for(let y=0;y<mH;y++){
+    const r=y*mW;
+    for(let x=0;x<mW;x++){
+      const l=x===0?r+mW-1:r+x-1, rt=x===mW-1?r:r+x+1;
       mtX[r+x]=(momX[l]+momX[r+x]+momX[rt])/3;
       mtY[r+x]=(momY[l]+momY[r+x]+momY[rt])/3;
     }
   }
-  const d=SP.mdec; let acc=0;
-  for(let y=0;y<S_mH;y++){
-    const up=(y===0?S_mH-1:y-1)*S_mW, dn=(y===S_mH-1?0:y+1)*S_mW, r=y*S_mW;
-    for(let x=0;x<S_mW;x++){
+  const d=P.mdec; let acc=0;
+  for(let y=0;y<mH;y++){
+    const up=(y===0?mH-1:y-1)*mW, dn=(y===mH-1?0:y+1)*mW, r=y*mW;
+    for(let x=0;x<mW;x++){
       const vx=((mtX[up+x]+mtX[r+x]+mtX[dn+x])/3)*d;
       const vy=((mtY[up+x]+mtY[r+x]+mtY[dn+x])/3)*d;
-      momX[r+x]=vx; momY[r+x]=vy;
-      acc+=Math.hypot(vx,vy);
+      momX[r+x]=vx; momY[r+x]=vy; acc+=Math.hypot(vx,vy);
     }
   }
-  const mean=acc/(S_mW*S_mH);
+  const mean=acc/(mW*mH);
   momRef += ((mean>1e-9?mean:1e-9)-momRef)*0.05;
 }
-const swrap = (v,m) => v<0 ? v+m : (v>=m ? v-m : v);
-function simFieldAt(x,y,out){
-  let fx=0, fy=0;
-  if(SP.mass>0){
-    const fxp=x/S_MS-0.5, fyp=y/S_MS-0.5;
-    let i0=Math.floor(fxp), j0=Math.floor(fyp);
-    const tx=fxp-i0, ty=fyp-j0;
-    i0=((i0%S_mW)+S_mW)%S_mW; j0=((j0%S_mH)+S_mH)%S_mH;
-    const i1=(i0+1)%S_mW, j1=(j0+1)%S_mH;
-    const a=j0*S_mW, b=j1*S_mW;
-    const w00=(1-tx)*(1-ty), w10=tx*(1-ty), w01=(1-tx)*ty, w11=tx*ty;
-    const mx=momX[a+i0]*w00+momX[a+i1]*w10+momX[b+i0]*w01+momX[b+i1]*w11;
-    const my=momY[a+i0]*w00+momY[a+i1]*w10+momY[b+i0]*w01+momY[b+i1]*w11;
-    const s=SP.mass/momRef; fx+=mx*s; fy+=my*s;
-  }
-  if(SP.ng>0){ const a=Noise.get(x*SP.ns,y*SP.ns,simTime)*Math.PI*2;
-               fx+=Math.cos(a)*SP.ng; fy+=Math.sin(a)*SP.ng; }
-  const m=Math.hypot(fx,fy);
-  if(m<1e-9){ out[0]=0; out[1]=0; out[2]=0; return; }
-  out[0]=fx/m; out[1]=fy/m; out[2]=m<1?m:1;
-}
-const _sf=[0,0,0];
-function simStep(){
-  const so=SP.so, dep=SP.dep, adv=SP.adv, ali=SP.ali;
-  for(let i=0;i<SN;i++){
-    const p=agents[i];
+
+/* ── agents (ancestor's physarum + welded wrap) ────────────────────── */
+const wrapc = (v,m) => v<0 ? v+m : (v>=m ? v-m : v);
+function angDiff(t,c){ let d=(t-c)%(Math.PI*2); if(d>Math.PI)d-=Math.PI*2; if(d<-Math.PI)d+=Math.PI*2; return d; }
+const _f=[0,0,0];
+function stepAgents(){
+  const so=P.so, dep=P.dep, adv=P.adv, ali=P.ali;
+  for(let i=0;i<parts.length;i++){
+    const p=parts[i];
     const sense=(off)=>{
       const a=p.a+off;
-      const sx=Math.floor(swrap(p.x+Math.cos(a)*so, FW));
-      const sy=Math.floor(swrap(p.y+Math.sin(a)*so, FH));
-      return simGrid[sy*FW+sx];
+      return trailRead(p.x + Math.cos(a)*so, p.y + Math.sin(a)*so);
     };
-    const F=sense(0), L=sense(-SP.sa), R=sense(SP.sa);
-    if(F>L && F>R)            { /* straight */ }
-    else if(F<L && F<R)       { p.a += Math.random()<0.5 ? SP.ra : -SP.ra; }
-    else if(L>R)              { p.a -= SP.ra; }
-    else if(R>L)              { p.a += SP.ra; }
-    else                      { p.a += Math.random()<0.5 ? SP.ra : -SP.ra; }
-    if((ali>0 || adv>0) && (SP.ng>0 || SP.mass>0)){
-      simFieldAt(p.x, p.y, _sf);
-      const w=_sf[2];
-      if(ali>0 && w>0){
-        let d=(Math.atan2(_sf[1],_sf[0])-p.a)%(Math.PI*2);
-        if(d>Math.PI)d-=Math.PI*2; if(d<-Math.PI)d+=Math.PI*2;
-        p.a += d*ali*w;
-      }
-      p.x = swrap(p.x + Math.cos(p.a)*SP.step + _sf[0]*adv*w, FW);
-      p.y = swrap(p.y + Math.sin(p.a)*SP.step + _sf[1]*adv*w, FH);
+    const F=sense(0), L=sense(-P.sa), R=sense(P.sa);
+    if(F>L && F>R)      { /* straight */ }
+    else if(F<L && F<R) { p.a += Math.random()<0.5 ? P.ra : -P.ra; }
+    else if(L>R)        { p.a -= P.ra; }
+    else if(R>L)        { p.a += P.ra; }
+    else                { p.a += Math.random()<0.5 ? P.ra : -P.ra; }
+
+    if((ali>0 || adv>0) && (P.ng>0 || P.mass>0)){
+      fieldAt(p.x, p.y, _f);
+      const w=_f[2];
+      if(ali>0 && w>0) p.a += angDiff(Math.atan2(_f[1],_f[0]), p.a)*ali*w;
+      const nx = p.x + Math.cos(p.a)*1 + _f[0]*adv*w;
+      const ny = p.y + Math.sin(p.a)*1 + _f[1]*adv*w;
+
+      if (topo.x.wrap) p.x = wrapc(nx, W); else p.x = Math.min(W-1e-4, Math.max(0, nx));
+      if (topo.y.wrap) p.y = wrapc(ny, H); else p.y = Math.min(H-1e-4, Math.max(0, ny));
+      /* the weld: a crossing transforms heading by the rule */
+      if (nx < 0 || nx >= W) { if (topo.x.wrap && topo.x.flip) p.a = Math.PI - p.a; }
+      if (nx < 0 || nx >= W) { if (topo.x.wrap && topo.x.flip) p.a = Math.PI - p.a; }
+      if (ny < 0 || ny >= H) { if (topo.y.wrap && topo.y.flip) p.a = -p.a; }
     } else {
-      p.x = swrap(p.x + Math.cos(p.a)*SP.step, FW);
-      p.y = swrap(p.y + Math.sin(p.a)*SP.step, FH);
+      const nx = p.x + Math.cos(p.a), ny = p.y + Math.sin(p.a);
+      if (topo.x.wrap) p.x = wrapc(nx, W); else p.x = Math.min(W-1e-4, Math.max(0, nx));
+      if (topo.y.wrap) p.y = wrapc(ny, H); else p.y = Math.min(H-1e-4, Math.max(0, ny));
+      if (nx < 0 || nx >= W) { if (topo.x.wrap && topo.x.flip) p.a = Math.PI - p.a; else if (!topo.x.wrap) p.a = Math.PI - p.a; }
+      if (ny < 0 || ny >= H) { if (topo.y.wrap && topo.y.flip) p.a = -p.a; else if (!topo.y.wrap) p.a = -p.a; }
     }
-    simGrid[(Math.floor(p.y)*FW + Math.floor(p.x))] += dep;
-    if(SP.mass>0){
-      const mi=((Math.floor(p.y/S_MS)%S_mH)+S_mH)%S_mH*S_mW + (((Math.floor(p.x/S_MS)%S_mW)+S_mW)%S_mW);
+    const [gx, gy] = foldRead(p.x, p.y);
+    grid[(Math.floor(gy)%H)*W + (Math.floor(gx)%W)] += dep;
+    if (P.mass>0){
+      const mi = ((Math.floor(gy/MS)%mH)+mH)%mH*mW + (((Math.floor(gx/MS)%mW)+mW)%mW);
       momX[mi]+=Math.cos(p.a); momY[mi]+=Math.sin(p.a);
     }
   }
 }
-/* robust refs: 99.5th percentile render scale + coverage-cut threshold */
-const SNB=1024; const shisto=new Int32Array(SNB);
-function simRefs(){
-  let max=0; for(let i=0;i<simGrid.length;i++) if(simGrid[i]>max) max=simGrid[i];
+
+/* ── robust refs (ancestor, verbatim) ──────────────────────────────── */
+const NB=1024; const histo=new Int32Array(NB);
+function refs(){
+  let max=0; for(let i=0;i<grid.length;i++) if(grid[i]>max) max=grid[i];
   if(max<=0) return {ref:1, cut:Infinity, max:0};
-  shisto.fill(0);
-  const s=(SNB-1)/max;
-  for(let i=0;i<simGrid.length;i++) shisto[(simGrid[i]*s)|0]++;
-  const total=simGrid.length;
+  histo.fill(0);
+  const s=(NB-1)/max;
+  for(let i=0;i<grid.length;i++) histo[(grid[i]*s)|0]++;
+  const total=grid.length;
   let acc=0, ref=max, cut=max, gotRef=false, gotCut=false;
-  const needRef=total*0.005, needCut=total*SP.thr;
-  for(let b=SNB-1;b>=0;b--){
-    acc+=shisto[b];
+  const needRef=total*0.005, needCut=total*P.thr;
+  for(let b=NB-1;b>=0;b--){
+    acc+=histo[b];
     if(!gotRef && acc>=needRef){ ref=(b+0.5)/s; gotRef=true; }
     if(!gotCut && acc>=needCut){ cut=(b+0.5)/s; gotCut=true; }
     if(gotRef&&gotCut) break;
   }
   return {ref:Math.max(ref,1e-6), cut, max};
 }
-/* marching squares over the pooled trail → rock contours (closed polylines) */
-function simPool(){
-  simCoarse.fill(0);
-  for(let y=0;y<S_CH*S_CS;y++){
-    const cy=(y/S_CS)|0, r=y*FW, cr=cy*S_CW;
-    for(let x=0;x<S_CW*S_CS;x++) simCoarse[cr+((x/S_CS)|0)] += simGrid[r+x];
+
+/* ── topology readout (ancestor's b0−χ, verbatim) ──────────────────── */
+function euler(){
+  let C1=0,C3=0,Cd=0;
+  const at=(x,y)=>(x<0||y<0||x>=W||y>=H)?0:mask[y*W+x];
+  for(let y=-1;y<H;y++) for(let x=-1;x<W;x++){
+    const a=at(x,y),b=at(x+1,y),c=at(x,y+1),d=at(x+1,y+1), n=a+b+c+d;
+    if(n===1) C1++;
+    else if(n===3) C3++;
+    else if(n===2 && ((a&&d&&!b&&!c)||(b&&c&&!a&&!d))) Cd++;
   }
-  const inv=1/(S_CS*S_CS);
-  for(let i=0;i<simCoarse.length;i++) simCoarse[i]*=inv;
+  return (C1-C3-2*Cd)/4;
 }
-const slerp=(L,va,vb,pa,pb)=>pa+(pb-pa)*((L-va)/(vb-va));
-/* Extract closed contours as vertex lists (not a paint path): we need
-   collision geometry, not just ink. Segment-cell walking with 2-sample
-   midpoints; chains stitched by endpoint adjacency. */
-function simContours(L){
-  simPool();
-  const segs = [];
-  const at=(x,y)=>simCoarse[((y+S_CH)%S_CH)*S_CW + ((x+S_CW)%S_CW)];  // torus-wrapped sampling
-  for(let j=0;j<S_CH;j++){
-    const yT=j*S_CS, yB=(j+1)*S_CS, row=j*S_CW;
-    for(let i=0;i<S_CW;i++){
+const seen={buf:null};
+function components(){
+  if(!seen.buf || seen.buf.length!==W*H) seen.buf=new Uint8Array(W*H);
+  const s=seen.buf; s.fill(0);
+  let n=0; const st=[];
+  for(let i=0;i<W*H;i++){
+    if(!mask[i]||s[i]) continue;
+    n++; st.push(i); s[i]=1;
+    while(st.length){
+      const q=st.pop(), qx=q%W, qy=(q-qx)/W;
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+        const nx=qx+dx, ny=qy+dy;
+        if(nx<0||ny<0||nx>=W||ny>=H) continue;
+        const k=ny*W+nx;
+        if(mask[k]&&!s[k]){ s[k]=1; st.push(k); }
+      }
+    }
+  }
+  return n;
+}
+let B = {b0:0, b1:0, coverage:0};
+function measure(t){
+  let on=0;
+  for(let i=0;i<grid.length;i++){ const m=grid[i]>t?1:0; mask[i]=m; on+=m; }
+  const b0=components();
+  B = {b0, b1:b0-euler(), coverage:+(100*on/grid.length).toFixed(2)};
+  hist.push(B.b1); if(hist.length>240) hist.shift();
+  document.getElementById('r-b1').textContent=B.b1;
+  document.getElementById('r-b0').textContent=B.b0;
+  document.getElementById('r-cov').textContent=B.coverage.toFixed(1)+'%';
+  checkLevel();
+}
+
+/* ── levels: the simulation provides them ──────────────────────────── */
+const LEVELS = [
+  { name:'I — the plain torus', surface:'torus', target:12,
+    note:'welded_fields as the ancestor ran it. Close 12 loops by letting the swarm find its own steady state. Patience, not knobs.',
+    set:{ mass:1, adv:0.02, ali:0.02, ng:0, dec:0.99, mdec:0.94, sa:60, ra:18, so:5 } },
+  { name:'II — the half-twist', surface:'klein', target:18,
+    note:'the SAME swarm on the Klein bottle. Crossing the seam flips heading and trail; watch the structures braid across the weld.',
+    set:{ mass:1, adv:0.02, ali:0.02, ng:0, dec:0.99, mdec:0.94, sa:60, ra:18, so:5 } },
+  { name:'III — doubled back', surface:'projective', target:24,
+    note:'projective plane: every crossing turns the world 180°. Loops close on themselves fastest here.',
+    set:{ mass:1.4, adv:0.05, ali:0.05, ng:0, dec:0.985, mdec:0.92, sa:70, ra:22, so:6 } },
+  { name:'IV — the strip', surface:'mobius', target:20,
+    note:'Möbius: one weld, two walls. The field is clipped at the strip\'s edges — topology with a boundary.',
+    set:{ mass:1, adv:0.02, ali:0.02, ng:0, dec:0.99, mdec:0.94, sa:60, ra:18, so:5 } },
+  { name:'V — the storm', surface:'klein', target:36,
+    note:'exogenous weather switched on over the half-twist: noise gain 0.6. The external clock vs the medium\'s memory.',
+    set:{ mass:1, adv:0.08, ali:0.06, ng:0.6, ns:0.006, dr:0.005, dec:0.99, mdec:0.94, sa:60, ra:18, so:5 } },
+  { name:'VI — the closed loop', surface:'torus', target:48,
+    note:'the ancestor\'s thesis, as a level: mass 1.6, momentum outliving the trail — the field the agents themselves own.',
+    set:{ mass:1.6, adv:0.10, ali:0.10, ng:0, dec:0.993, mdec:0.975, sa:60, ra:18, so:5 } },
+];
+let levelIdx = 0, levelSolved = false, lastSolve = -1, solveStreak = 0;
+function applySet(set){
+  for (const [k, v] of Object.entries(set)) {
+    if (k==='sa'||k==='ra') { P[k]=v*Math.PI/180; const el=document.getElementById(k); el.value=v; document.getElementById('v-'+k).textContent=v+'°'; }
+    else if (k in P) { P[k]=v; const el=document.getElementById(k); if(el){ el.value=v; const out=document.getElementById('v-'+k);
+      if(out) out.textContent = (k==='dec'||k==='mdec') ? v.toFixed(3) : (k==='ns'||k==='dr') ? v.toFixed(4) : (k==='adv'||k==='ali'||k==='mass') ? v.toFixed(2) : String(v); } }
+  }
+}
+function loadLevel(i){
+  levelIdx = ((i % LEVELS.length) + LEVELS.length) % LEVELS.length;
+  const L = LEVELS[levelIdx];
+  levelSolved = false; solveStreak = 0;
+  setSurface(L.surface, true);
+  applySet(L.set);
+  P.b1Target = L.target;
+  document.getElementById('b1Target').value = L.target;
+  document.getElementById('v-b1Target').textContent = L.target;
+  resetField();
+  updateLevelNote();
+  toast(L.name);
+}
+function updateLevelNote(){
+  const L = LEVELS[levelIdx];
+  const st = document.getElementById('levelMode').value;
+  document.getElementById('lvl-note').innerHTML =
+    `<b>${L.name}</b> · target β₁ ${L.target}<br>${L.note}` +
+    (levelSolved ? ' <span class="done">— SOLVED</span>' : '');
+  document.getElementById('r-mratio').parentElement && void 0;
+}
+function checkLevel(){
+  if (P.levelMode !== 'tour') return;
+  const target = LEVELS[levelIdx].target;
+  if (levelSolved) return;
+  if (B.b1 >= target) { solveStreak++; } else { solveStreak = 0; }
+  /* solved only when the target holds for 3 consecutive measures (1s apart):
+     a young field's speckle spikes β₁ spuriously; the level requires the
+     structure to be real, not transient */
+  if (solveStreak >= 3) {
+    levelSolved = true; lastSolve = frame;
+    updateLevelNote(); toast(`${LEVELS[levelIdx].name} — SOLVED (β₁ ${B.b1})`);
+  }
+}
+document.getElementById('btnLevel').addEventListener('click', ()=>loadLevel(levelIdx+1));
+document.getElementById('levelMode').addEventListener('change', e=>{ P.levelMode=e.target.value; updateLevelNote(); });
+
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.style.opacity=1;
+  clearTimeout(toast._h);
+  toast._h=setTimeout(()=>t.style.opacity=0, 2600);
+}
+
+/* ── controls (ancestor's bind pattern) ────────────────────────────── */
+const bind=(id,key,fmt,xf)=>{
+  const el=document.getElementById(id), out=document.getElementById('v-'+id);
+  const apply=()=>{ const raw=parseFloat(el.value); P[key]=xf?xf(raw):raw; out.textContent=fmt(raw); };
+  el.addEventListener('input', apply); apply();
+};
+bind('sa','sa', v=>v+'°', v=>v*Math.PI/180);
+bind('ra','ra', v=>v+'°', v=>v*Math.PI/180);
+bind('so','so', v=>String(v));
+bind('N','N', v=>String(v|0));
+bind('dec','dec',v=>v.toFixed(3));
+bind('dep','dep',v=>String(v));
+bind('adv','adv',v=>v.toFixed(2));
+bind('ali','ali',v=>v.toFixed(2));
+bind('mass','mass',v=>v.toFixed(2));
+bind('mdec','mdec',v=>v.toFixed(3));
+bind('ng','ng', v=>v.toFixed(2));
+bind('ns','ns', v=>v.toFixed(4));
+bind('dr','dr', v=>v.toFixed(4));
+bind('thr','thr',v=>v+'%', v=>v/100);
+bind('b1Target','b1Target', v=>String(v|0));
+document.getElementById('btnReset').addEventListener('click', ()=>{ resetField(); updateLevelNote(); });
+document.getElementById('btn3d').addEventListener('click', ()=>setView3d(!view3d));
+
+const sel = document.getElementById('topo');
+TOPOLOGIES.forEach((t,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=`${t.name} · ${t.word}`; sel.appendChild(o); });
+sel.addEventListener('change', ()=>setSurface(+sel.value, false));
+function setSurface(i, fromLevel){
+  if (typeof i === 'string') i = TOPOLOGIES.findIndex(t=>t.id===i);
+  topo = TOPOLOGIES[i]; sel.value = i;
+  document.getElementById('surf-note').textContent = topo.note;
+  if (!fromLevel) toast(topo.name);
+}
+document.getElementById('b1Target').addEventListener('input', ()=>updateLevelNote());
+
+/* ── setup + render ────────────────────────────────────────────────── */
+const cv=document.getElementById('sim'), ctx=cv.getContext('2d', {willReadFrequently:true});
+const ov=document.getElementById('over'), octx=ov.getContext('2d');
+function resetField(){
+  grid=new Float32Array(W*H); tmp=new Float32Array(W*H); mask=new Uint8Array(W*H);
+  coarse=new Float32Array(cW*cH);
+  momX=new Float32Array(mW*mH); momY=new Float32Array(mW*mH);
+  mtX=new Float32Array(mW*mH); mtY=new Float32Array(mW*mH);
+  horm=new Float32Array(mW*mH);
+  momRef=1; hormRef=1;
+  img=ctx.createImageData(W,H);
+  parts=new Array(P.N|0);
+  const cx=W/2, cy=H/2, R=Math.min(W,H)/4;
+  for(let i=0;i<parts.length;i++){
+    const r=Math.sqrt(Math.random())*R, th=Math.random()*Math.PI*2;
+    parts[i]={x:cx+r*Math.cos(th), y:cy+r*Math.sin(th), a:Math.random()*Math.PI*2};
+  }
+  hist.length=0;
+}
+window.addEventListener('resize', fitCanvases);
+function fitCanvases(){
+  const sq=document.getElementById('sq');
+  cv.width=W; cv.height=H;
+  const DPR=Math.min(window.devicePixelRatio||1,2);
+  ov.width=Math.round(sq.clientWidth*DPR); ov.height=Math.round(sq.clientHeight*DPR);
+  octx.setTransform(DPR,0,0,DPR,0,0);
+}
+
+/* render + contours (ancestor's pipeline) */
+const RAMP=[[78,30,26],[156,58,42],[212,98,56],[240,166,102],[255,232,198]];
+const LEVELS_C=[0.06,0.11,0.18,0.28,0.42,0.60,0.82];
+let refMax=1;
+function pool(){
+  coarse.fill(0);
+  for(let y=0;y<cH*CS;y++){
+    const cy=(y/CS)|0, r=y*W, cr=cy*cW;
+    for(let x=0;x<cW*CS;x++) coarse[cr+((x/CS)|0)]+=grid[r+x];
+  }
+  const inv=1/(CS*CS);
+  for(let i=0;i<coarse.length;i++) coarse[i]*=inv;
+}
+const lerp=(L,va,vb,pa,pb)=>pa+(pb-pa)*((L-va)/(vb-va));
+const segStore=[];   // contour segments reused for the 3D push
+function buildContour(L, path){
+  segStore.length=0;
+  const at=(x,y)=>coarse[(((y%cH)+cH)%cH)*cW + (((x%cW)+cW)%cW)];
+  for(let j=0;j<cH;j++){
+    const yT=j*CS, yB=(j+1)*CS, row=j*cW;
+    for(let i=0;i<cW;i++){
       const k=row+i, tl=at(i,j), tr=at(i+1,j), br=at(i+1,j+1), bl=at(i,j+1);
       const c=(tl>L?8:0)|(tr>L?4:0)|(br>L?2:0)|(bl>L?1:0);
       if(c===0||c===15) continue;
-      const xL=i*S_CS, xR=(i+1)*S_CS;
+      const xL=i*CS, xR=(i+1)*CS;
       let Tx=0,Ty=0,Rx=0,Ry=0,Bx=0,By=0,Lx=0,Ly=0;
-      if((tl>L)!==(tr>L)){ Tx=slerp(L,tl,tr,xL,xR); Ty=yT; }
-      if((tr>L)!==(br>L)){ Rx=xR; Ry=slerp(L,tr,br,yT,yB); }
-      if((bl>L)!==(br>L)){ Bx=slerp(L,bl,br,xL,xR); By=yB; }
-      if((tl>L)!==(bl>L)){ Lx=xL; Ly=slerp(L,tl,bl,yT,yB); }
-      const push=(ax,ay,bx,by)=>segs.push([ax,ay,bx,by]);
+      if((tl>L)!==(tr>L)){ Tx=lerp(L,tl,tr,xL,xR); Ty=yT; }
+      if((tr>L)!==(br>L)){ Rx=xR; Ry=lerp(L,tr,br,yT,yB); }
+      if((bl>L)!==(br>L)){ Bx=lerp(L,bl,br,xL,xR); By=yB; }
+      if((tl>L)!==(bl>L)){ Lx=xL; Ly=lerp(L,tl,bl,yT,yB); }
+      const push=(ax,ay,bx,by)=>{ path.moveTo(ax,ay); path.lineTo(bx,by); segStore.push([ax,ay,bx,by]); };
       switch(c){
         case 1: case 14: push(Lx,Ly,Bx,By); break;
         case 2: case 13: push(Bx,By,Rx,Ry); break;
@@ -409,739 +794,339 @@ function simContours(L){
       }
     }
   }
-  /* stitch segments into closed loops */
-  const key=(x,y)=>(Math.round(x*2)/2)+':'+(Math.round(y*2)/2);
-  const start = new Map();
-  segs.forEach((s, idx) => {
-    const k=key(s[0],s[1]);
-    if(!start.has(k)) start.set(k,[]);
-    start.get(k).push(idx);
-  });
-  const used = new Uint8Array(segs.length);
-  const loops = [];
-  for(let si=0; si<segs.length; si++){
-    if(used[si]) continue;
-    used[si]=1;
-    const pts=[[segs[si][0],segs[si][1]],[segs[si][2],segs[si][3]]];
-    let guard=0;
-    while(guard++ < 4000){
-      const endKey = key(pts[pts.length-1][0], pts[pts.length-1][1]);
-      const cand = start.get(endKey);
-      let found = -1;
-      if(cand) for(const idx of cand){ if(!used[idx]){ found=idx; break; } }
-      if(found<0) break;
-      used[found]=1;
-      pts.push([segs[found][2], segs[found][3]]);
-    }
-    if(pts.length>6) loops.push(pts);
+}
+let contourSegs=[];
+function drawContours(max){
+  octx.clearRect(0,0,ov.width,ov.height);
+  pool();
+  const inst=max<1e-6?1e-6:max;
+  refMax += (inst-refMax)*0.02;
+  const sx=ov.width/(Math.min(window.devicePixelRatio||1,2))/W;
+  const sy=ov.height/(Math.min(window.devicePixelRatio||1,2))/H;
+  octx.globalCompositeOperation='lighter';
+  octx.lineCap='round'; octx.lineJoin='round';
+  contourSegs=[];
+  for(const p of LEVELS_C){
+    const t=0.30+0.70*p, x=t*(RAMP.length-1), i=Math.min(RAMP.length-2, Math.floor(x)), f=x-i;
+    const a=RAMP[i], b=RAMP[i+1];
+    const col=`${(a[0]+(b[0]-a[0])*f)|0},${(a[1]+(b[1]-a[1])*f)|0},${(a[2]+(b[2]-a[2])*f)|0}`;
+    const path=new Path2D();
+    buildContour(p*refMax, path);
+    contourSegs.push({level:p, segs:segStore.slice()});
+    octx.strokeStyle=`rgba(${col},${(0.06+0.13*p).toFixed(3)})`; octx.lineWidth=3.2-1.5*p; octx.stroke(path);
+    octx.strokeStyle=`rgba(${col},${(0.42+0.58*p).toFixed(3)})`; octx.lineWidth=0.8+0.6*p; octx.stroke(path);
   }
-  return loops;
+  octx.globalCompositeOperation='source-over';
+}
+function render(max){
+  const d=img.data, inv=max>0?1/max:0;
+  for(let i=0;i<grid.length;i++){
+    let v=Math.sqrt(grid[i]*inv); if(v>1) v=1;
+    const px=i*4;
+    d[px]=v*40; d[px+1]=v*255; d[px+2]=v*140;
+    d[px+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  /* vector-field overlay on the square */
+  octx.strokeStyle='rgba(167,139,250,0.30)'; octx.lineWidth=0.6;
+  const s=Math.max(14, Math.round(W/44)), o=[0,0,0];
+  const vsx=ov.width/(Math.min(window.devicePixelRatio||1,2))/W;
+  const vsy=ov.height/(Math.min(window.devicePixelRatio||1,2))/H;
+  octx.beginPath();
+  for(let y=s/2;y<H;y+=s) for(let x=s/2;x<W;x+=s){
+    fieldAt(x,y,o);
+    if(o[2]<=0) continue;
+    const L=s*0.42*(0.35+0.65*o[2]);
+    octx.moveTo(x*vsx, y*vsy); octx.lineTo((x+o[0]*L)*vsx, (y+o[1]*L)*vsy);
+  }
+  octx.stroke();
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// TOPOLOGIES (from topo-asteroids, verbatim semantics)
-// ─────────────────────────────────────────────────────────────────────────
-const TOPOLOGIES = [
-  { id:'torus', name:'Torus', word:'a b a⁻¹ b⁻¹', orientable:true, chi:0,
-    x:{wrap:true, flip:null}, y:{wrap:true, flip:null},
-    fieldOk:true,
-    blurb:'Both pairs welded straight — the field grid\'s native topology. The trail, the wind and the rocks are all exactly where the agents left them.' },
-  { id:'klein', name:'Klein bottle', word:'a b a b⁻¹', orientable:false, chi:0,
-    x:{wrap:true, flip:null}, y:{wrap:true, flip:'x'},
-    fieldOk:true,
-    blurb:'Top/bottom welded with a mirror. Crossing it mirrors the ship AND the field readout: the wind you feel past the seam is the agents\' wind, read left-right.' },
-  { id:'projective', name:'Projective plane', word:'a b a b', orientable:false, chi:1,
-    x:{wrap:true, flip:'y'}, y:{wrap:true, flip:'x'},
-    fieldOk:true,
-    blurb:'Both pairs mirrored. Each crossing is a 180° turn of the world; the field is re-read under the same rule, so the terrain stays glued to the geometry.' },
-  { id:'mobius', name:'Möbius strip', word:'a b a⁻¹ c', orientable:false, chi:0,
-    x:{wrap:true, flip:'y'}, y:{wrap:false, flip:null},
-    fieldOk:true,
-    blurb:'One welded pair with a mirror, one pair of walls. The only surface here where the field is clipped: the trail stops at the strip\'s edge.' },
-];
-const TAU = Math.PI * 2, SQRT5 = Math.sqrt(5);
-const SURFACES = {
-  torus(u, v) {
-    const th = TAU*u, ph = TAU*v, R = 1.0, r = 0.45;
-    return [(R + r*Math.cos(ph))*Math.cos(th), (R + r*Math.cos(ph))*Math.sin(th), r*Math.sin(ph)];
-  },
-  klein(u, v) {
-    const ph = TAU*u, th = TAU*v, R = 1.15, s = 0.5;
-    const c = Math.cos(th/2), sn = Math.sin(th/2);
-    const w = c*Math.sin(ph) - sn*Math.sin(2*ph), z = sn*Math.sin(ph) + c*Math.sin(2*ph);
-    return [(R + s*w)*Math.cos(th)*0.9, (R + s*w)*Math.sin(th)*0.9, s*z];
-  },
-  mobius(u, v) {
-    const th = TAU*u, s = (v - 0.5)*0.9, R = 1.0;
-    const c = Math.cos(th/2), sn = Math.sin(th/2);
-    return [(R + s*c)*Math.cos(th), (R + s*c)*Math.sin(th), s*sn];
-  },
-  projective(u, v) {
-    const px = 2*u - 1, py = 2*v - 1;
-    return boy(px*Math.sqrt(1 - py*py/2), py*Math.sqrt(1 - px*px/2));
-  },
+/* ── Easter egg: the asteroids game, hidden ────────────────────────── */
+let egg = null;   // {x,y,vx,vy,a,hand,cool}
+window.addEventListener('keydown', e=>{
+  if (e.code==='KeyX' && !egg && B.b1>=42) {
+    egg = { x:W/2, y:H/2, vx:0, vy:0, a:-Math.PI/2, hand:1, cool:0, inv:2 };
+    toast('EASTER EGG — the ship rides the wind (β₁ '+B.b1+' ≥ 42). Arrows/WASD to fly.');
+  }
+  if (egg) {
+    if (e.code==='ArrowLeft'||e.code==='KeyA') egg._L=true;
+    if (e.code==='ArrowRight'||e.code==='KeyD') egg._R=true;
+    if (e.code==='ArrowUp'||e.code==='KeyW') egg._U=true;
+  }
+});
+window.addEventListener('keyup', e=>{
+  if (egg) {
+    if (e.code==='ArrowLeft'||e.code==='KeyA') egg._L=false;
+    if (e.code==='ArrowRight'||e.code==='KeyD') egg._R=false;
+    if (e.code==='ArrowUp'||e.code==='KeyW') egg._U=false;
+  }
+});
+function stepEgg(dt){
+  if (!egg) return;
+  const turn=(egg._R?1:0)-(egg._L?1:0);
+  egg.a += turn*4.2*dt*egg.hand;
+  if (egg._U) { egg.vx+=Math.cos(egg.a)*200*dt; egg.vy+=Math.sin(egg.a)*200*dt; }
+  const f=[0,0]; fieldAt(egg.x, egg.y, f);
+  egg.vx += f[0]*46*dt*Math.min(1, Math.hypot(f[0],f[1])*3);
+  egg.vy += f[1]*46*dt*Math.min(1, Math.hypot(f[0],f[1])*3);
+  const drag=Math.pow(0.35, dt); egg.vx*=drag; egg.vy*=drag;
+  const p={x:egg.x+egg.vx*dt, y:egg.y+egg.vy*dt, a:egg.a};
+  wrapPos(p); egg.x=p.x; egg.y=p.y; egg.a=p.a;
+  egg.inv=Math.max(0, egg.inv-dt);
+}
+function drawEgg(){
+  if (!egg) return;
+  octx.save(); octx.translate(egg.x*sx_, egg.y*sy_); octx.rotate(egg.a); octx.scale(1, egg.hand);
+  octx.lineWidth=2; octx.strokeStyle='#e8ecff';
+  octx.beginPath(); octx.moveTo(16,0); octx.lineTo(-12,-11); octx.lineTo(-7,0); octx.lineTo(-12,11); octx.closePath(); octx.stroke();
+  octx.fillStyle='#ff6b6b'; octx.beginPath(); octx.arc(-4,-7,2.6,0,7); octx.fill();
+  octx.fillStyle='#6bff9a'; octx.beginPath(); octx.arc(-4,7,2.6,0,7); octx.fill();
+  octx.restore();
+}
+let sx_=2, sy_=2;
+
+/* ── 3D export (surfaces from topo-asteroids, verbatim embeddings) ─── */
+const TAU=Math.PI*2, SQRT5=Math.sqrt(5);
+const SURFACES={
+  torus(u,v){ const th=TAU*u, ph=TAU*v, R=1.0, r=0.45;
+    return [(R+r*Math.cos(ph))*Math.cos(th), (R+r*Math.cos(ph))*Math.sin(th), r*Math.sin(ph)]; },
+  klein(u,v){ const ph=TAU*u, th=TAU*v, R=1.15, s=0.5;
+    const c=Math.cos(th/2), sn=Math.sin(th/2);
+    const w=c*Math.sin(ph)-sn*Math.sin(2*ph), z=sn*Math.sin(ph)+c*Math.sin(2*ph);
+    return [(R+s*w)*Math.cos(th)*0.9, (R+s*w)*Math.sin(th)*0.9, s*z]; },
+  mobius(u,v){ const th=TAU*u, s=(v-0.5)*0.9, R=1.0;
+    const c=Math.cos(th/2), sn=Math.sin(th/2);
+    return [(R+s*c)*Math.cos(th), (R+s*c)*Math.sin(th), s*sn]; },
+  projective(u,v){ const px=2*u-1, py=2*v-1;
+    return boy(px*Math.sqrt(1-py*py/2), py*Math.sqrt(1-px*px/2)); },
 };
-function boy(a, b) {
-  const mul = (p, q) => [p[0]*q[0]-p[1]*q[1], p[0]*q[1]+p[1]*q[0]];
-  const div = (p, q) => { const d = q[0]*q[0]+q[1]*q[1]; return [(p[0]*q[0]+p[1]*q[1])/d, (p[1]*q[0]-p[0]*q[1])/d]; };
-  const w = [a, b], w2 = mul(w, w), w3 = mul(w2, w), w4 = mul(w2, w2), w6 = mul(w3, w3);
-  const den = [w6[0] + SQRT5*w3[0] - 1, w6[1] + SQRT5*w3[1]];
-  const g1 = -1.5 * div(mul(w, [1 - w4[0], -w4[1]]), den)[1];
-  const g2 = -1.5 * div(mul(w, [1 + w4[0],  w4[1]]), den)[0];
-  const g3 = div([1 + w6[0], w6[1]], den)[1] - 0.5;
-  const n = (g1*g1 + g2*g2 + g3*g3) / 0.78;
+function boy(a,b){
+  const mul=(p,q)=>[p[0]*q[0]-p[1]*q[1], p[0]*q[1]+p[1]*q[0]];
+  const div=(p,q)=>{ const d=q[0]*q[0]+q[1]*q[1]; return [(p[0]*q[0]+p[1]*q[1])/d, (p[1]*q[0]-p[0]*q[1])/d]; };
+  const w=[a,b], w2=mul(w,w), w3=mul(w2,w), w4=mul(w2,w2), w6=mul(w3,w3);
+  const den=[w6[0]+SQRT5*w3[0]-1, w6[1]+SQRT5*w3[1]];
+  const g1=-1.5*div(mul(w,[1-w4[0],-w4[1]]),den)[1];
+  const g2=-1.5*div(mul(w,[1+w4[0], w4[1]]),den)[0];
+  const g3=div([1+w6[0],w6[1]],den)[1]-0.5;
+  const n=(g1*g1+g2*g2+g3*g3)/0.78;
   return [g1/n, g2/n, g3/n];
 }
-
-const W = 720, H = 720;
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-
-/* game state */
-let topo = TOPOLOGIES[0];
-let zoomOut = false, sandbox = false, paused = false, view3d = true;
-let ship, rocks = [], bullets = [], particles = [];
-let score = 0, lives = 3, wave = 0, gameOver = false, crossings = 0;
-const keys = {};
-/* field coupling */
-const GP = { fieldOn:true, contourTrail:true, rocksFromField:true, wind:1, rockLevel:0.5 };
-let rockContours = [];                    // polylines the current rocks were built from
-
-// ── edge transforms (topo-asteroids verbatim) ────────────────────────────
-function flipX(p) { p.x = W - p.x; p.vx = -p.vx; p.a = Math.PI - p.a; p.spin = -p.spin; p.hand = -p.hand; }
-function flipY(p) { p.y = H - p.y; p.vy = -p.vy; p.a = -p.a;          p.spin = -p.spin; p.hand = -p.hand; }
-function applyFlip(p, flip) { if (flip === 'x') flipX(p); else if (flip === 'y') flipY(p); }
-function wrap(p, r) {
-  let crossed = false;
-  if (topo.x.wrap) {
-    while (p.x < 0)  { p.x += W; applyFlip(p, topo.x.flip); crossed = true; }
-    while (p.x >= W) { p.x -= W; applyFlip(p, topo.x.flip); crossed = true; }
-  } else {
-    if (p.x < r)     { p.x = r;     p.vx = Math.abs(p.vx); }
-    if (p.x > W - r) { p.x = W - r; p.vx = -Math.abs(p.vx); }
-  }
-  if (topo.y.wrap) {
-    while (p.y < 0)  { p.y += H; applyFlip(p, topo.y.flip); crossed = true; }
-    while (p.y >= H) { p.y -= H; applyFlip(p, topo.y.flip); crossed = true; }
-  } else {
-    if (p.y < r)     { p.y = r;     p.vy = Math.abs(p.vy); }
-    if (p.y > H - r) { p.y = H - r; p.vy = -Math.abs(p.vy); }
-  }
-  return crossed;
+/* square (x,y) → surface params, honoring the mirror so the texture reads
+   through the seam the same way the agents do */
+function uvOf(x, y){
+  const u=((x%W)+W)%W / W;
+  let v=((y%H)+H)%H / H;
+  if (topo.y.flip==='x' && Math.floor(((y%H)+H)%H / H)===1) v = 1 - v;
+  return [u, v];
 }
-function image(p, i, j) {
-  const q = { x:p.x, y:p.y, vx:p.vx, vy:p.vy, a:p.a, spin:p.spin, hand:p.hand };
-  if (i !== 0 && topo.x.flip) applyFlip(q, topo.x.flip);
-  if (j !== 0 && topo.y.flip) applyFlip(q, topo.y.flip);
-  q.x += i * W; q.y += j * H;
-  return q;
-}
-function cellRange(axis) { return axis.wrap ? (zoomOut ? [-2,-1,0,1,2] : [-1,0,1]) : [0]; }
-function dist2(p, q) {
-  let best = Infinity;
-  for (const i of (topo.x.wrap ? [-1,0,1] : [0])) for (const j of (topo.y.wrap ? [-1,0,1] : [0])) {
-    const g = image(q, i, j);
-    const dx = g.x - p.x, dy = g.y - p.y, d = dx*dx + dy*dy;
-    if (d < best) best = d;
-  }
-  return best;
+function Pxyz(x, y){
+  const [u, v] = uvOf(x, y);
+  return SURFACES[topo.id](u, v);
 }
 
-/* ── field reads under the gluing rule ──────────────────────────────────
-   The sim grid lives at FW×FH (torus). The game square is W×H under the
-   current topology's gluing rule. To read the field for game coordinates
-   (x, y): fold (x, y) into the sim square by the SAME rule, with the
-   mirror applied on the field side, so the wind past a seam is the
-   agents' wind read under that seam's rule.                                */
-const _fs=[0,0,0];
-function fieldAtGame(x, y) {
-  /* fold game coords to [0,FW)×[0,FH), applying the topology's flips */
-  let fx0 = x * (FW/W), fy0 = y * (FH/H);
-  if (topo.x.flip && ((Math.floor(fx0/FW) % 2 + 2) % 2 === 1)) fx0 = FW - (fx0 % FW);
-  else fx0 = ((fx0 % FW) + FW) % FW;
-  if (topo.y.flip && ((Math.floor(fy0/FH) % 2 + 2) % 2 === 1)) fy0 = FH - (fy0 % FH);
-  else fy0 = ((fy0 % FH) + FH) % FH;
-  let vx=0, vy=0;
-  if (SP.mass>0){
-    const fxp=fx0/S_MS-0.5, fyp=fy0/S_MS-0.5;
-    let i0=Math.floor(fxp), j0=Math.floor(fyp);
-    const tx=fxp-i0, ty=fyp-j0;
-    i0=((i0%S_mW)+S_mW)%S_mW; j0=((j0%S_mH)+S_mH)%S_mH;
-    const i1=(i0+1)%S_mW, j1=(j0+1)%S_mH;
-    const a=j0*S_mW, b=j1*S_mW;
-    const w00=(1-tx)*(1-ty), w10=tx*(1-ty), w01=(1-tx)*ty, w11=tx*ty;
-    vx = momX[a+i0]*w00+momX[a+i1]*w10+momX[b+i0]*w01+momX[b+i1]*w11;
-    vy = momY[a+i0]*w00+momY[a+i1]*w10+momY[b+i0]*w01+momY[b+i1]*w11;
-    const s = SP.mass/momRef; vx*=s; vy*=s;
-  }
-  if (SP.ng>0){
-    const a = Noise.get(fx0*SP.ns, fy0*SP.ns, simTime)*Math.PI*2;
-    vx += Math.cos(a)*SP.ng; vy += Math.sin(a)*SP.ng;
-  }
-  return [vx, vy];
+/* ── three.js 3D panel ─────────────────────────────────────────────── */
+let view3d=true, renderer=null, T3=null;
+function setView3d(on){
+  view3d = on && !!renderer;
+  document.getElementById('v3').style.display = view3d ? '' : 'none';
+  document.getElementById('btn3d').textContent = '3D: '+(view3d?'on':'off');
+  fitCanvases();
 }
-/* trail sample for terrain rendering, same fold */
-function trailAt(x, y) {
-  let fx0 = x * (FW/W), fy0 = y * (FH/H);
-  fx0 = ((fx0 % FW) + FW) % FW; fy0 = ((fy0 % FH) + FH) % FH;
-  return simGrid[(Math.floor(fy0)%FH)*FW + (Math.floor(fx0)%FW)];
-}
+(async ()=>{
+  let THREE=null;
+  for (const src of ['./vendor/three.module.min.js', 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js']) {
+    try { THREE=await import(src); break; } catch(e){}
+  }
+  if (!THREE) { document.getElementById('hint3d').textContent='3D unavailable (no three.js)'; document.getElementById('btn3d').textContent='3D: unavailable'; document.getElementById('btn3d').disabled=true; return; }
+  T3=THREE;
+  const c3=document.getElementById('c3'), box=document.getElementById('v3');
+  try { renderer=new THREE.WebGLRenderer({canvas:c3, antialias:true, failIfMajorPerformanceCaveat:false}); }
+  catch(e){ document.getElementById('hint3d').textContent='3D unavailable (no WebGL)'; return; }
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  const scene=new THREE.Scene(); scene.background=new THREE.Color(0x000000);
+  const camera=new THREE.PerspectiveCamera(38,1,0.05,100); camera.up.set(0,0,1);
+  let theta=0.7, phi=1.05, dist=4.6, lastPtr=null;
+  c3.addEventListener('pointerdown',e=>{lastPtr=[e.clientX,e.clientY];c3.setPointerCapture(e.pointerId);});
+  c3.addEventListener('pointermove',e=>{ if(!lastPtr) return;
+    theta-=(e.clientX-lastPtr[0])*0.008; phi=Math.min(Math.PI-0.15,Math.max(0.15,phi-(e.clientY-lastPtr[1])*0.008));
+    lastPtr=[e.clientX,e.clientY]; });
+  c3.addEventListener('pointerup',()=>{lastPtr=null;});
+  c3.addEventListener('wheel',e=>{e.preventDefault(); dist=Math.min(12,Math.max(1.6,dist*(1+e.deltaY*0.0012)));},{passive:false});
 
-// ── entities ─────────────────────────────────────────────────────────────
-function makeShip() {
-  return { x:W/2, y:H/2, vx:0, vy:0, a:-Math.PI/2, spin:0, hand:1, r:14, inv:2.5, cooldown:0, thrusting:false };
-}
-/* Build rocks from the field: pick closed contours at the coverage cut,
-   scaled into game coordinates, largest first. */
-function spawnRocksFromField() {
-  rocks = [];
-  rockContours = [];
-  const { cut } = simRefs();
-  if (!isFinite(cut)) return;
-  const loops = simContours(cut * GP.rockLevel);
-  loops.sort((a,b)=>b.length-a.length);
-  const target = Math.min(4 + wave, 9);
-  let n = 0;
-  for (const loop of loops) {
-    if (n >= target) break;
-    if (loop.length < 12) continue;
-    /* centroid + radius in sim coords → game coords */
-    let cx=0, cy=0, minX=1e9, maxX=-1e9, minY=1e9, maxY=-1e9;
-    for (const p of loop){ cx+=p[0]; cy+=p[1]; if(p[0]<minX)minX=p[0]; if(p[0]>maxX)maxX=p[0]; if(p[1]<minY)minY=p[1]; if(p[1]>maxY)maxY=p[1]; }
-    cx/=loop.length; cy/=loop.length;
-    const rad = Math.max(maxX-minX, maxY-minY)/2;
-    if (rad < 12) continue;
-    const gx = cx/FW*W, gy = cy/FH*H, gr = rad/FW*W;
-    if (Math.hypot(gx-ship.x, gy-ship.y) < gr + 120) continue;   // don't spawn on the pilot
-    /* polyline in game coords, relative to centroid, scaled to rock radius */
-    const pts = loop.map(p=>[(p[0]/FW*W - gx)/gr, (p[1]/FH*H - gy)/gr]);
-    const size = gr > 60 ? 3 : gr > 34 ? 2 : 1;
-    rocks.push({ x:gx, y:gy, vx:(Math.random()-0.5)*30, vy:(Math.random()-0.5)*30,
-                 a:0, spin:(Math.random()-0.5)*0.6, hand:1, size, r:gr*0.85, pts, fromField:true });
-    rockContours.push(loop);
-    n++;
-  }
-}
-function makeRock(x, y, size) {
-  const n = 9 + Math.floor(Math.random()*5), pts = [];
-  for (let k = 0; k < n; k++) {
-    const t = k / n * Math.PI*2, rad = 0.65 + Math.random()*0.45;
-    pts.push([Math.cos(t)*rad, Math.sin(t)*rad]);
-  }
-  const sp = 40 + Math.random()*50 + (3 - size)*20, dir = Math.random()*Math.PI*2;
-  return { x, y, vx:Math.cos(dir)*sp, vy:Math.sin(dir)*sp, a:Math.random()*Math.PI*2,
-           spin:(Math.random()-0.5)*2, hand:1, size, r:[0,14,26,44][size], pts };
-}
-function spawnWave() {
-  wave++;
-  if (GP.rocksFromField) { spawnRocksFromField(); if (rocks.length) return; }
-  const n = Math.min(3 + wave, 9);
-  for (let k = 0; k < n; k++) {
-    let x, y;
-    do { x = Math.random()*W; y = Math.random()*H; } while (Math.hypot(x-ship.x, y-ship.y) < 200);
-    rocks.push(makeRock(x, y, 3));
-  }
-}
-function burst(x, y, n, color, speed) {
-  for (let k = 0; k < n; k++) {
-    const d = Math.random()*Math.PI*2, s = speed*(0.3+Math.random());
-    particles.push({ x, y, vx:Math.cos(d)*s, vy:Math.sin(d)*s, a:0, spin:0, hand:1, life:0.5+Math.random()*0.5, color });
-  }
-}
-function reset() {
-  ship = makeShip(); rocks = []; bullets = []; particles = [];
-  score = 0; lives = 3; wave = 0; gameOver = false; crossings = 0;
-  spawnWave();
-  updatePanel();
-}
-
-// ── update ───────────────────────────────────────────────────────────────
-function update(dt) {
-  if (paused) return;
-  /* the sim steps at half rate — the field is weather, not the frame */
-  simFrame++;
-  if (simFrame % 2 === 0) {
-    simTime += SP.dr;
-    simDiffuseDecay();
-    if (SP.mass>0) simDiffuseDecayMom();
-    simStep();
-  }
-  if (!gameOver) {
-    const turn = (keys.ArrowRight||keys.KeyD ? 1 : 0) - (keys.ArrowLeft||keys.KeyA ? 1 : 0);
-    ship.a += turn * 4.2 * dt * ship.hand;
-    ship.thrusting = !!(keys.ArrowUp||keys.KeyW);
-    if (ship.thrusting) { ship.vx += Math.cos(ship.a)*260*dt; ship.vy += Math.sin(ship.a)*260*dt; }
-    /* THE WELD: the ship advects on the agents' own momentum field */
-    if (GP.wind > 0 && SP.mass > 0) {
-      const f = fieldAtGame(ship.x, ship.y);
-      const mag = Math.hypot(f[0], f[1]);
-      ship.vx += f[0] * GP.wind * 46 * dt * Math.min(1, mag*3);
-      ship.vy += f[1] * GP.wind * 46 * dt * Math.min(1, mag*3);
+  /* field texture: grid → canvas → three texture, flipped per the rule */
+  const texCv=document.createElement('canvas'); texCv.width=W; texCv.height=H;
+  const texCx=texCv.getContext('2d');
+  let surfGroup=null, surfId=null, fieldTex=null, fieldMesh=null;
+  const GN=28;
+  function buildSurface(id){
+    if (surfGroup){ scene.remove(surfGroup); surfGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); }
+    surfGroup=new THREE.Group(); surfId=id;
+    for(let i=0;i<GN;i++){
+      const u=i/GN;
+      surfGroup.add(poly(samples(t=>[u,t]), 0x3a3050, 0.35));
     }
-    const drag = Math.pow(0.35, dt); ship.vx *= drag; ship.vy *= drag;
-    ship.x += ship.vx*dt; ship.y += ship.vy*dt;
-    if (wrap(ship, ship.r)) { crossings++; updatePanel(); }
-    ship.inv = Math.max(0, ship.inv - dt);
-    ship.cooldown = Math.max(0, ship.cooldown - dt);
-    if (keys.Space && ship.cooldown === 0 && bullets.length < 6) {
-      const m = 18;
-      bullets.push({ x:ship.x+Math.cos(ship.a)*m, y:ship.y+Math.sin(ship.a)*m,
-        vx:ship.vx+Math.cos(ship.a)*480, vy:ship.vy+Math.sin(ship.a)*480, a:ship.a, spin:0, hand:ship.hand, life:1.3, r:2 });
-      ship.cooldown = 0.18;
+    for(let j=0;j<GN;j++){
+      const v=j/GN;
+      surfGroup.add(poly(samples(t=>[t,v]), 0x3a3050, 0.35));
     }
+    surfGroup.add(poly(samples(t=>[0,t]), 0x4fa3ff, 1));
+    surfGroup.add(poly(samples(t=>[t,0]), 0xff8a3d, 1));
+    /* the field texture itself */
+    fieldTex=new THREE.CanvasTexture(texCv);
+    fieldTex.colorSpace=THREE.SRGBColorSpace;
+    const SEG=64, pos=[], uvs=[], idx=[];
+    for(let j=0;j<=SEG;j++) for(let i=0;i<=SEG;i++){
+      const p=SURFACES[id](i/SEG, j/SEG);
+      pos.push(...p); uvs.push(i/SEG, j/SEG);
+    }
+    for(let j=0;j<SEG;j++) for(let i=0;i<SEG;i++){
+      const a=j*(SEG+1)+i, b=a+1, c=a+SEG+1, d=c+1;
+      idx.push(a,b,c, b,d,c);
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
+    g.setIndex(idx); g.computeVertexNormals();
+    fieldMesh=new THREE.Mesh(g, new THREE.MeshBasicMaterial({map:fieldTex, side:THREE.DoubleSide, transparent:true, opacity:0.92}));
+    surfGroup.add(fieldMesh);
+    scene.add(surfGroup);
   }
-  for (const b of bullets) { b.x += b.vx*dt; b.y += b.vy*dt; b.life -= dt; wrap(b, b.r); }
-  bullets = bullets.filter(b => b.life > 0);
-  for (const k of rocks) { k.x += k.vx*dt; k.y += k.vy*dt; k.a += k.spin*dt; wrap(k, k.r); }
-  for (const p of particles) { p.x += p.vx*dt; p.y += p.vy*dt; p.life -= dt; wrap(p, 0); }
-  particles = particles.filter(p => p.life > 0);
+  function poly(pts, color, opacity){
+    const pos=[];
+    for(let i=0;i+1<pts.length;i++) pos.push(...SURFACES[surfId||topo.id](...pts[i]), ...SURFACES[surfId||topo.id](...pts[i+1]));
+    const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+    return new THREE.Line(g, new THREE.LineBasicMaterial({color, transparent:true, opacity}));
+  }
+  function samples(fn, n=96){ const out=[]; for(let i=0;i<=n;i++) out.push(fn(i/n)); return out; }
 
-  const dead = new Set(), newRocks = [];
-  for (const b of bullets) {
-    for (const k of rocks) {
-      if (dead.has(k)) continue;
-      if (dist2(b, k) < (k.r*0.85)**2) {
-        dead.add(k); b.life = 0; score += [0,100,50,20][k.size];
-        burst(k.x, k.y, 8, '#c9d2ff', 120);
-        if (k.size > 1 && !k.fromField) for (let s = 0; s < 2; s++) newRocks.push(makeRock(k.x, k.y, k.size-1));
-        break;
+  /* contours + agent sparkline pushed through Pxyz */
+  const MAXV=30000;
+  const linePos=new Float32Array(MAXV*3), lineCol=new Float32Array(MAXV*3);
+  const lineGeo=new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos,3).setUsage(THREE.DynamicDrawUsage));
+  lineGeo.setAttribute('color', new THREE.BufferAttribute(lineCol,3).setUsage(THREE.DynamicDrawUsage));
+  scene.add(new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({vertexColors:true, transparent:true, opacity:0.85})));
+  const col=new THREE.Color();
+  function pushContours(){
+    let nl=0;
+    for (const {level, segs} of contourSegs){
+      col.set(`rgb(${156+level*90|0},${58+level*150|0},${42+level*140|0})`);
+      for (const s of segs){
+        if (nl+2>MAXV) break;
+        /* subdivide through the seam so lines cross welds continuously */
+        const ax=s[0], ay=s[1], bx=s[2], by=s[3];
+        const sub=Math.max(1, Math.ceil(Math.hypot(bx-ax, by-ay)/4));
+        for(let k=0;k<sub;k++){
+          const t0=k/sub, t1=(k+1)/sub;
+          const p0=Pxyz(ax+(bx-ax)*t0, ay+(by-ay)*t0);
+          const p1=Pxyz(ax+(bx-ax)*t1, ay+(by-ay)*t1);
+          linePos.set(p0, nl*3); lineCol.set([col.r,col.g,col.b], nl*3); nl++;
+          linePos.set(p1, nl*3); lineCol.set([col.r,col.g,col.b], nl*3); nl++;
+        }
       }
     }
+    lineGeo.setDrawRange(0, nl); lineGeo.attributes.position.needsUpdate=true; lineGeo.attributes.color.needsUpdate=true;
   }
-  if (dead.size) { rocks = rocks.filter(k => !dead.has(k)).concat(newRocks); bullets = bullets.filter(b => b.life > 0); }
-  if (!gameOver && ship.inv === 0) {
-    for (const k of rocks) if (dist2(ship, k) < (k.r*0.8 + ship.r*0.6)**2) {
-      burst(ship.x, ship.y, 24, '#ff8a3d', 200);
-      lives--;
-      if (lives <= 0) { gameOver = true; }
-      else { const keep = ship.hand; ship = makeShip(); ship.hand = keep; }
-      updatePanel();
-      break;
+  const ptPos=new Float32Array(4000*3), ptCol=new Float32Array(4000*3);
+  const ptGeo=new THREE.BufferGeometry();
+  ptGeo.setAttribute('position', new THREE.BufferAttribute(ptPos,3).setUsage(THREE.DynamicDrawUsage));
+  ptGeo.setAttribute('color', new THREE.BufferAttribute(ptCol,3).setUsage(THREE.DynamicDrawUsage));
+  scene.add(new THREE.Points(ptGeo, new THREE.PointsMaterial({vertexColors:true, size:4, sizeAttenuation:false})));
+  function pushAgents(){
+    const stride=Math.max(1, Math.floor(parts.length/3999));
+    let np=0;
+    for(let i=0;i<parts.length && np<4000;i+=stride){
+      const p=Pxyz(parts[i].x, parts[i].y);
+      ptPos.set(p, np*3); ptCol.set([0.55,0.95,0.75], np*3); np++;
     }
+    ptGeo.setDrawRange(0,np); ptGeo.attributes.position.needsUpdate=true; ptGeo.attributes.color.needsUpdate=true;
   }
-  if (!sandbox && rocks.length === 0 && !gameOver) spawnWave();
-}
-
-// ── drawing ──────────────────────────────────────────────────────────────
-function drawShip(s, ghost) {
-  ctx.save();
-  ctx.translate(s.x, s.y); ctx.rotate(s.a); ctx.scale(1, s.hand);
-  ctx.lineWidth = 2; ctx.lineJoin = 'round';
-  ctx.strokeStyle = ghost ? 'rgba(215,220,234,.35)' : (s.inv > 0 && Math.floor(s.inv*10)%2 ? '#5b6480' : '#e8ecff');
-  ctx.beginPath(); ctx.moveTo(16,0); ctx.lineTo(-12,-11); ctx.lineTo(-7,0); ctx.lineTo(-12,11); ctx.closePath(); ctx.stroke();
-  ctx.fillStyle = ghost ? 'rgba(255,107,107,.45)' : '#ff6b6b'; ctx.beginPath(); ctx.arc(-4,-7,2.6,0,7); ctx.fill();
-  ctx.fillStyle = ghost ? 'rgba(107,255,154,.45)' : '#6bff9a'; ctx.beginPath(); ctx.arc(-4, 7,2.6,0,7); ctx.fill();
-  if (s.thrusting && !ghost && Math.random() < 0.8) {
-    ctx.strokeStyle = '#ffb347'; ctx.beginPath(); ctx.moveTo(-9,-5); ctx.lineTo(-18-Math.random()*8,0); ctx.lineTo(-9,5); ctx.stroke();
-  }
-  ctx.restore();
-}
-function drawRock(k, ghost) {
-  ctx.save(); ctx.translate(k.x, k.y); ctx.rotate(k.a); ctx.scale(k.r, k.r*k.hand);
-  ctx.lineWidth = 2/k.r;
-  ctx.strokeStyle = ghost ? 'rgba(200,180,235,.35)' : (k.fromField ? '#c9b8f2' : '#c8d2eb');
-  ctx.beginPath(); k.pts.forEach((p,i) => i ? ctx.lineTo(p[0],p[1]) : ctx.moveTo(p[0],p[1])); ctx.closePath(); ctx.stroke();
-  ctx.fillStyle = ghost ? 'rgba(79,163,255,.35)' : '#4fa3ff'; ctx.beginPath(); ctx.arc(0.35,-0.25,0.12,0,7); ctx.fill();
-  ctx.restore();
-}
-function drawBullet(b, ghost) {
-  ctx.fillStyle = ghost ? 'rgba(142,240,194,.4)' : '#8ef0c2'; ctx.beginPath(); ctx.arc(b.x,b.y,2.5,0,7); ctx.fill();
-}
-function drawParticle(p, ghost) {
-  ctx.globalAlpha = Math.max(0, p.life) * (ghost ? 0.4 : 1); ctx.fillStyle = p.color; ctx.fillRect(p.x-1.5,p.y-1.5,3,3); ctx.globalAlpha = 1;
-}
-function drawAllImages(ent, fn) {
-  for (const i of cellRange(topo.x)) for (const j of cellRange(topo.y)) {
-    const g = image(ent, i, j);
-    for (const key of ['r','pts','size','inv','thrusting','life','color']) if (key in ent) g[key] = ent[key];
-    fn(g, !(i === 0 && j === 0));
-  }
-}
-/* trail terrain: draw the sim through the fold, per game cell block.
-   Painted into an offscreen FW×FH canvas once per sim frame, then blitted
-   with the topology's mirror rules via drawImage transforms. */
-const fieldCv = document.createElement('canvas'); fieldCv.width = FW; fieldCv.height = FH;
-const fieldCx = fieldCv.getContext('2d');
-const fieldImg = fieldCx.createImageData(FW, FH);
-let fieldRef = 1;
-function paintField() {
-  const { ref } = simRefs();
-  fieldRef += (ref - fieldRef)*0.1;
-  const d = fieldImg.data, inv = 1/fieldRef;
-  for (let i=0;i<simGrid.length;i++){
-    let v = Math.sqrt(simGrid[i]*inv); if (v>1) v=1;
-    const px=i*4;
-    d[px]   = v*70; d[px+1] = v*46; d[px+2] = v*130 + v*v*60;
-    d[px+3] = 255;
-  }
-  fieldCx.putImageData(fieldImg, 0, 0);
-}
-function drawField() {
-  if (!GP.fieldOn) return;
-  paintField();
-  ctx.imageSmoothingEnabled = true;
-  const rows = topo.y.wrap ? (zoomOut ? [-2,-1,0,1,2] : [-1,0,1]) : [0];
-  const cols = topo.x.wrap ? (zoomOut ? [-2,-1,0,1,2] : [-1,0,1]) : [0];
-  for (const j of rows) for (const i of cols) {
-    ctx.save();
-    const xf = (i !== 0 && topo.x.flip), yf = (j !== 0 && topo.y.flip);
-    ctx.translate((i + (xf ? 1 : 0)) * W, (j + (yf ? 1 : 0)) * H);
-    if (xf) ctx.scale(-1, 1);
-    if (yf) ctx.scale(1, -1);
-    ctx.globalAlpha = 0.85;
-    ctx.drawImage(fieldCv, 0, 0, FW, FH, 0, 0, W, H);
-    ctx.restore();
-  }
-  ctx.globalAlpha = 1;
-}
-/* contour overlay in game coords (drawn from the sim's own level set) */
-const RAMP=[[156,58,42],[212,98,56],[240,166,102],[255,232,198]];
-const CLEVELS=[0.18,0.34,0.55,0.8];
-let cRefMax = 1;
-function drawSimContours() {
-  if (!GP.contourTrail) return;
-  ctx.save();
-  ctx.globalCompositeOperation='lighter';
-  simPool();
-  /* scale levels against the render ref, like the ancestor */
-  const { ref } = simRefs();
-  cRefMax += (ref - cRefMax)*0.05;
-  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(240,166,102,0.35)';
-  for (const p of CLEVELS) {
-    ctx.strokeStyle = `rgba(240,166,102,${(0.10+0.25*p).toFixed(3)})`;
-    ctx.beginPath();
-    const loops = simContours(p*cRefMax);
-    for (const loop of loops) {
-      for (let k=0;k<loop.length;k++){
-        const gx = loop[k][0]/FW*W, gy = loop[k][1]/FH*H;
-        if (k===0) ctx.moveTo(gx,gy); else ctx.lineTo(gx,gy);
-      }
+  let last=performance.now();
+  function frame3d(now){
+    requestAnimationFrame(frame3d);
+    const dt=Math.min(0.05,(now-last)/1000); last=now;
+    if(!view3d) return;
+    const w=box.clientWidth, h=box.clientHeight;
+    if(w&&h&&(c3.width!==Math.round(w*renderer.getPixelRatio())||c3.height!==Math.round(h*renderer.getPixelRatio()))){
+      renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
     }
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-function drawEdges() {
-  const A='#4fa3ff', B='#ff8a3d', WALL='#ff4d6d';
-  if (topo.x.wrap) { ctx.strokeStyle=A; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(1,0); ctx.lineTo(1,H); ctx.stroke(); ctx.beginPath(); ctx.moveTo(W-1,H); ctx.lineTo(W-1,0); ctx.stroke(); }
-  else { ctx.strokeStyle=WALL; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,H); ctx.moveTo(W,0); ctx.lineTo(W,H); ctx.stroke(); }
-  if (topo.y.wrap) { ctx.strokeStyle=B; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(0,H-1); ctx.lineTo(W,H-1); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0,1); ctx.lineTo(W,1); ctx.stroke(); }
-  else { ctx.strokeStyle=WALL; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(W,0); ctx.moveTo(0,H); ctx.lineTo(W,H); ctx.stroke(); }
-}
-function drawScene() {
-  drawField();
-  drawSimContours();
-  drawAllImages(ship, drawShip);
-  for (const k of rocks) drawAllImages(k, drawRock);
-  for (const b of bullets) drawAllImages(b, drawBullet);
-  for (const p of particles) drawAllImages(p, drawParticle);
-}
-function render() {
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.fillStyle = '#050409'; ctx.fillRect(0,0,W,H);
-  if (zoomOut) {
-    ctx.save(); ctx.scale(1/3,1/3); ctx.translate(W,H);
-    ctx.beginPath(); ctx.rect(-W,-H,3*W,3*H); ctx.clip();
-    drawScene();
-    ctx.restore();
-    ctx.strokeStyle = '#2a2440'; ctx.lineWidth = 3;
-    for (let i=-1;i<=2;i++){ ctx.beginPath(); ctx.moveTo(i*W,-H); ctx.lineTo(i*W,2*H); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-W,i*H); ctx.lineTo(2*W,i*H); ctx.stroke(); }
-  } else {
-    ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
-    drawScene();
-    drawEdges();
-    ctx.restore();
-  }
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.fillStyle = '#d7dcea'; ctx.font = '16px ui-monospace, Menlo, monospace'; ctx.textBaseline = 'top';
-  ctx.fillText(`SCORE ${score}`, 14, 12);
-  ctx.fillText(`WAVE ${wave}`, 14, 32);
-  ctx.textAlign = 'right';
-  ctx.fillText('♦'.repeat(Math.max(0,lives)), W-14, 12);
-  ctx.fillText(topo.name.toUpperCase(), W-14, 32);
-  ctx.textAlign = 'left';
-  if (ship.hand < 0) { ctx.fillStyle = '#ff9fb1'; ctx.fillText('MIRRORED — turn controls reversed on screen', 14, H-30); }
-  if (paused) centerText('PAUSED');
-  if (gameOver) centerText('GAME OVER — press R');
-}
-function centerText(t) {
-  ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0, H/2-30, W, 60);
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 26px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(t, W/2, H/2); ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-}
-
-// ── 3D export (same protocol as topo-asteroids) ──────────────────────────
-function local(e, pts, scale) {
-  const c = Math.cos(e.a), s = Math.sin(e.a);
-  return pts.map(([px, py]) => { const lx = px*scale, ly = py*scale*e.hand; return [e.x + lx*c - ly*s, e.y + lx*s + ly*c]; });
-}
-const SHIP_PTS = [[16,0],[-12,-11],[-7,0],[-12,11]];
-function primitives() {
-  const out = [];
-  if (!gameOver) {
-    out.push({ pts: local(ship, SHIP_PTS, 1), closed: true, color: '#e8ecff' });
-    out.push({ pts: local(ship, [[-4,-7]], 1), closed: false, color: '#ff6b6b', point: true });
-    out.push({ pts: local(ship, [[-4, 7]], 1), closed: false, color: '#6bff9a', point: true });
-    if (ship.thrusting) out.push({ pts: local(ship, [[-9,-5],[-20,0],[-9,5]], 1), closed: false, color: '#ffb347' });
-  }
-  for (const k of rocks) out.push({ pts: local(k, k.pts, k.r), closed: true, color: k.fromField ? '#c9b8f2' : '#c8d2eb' });
-  for (const b of bullets) out.push({ pts: [[b.x, b.y], [b.x - b.vx*0.025, b.y - b.vy*0.025]], closed: false, color: '#8ef0c2' });
-  return out;
-}
-function fold3d(x, y) { const q = { x, y, vx:0, vy:0, a:0, spin:0, hand:1 }; wrap(q, 0); return [q.x, q.y]; }
-const GRID_N = 12;
-function gridColor(axis, i) {
-  const t = i / GRID_N;
-  return axis === 'x' ? `hsl(${195 + 100*t}, 90%, 62%)` : `hsl(${45 + 95*t}, 90%, 58%)`;
-}
-function gridLines() {
-  const out = [];
-  for (let i = 1; i < GRID_N; i++) {
-    out.push({ axis:'x', i, pts:[[i*W/GRID_N, 0], [i*W/GRID_N, H]], color: gridColor('x', i) });
-    out.push({ axis:'y', i, pts:[[0, i*H/GRID_N], [W, i*H/GRID_N]], color: gridColor('y', i) });
-  }
-  return out;
-}
-let view3dAvailable = true;
-function setView3d(on) { if (!view3dAvailable) on = false; view3d = on; document.body.classList.toggle('with3d', on); updatePanel(); }
-function disable3d(reason) {
-  view3dAvailable = false; setView3d(false);
-  const btn = document.getElementById('btn3d'); btn.textContent = '3D view: unavailable'; btn.disabled = true; btn.title = reason;
-}
-
-// ── side panel ───────────────────────────────────────────────────────────
-const sel = document.getElementById('topo');
-TOPOLOGIES.forEach((t,i) => { const o = document.createElement('option'); o.value = i; o.textContent = t.name; sel.appendChild(o); });
-sel.addEventListener('change', () => setTopology(+sel.value));
-function setTopology(i) {
-  topo = TOPOLOGIES[i]; sel.value = i;
-  ship.hand = 1; for (const k of rocks) k.hand = 1;
-  updatePanel();
-}
-function updatePanel() {
-  document.getElementById('blurb').textContent = topo.blurb;
-  const rule = e => !e.wrap ? 'wall' : e.flip ? `weld, mirror ${e.flip}` : 'weld straight';
-  document.getElementById('btn3d').textContent = view3dAvailable ? `3D view: ${view3d?'on':'off'}` : '3D view: unavailable';
-  document.getElementById('btnSandbox').textContent = `Sandbox: ${sandbox?'on':'off'}`;
-}
-document.getElementById('fieldOn').addEventListener('change',e=>GP.fieldOn=e.target.checked);
-document.getElementById('contourTrail').addEventListener('change',e=>GP.contourTrail=e.target.checked);
-document.getElementById('rocksFromField').addEventListener('change',e=>GP.rocksFromField=e.target.checked);
-document.getElementById('wind').addEventListener('input',e=>GP.wind=parseFloat(e.target.value));
-document.getElementById('btn3d').onclick = () => setView3d(!view3d);
-document.getElementById('btnSandbox').onclick = () => { sandbox = !sandbox; if (sandbox) rocks = []; else if (!rocks.length) spawnWave(); updatePanel(); };
-document.getElementById('btnReset').onclick = () => reset();
-
-window.addEventListener('keydown', e => {
-  if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
-  if (e.repeat) return;
-  keys[e.code] = true;
-  if (e.code === 'KeyT') setTopology((TOPOLOGIES.indexOf(topo)+1) % TOPOLOGIES.length);
-  if (e.code === 'KeyV') setView3d(!view3d);
-  if (e.code === 'KeyS') document.getElementById('btnSandbox').onclick();
-  if (e.code === 'KeyP') paused = !paused;
-  if (e.code === 'KeyR') reset();
-});
-window.addEventListener('keyup', e => { keys[e.code] = false; });
-window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
-
-/* ── field stats readout ── */
-setInterval(() => {
-  const { cut } = simRefs();
-  let on=0;
-  for(let i=0;i<simGrid.length;i++){ if(simGrid[i]>cut) on++; }
-  simMaskFill(cut);
-  document.getElementById('f-b1').textContent = simB1();
-  document.getElementById('f-cov').textContent = (100*on/simGrid.length).toFixed(1)+'%';
-  document.getElementById('f-wind').textContent = GP.wind.toFixed(1);
-}, 1500);
-let simMaskState = new Uint8Array(FW*FH);
-function simMaskFill(cut){
-  for(let i=0;i<simGrid.length;i++) simMaskState[i] = simGrid[i]>cut?1:0;
-}
-/* β₁ = β₀ − χ on the wrapped field, components by flood fill */
-function simB0(){
-  const m=simMaskState, s=new Uint8Array(FW*FH); let n=0; const st=[];
-  const at=(x,y)=>m[(((y%FH)+FH)%FH)*FW + (((x%FW)+FW)%FW)];
-  for(let i=0;i<FW*FH;i++){
-    if(!m[i]||s[i]) continue;
-    n++; st.push(i); s[i]=1;
-    while(st.length){
-      const q=st.pop(), qx=q%FW, qy=(q-qx)/FW;
-      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-        const k=((qy+dy+FH)%FH)*FW + ((qx+dx+FW)%FW);
-        if(at(qx+dx,qy+dy)&&!s[k]){ s[k]=1; st.push(k); }
-      }
+    if (topo.id!==surfId) buildSurface(topo.id);
+    /* repaint the texture from the live grid */
+    const {ref}=refs();
+    const d=texCx.createImageData(W,H).data;
+    const imgd=texCx.getImageData(0,0,W,H);
+    const dd=imgd.data, inv=ref>0?1/ref:0;
+    for(let i=0;i<grid.length;i++){
+      let v=Math.sqrt(grid[i]*inv); if(v>1)v=1;
+      const px=i*4;
+      dd[px]=v*40; dd[px+1]=v*255; dd[px+2]=v*140; dd[px+3]=255;
     }
+    texCx.putImageData(imgd,0,0);
+    fieldTex.needsUpdate=true;
+    theta+=0.0006;
+    camera.position.set(dist*Math.sin(phi)*Math.cos(theta), dist*Math.sin(phi)*Math.sin(theta), dist*Math.cos(phi));
+    camera.lookAt(0,0,0);
+    pushContours(); pushAgents();
+    renderer.render(scene, camera);
   }
-  return n;
-}
-function simEuler(){
-  let C1=0,C3=0,Cd=0;
-  const m=simMaskState;
-  const at=(x,y)=>m[(((y%FH)+FH)%FH)*FW + (((x%FW)+FW)%FW)];
-  for(let y=0;y<FH;y++) for(let x=0;x<FW;x++){
-    const a=at(x,y),b=at(x+1,y),c=at(x,y+1),d=at(x+1,y+1), n=a+b+c+d;
-    if(n===1) C1++;
-    else if(n===3) C3++;
-    else if(n===2 && ((a&&d&&!b&&!c)||(b&&c&&!a&&!d))) Cd++;
+  buildSurface(topo.id);
+  requestAnimationFrame(frame3d);
+  setView3d(true);
+})();
+
+/* ── main loop ─────────────────────────────────────────────────────── */
+let R={ref:1, cut:Infinity, max:0};
+let lastT=performance.now();
+function loop(now){
+  const dtReal=Math.min(0.05,(now-lastT)/1000); lastT=now;
+  time+=P.dr;
+  diffuseDecay();
+  if(P.mass>0) diffuseDecayMom();
+  stepAgents();
+  if (egg) stepEgg(dtReal);
+
+  R=refs();
+  render(R.ref);
+  drawContours(R.ref);
+  if(frame%20===0) measure(R.cut);
+  if(frame%15===0){
+    const half=Math.log(0.5)/Math.log(P.dec);
+    const mhalf=Math.log(0.5)/Math.log(P.mdec);
+    document.getElementById('r-th').textContent=half.toFixed(0)+' f';
+    document.getElementById('r-tm').textContent=P.mass>0?mhalf.toFixed(1)+' f':'off';
+    document.getElementById('r-mratio').textContent=P.mass>0?(mhalf/half).toFixed(2)+'×':'–';
   }
-  return (C1-C3-2*Cd)/4;
+  sx_=ov.width/(Math.min(window.devicePixelRatio||1,2))/W;
+  sy_=ov.height/(Math.min(window.devicePixelRatio||1,2))/H;
+  drawEgg();
+  frame++;
+  requestAnimationFrame(loop);
 }
-function simB1(){ const b0=simB0(); return b0 - simEuler(); }
 
-// ── main loop ────────────────────────────────────────────────────────────
-let last = performance.now();
-function frame(now) {
-  const dt = Math.min(0.05, (now - last)/1000); last = now;
-  update(dt); render();
-  requestAnimationFrame(frame);
-}
-simReset();
-reset();
-document.body.classList.add('with3d');
-requestAnimationFrame(frame);
+/* ── test port ─────────────────────────────────────────────────────── */
+window.__welded={
+  TOPOLOGIES, LEVELS, SURFACES, P,
+  get topo(){return topo;}, get grid(){return grid;}, get W(){return W;}, get H(){return H;},
+  get parts(){return parts;}, get B(){return B;}, get egg(){return egg;},
+  get frames(){return frame;}, get refsNow(){return R;},
+  setSurface:(i)=>setSurface(i,false),
+  loadLevel:(i)=>loadLevel(i),
+  fold:(x,y)=>{ const p={x,y,a:0}; wrapPos(p); return [p.x,p.y]; },
+  fieldAt:(x,y)=>{ const o=[0,0,0]; fieldAt(x,y,o); return o; },
+  state(){ return { surface:topo.id, b0:B.b0, b1:B.b1, coverage:B.coverage,
+                    agents:parts.length, level:LEVELS[levelIdx].name,
+                    target:LEVELS[levelIdx].target, solved:levelSolved, egg:!!egg }; },
+  spawnEgg(){ if(!egg && B.b1>=42){ egg={x:W/2,y:H/2,vx:0,vy:0,a:-Math.PI/2,hand:1,cool:0,inv:2}; } return !!egg; },
+};
 
-/* exposed for verification from the console */
-window.__welded = { get ship(){return ship;}, get rocks(){return rocks;}, get topo(){return topo;},
-  TOPOLOGIES, SURFACES, fold3d, gridLines, setTopology, setView3d, disable3d, wrap, image, dist2, primitives, W, H,
-  get view3d(){return view3d;},
-  set sandbox(v){ sandbox = v; if (v) rocks = []; }, get sandbox(){return sandbox;},
-  state(){ return { ship:{...ship}, rocks:rocks.map(r=>({x:r.x,y:r.y,r:r.r,size:r.size,fromField:!!r.fromField})),
-                    bullets:bullets.length, wave, score, crossings, surface:topo.id, b1:simB1() }; },
-  fieldSample(x, y){ const f = fieldAtGame(x, y); return f; },
-  rockContours(){ return rockContours; } };
+/* boot */
+setSurface(0, false);
+resetField();
+fitCanvases();
+loadLevel(0);
+requestAnimationFrame(loop);
 </script>
 <script type="module" src="./vendor/three.module.min.js"></script>
-<script type="module">
-const T = window.__welded;
-if (!T) throw new Error('game script did not run — __welded missing');
-const $id = (x) => document.getElementById(x);
-const hint = $id('hint3d');
-let THREE = null;
-for (const src of ['./vendor/three.module.min.js', 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js']) {
-  try { THREE = await import(src); break; } catch (e) { console.warn('three.js failed to load from', src, e); }
-}
-if (!THREE) {
-  hint.textContent = '3D view unavailable (could not load three.js)';
-  T.disable3d('three.js could not be loaded');
-  throw new Error('three.js unavailable');
-}
-const c3 = $id('c3'), box = $id('view3d');
-let renderer = null;
-try {
-  renderer = new THREE.WebGLRenderer({ canvas: c3, antialias: true, failIfMajorPerformanceCaveat: false });
-} catch (e) {
-  if (hint) hint.textContent = '3D view unavailable (no WebGL in this browser)';
-  T.disable3d('WebGL unavailable: ' + e.message);
-}
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-const scene = new THREE.Scene(); scene.background = new THREE.Color(0x000000);
-const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100); camera.up.set(0, 0, 1);
-let theta = 0.7, phi = 1.05, dist = 4.6, lastPointer = null, idle = 0;
-
-let surfGroup = null, surfId = null;
-const P = (id, u, v) => T.SURFACES[id](u, v);
-const Pxy = (id, x, y) => { const [fx, fy] = T.fold3d(x, y); return T.SURFACES[id](fx / T.W, fy / T.H); };
-function polyline(id, pts, color, opacity, blending) {
-  const pos = [];
-  for (let i = 0; i + 1 < pts.length; i++) pos.push(...P(id, ...pts[i]), ...P(id, ...pts[i+1]));
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  return new THREE.Line(g, new THREE.LineBasicMaterial({ color, transparent:true, opacity, blending, depthWrite:false }));
-}
-function samples(fn, n = 96) { const out = []; for (let i = 0; i <= n; i++) out.push(fn(i / n)); return out; }
-function buildSurface(topo) {
-  if (surfGroup) { scene.remove(surfGroup); surfGroup.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
-  surfGroup = new THREE.Group(); surfId = topo.id;
-  const uN = 28, vN = 28;
-  for (let i = 0; i < uN; i++) {
-    const u = i / uN;
-    surfGroup.add(polyline(topo.id, samples(t => [u, t]), 0x3a3050, 0.4, THREE.NormalBlending));
-  }
-  for (let j = 0; j < vN; j++) {
-    const v = j / vN;
-    surfGroup.add(polyline(topo.id, samples(t => [t, v]), 0x3a3050, 0.4, THREE.NormalBlending));
-  }
-  const A = 0x4fa3ff, B = 0xff8a3d, WALL = 0xff4d6d;
-  surfGroup.add(polyline(topo.id, samples(t => [0, t]), topo.x.wrap ? A : WALL, 1, THREE.NormalBlending));
-  if (!topo.x.wrap) surfGroup.add(polyline(topo.id, samples(t => [1, t]), WALL, 1, THREE.NormalBlending));
-  surfGroup.add(polyline(topo.id, samples(t => [t, 0]), topo.y.wrap ? B : WALL, 1, THREE.NormalBlending));
-  if (!topo.y.wrap) surfGroup.add(polyline(topo.id, samples(t => [t, 1]), WALL, 1, THREE.NormalBlending));
-  scene.add(surfGroup);
-}
-
-const MAXV = 24000;
-const linePos = new Float32Array(MAXV * 3), lineCol = new Float32Array(MAXV * 3);
-const lineGeo = new THREE.BufferGeometry();
-lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3).setUsage(THREE.DynamicDrawUsage));
-lineGeo.setAttribute('color', new THREE.BufferAttribute(lineCol, 3).setUsage(THREE.DynamicDrawUsage));
-scene.add(new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ vertexColors: true })));
-const MAXP = 2000;
-const ptPos = new Float32Array(MAXP * 3), ptCol = new Float32Array(MAXP * 3);
-const ptGeo = new THREE.BufferGeometry();
-ptGeo.setAttribute('position', new THREE.BufferAttribute(ptPos, 3).setUsage(THREE.DynamicDrawUsage));
-ptGeo.setAttribute('color', new THREE.BufferAttribute(ptCol, 3).setUsage(THREE.DynamicDrawUsage));
-scene.add(new THREE.Points(ptGeo, new THREE.PointsMaterial({ vertexColors: true, size: 7, sizeAttenuation: false })));
-const col = new THREE.Color();
-
-function pushEntities() {
-  let nl = 0, np = 0;
-  for (const prim of T.primitives()) {
-    col.set(prim.color);
-    if (prim.point) {
-      if (np >= MAXP) break;
-      const [x, y] = prim.pts[0], p = Pxy(surfId, x, y);
-      ptPos.set(p, np * 3); ptCol.set([col.r, col.g, col.b], np * 3); np++;
-      continue;
-    }
-    const pts = prim.pts, n = pts.length, segs = prim.closed ? n : n - 1;
-    for (let i = 0; i < segs; i++) {
-      const a = pts[i], b = pts[(i + 1) % n];
-      const sub = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 10));
-      for (let s = 0; s < sub; s++) {
-        if (nl + 2 > MAXV) break;
-        const t0 = s / sub, t1 = (s + 1) / sub;
-        const p0 = Pxy(surfId, a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0);
-        const p1 = Pxy(surfId, a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1);
-        linePos.set(p0, nl * 3); lineCol.set([col.r, col.g, col.b], nl * 3); nl++;
-        linePos.set(p1, nl * 3); lineCol.set([col.r, col.g, col.b], nl * 3); nl++;
-      }
-    }
-  }
-  lineGeo.setDrawRange(0, nl); lineGeo.attributes.position.needsUpdate = true; lineGeo.attributes.color.needsUpdate = true;
-  ptGeo.setDrawRange(0, np);   ptGeo.attributes.position.needsUpdate = true;   ptGeo.attributes.color.needsUpdate = true;
-}
-
-if (!renderer) {
-  // 3D unavailable — the 2D game runs alone; stop the module here.
-} else
-c3.addEventListener('pointerdown', e => { lastPointer = [e.clientX, e.clientY]; c3.setPointerCapture(e.pointerId); });
-c3.addEventListener('pointermove', e => {
-  if (!lastPointer) return;
-  theta -= (e.clientX - lastPointer[0]) * 0.008; phi = Math.min(Math.PI - 0.15, Math.max(0.15, phi - (e.clientY - lastPointer[1]) * 0.008));
-  lastPointer = [e.clientX, e.clientY]; idle = 0;
-});
-c3.addEventListener('pointerup', () => { lastPointer = null; });
-c3.addEventListener('wheel', e => { e.preventDefault(); dist = Math.min(12, Math.max(1.6, dist * (1 + e.deltaY * 0.0012))); idle = 0; }, { passive: false });
-
-let last = performance.now();
-function frame(now) {
-  requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  if (!T.view3d) return;
-  const w = box.clientWidth, h = box.clientHeight;
-  if (w && h && (c3.width !== Math.round(w * renderer.getPixelRatio()) || c3.height !== Math.round(h * renderer.getPixelRatio()))) {
-    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
-  }
-  if (T.topo.id !== surfId) buildSurface(T.topo);
-  theta += 0.0006;   // slow idle orbit
-  camera.position.set(dist*Math.sin(phi)*Math.cos(theta), dist*Math.sin(phi)*Math.sin(theta), dist*Math.cos(phi));
-  camera.lookAt(0, 0, 0);
-  pushEntities();
-  renderer.render(scene, camera);
-}
-buildSurface(T.topo);
-requestAnimationFrame(frame);
-</script>
 </body>
 </html>

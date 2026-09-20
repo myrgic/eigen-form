@@ -1,21 +1,26 @@
 {
   "id": "welded_asteroids",
   "title": "Welded Asteroids",
-  "description": "Asteroids riding a closed-loop stigmergic field: the ship advects on agent-deposited momentum, the rocks are the trail's own beta_1 contours, both projected onto the quotient surfaces of the topology game.",
-  "version": "1.0.0",
+  "description": "The closed-loop stigmergic field itself, living on the quotient surfaces of the topology game: physarum agents, trail and agent-deposited momentum all obey the surface's gluing rule. Six tour levels bind surface + parameter presets + a beta_1 target; 18 declared sliders drive the physarum; the asteroids game survives as a hidden Easter egg (X when beta_1 >= 42).",
+  "version": "2.0.0",
   "kind": "instrument-view",
   "entry": "index.html",
   "cogdoc": {
     "type": "paper",
     "id": "paper-welded-asteroids",
     "embedded": "script[type=\"application/cogdoc+yaml\"]",
-    "claim": "A closed-loop stigmergic field is playable: the ship advects on the same agent-deposited momentum the field's own agents steer by, the obstacles are the coverage-masked beta_1 contours of the trail (so the asteroid count IS the topology readout), and the whole composition survives projection onto non-flat quotients because the field grid and the game already share torus semantics.",
+    "claim": "The closed-loop stigmergic field's native domain is a quotient surface: agent writes and reads both obey the surface's gluing rule (mirrored re-entry on Klein/projective/Mobius, walls on the strip), so the simulation itself provides the levels and the beta_1 readout is measured on the surface the structures actually live on.",
     "port": "window.__welded",
     "verify": ".cog/bin/tools/cogdoc_verify.py"
   },
   "provenance": {
-    "builtOn": "eigen-form@0.4.0 04f57af"
+    "builtOn": "eigen-form@0.4.0 fd5759c"
   },
-  "capabilities": { "emits": [], "accepts": [] },
-  "pwa": { "installable": false }
+  "capabilities": {
+    "emits": [],
+    "accepts": []
+  },
+  "pwa": {
+    "installable": false
+  }
 }
