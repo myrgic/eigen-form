@@ -1175,60 +1175,103 @@ function stepSlice(){ if(SL.on) drawSlice(); }
 
 /* ── Villarceau scope: the third slice family — oblique sections ──────
    A plane tilted α from the equator (about the y axis through the torus
-   center, then offset) cuts the torus in a loop pair whose topology
-   depends on α vs the critical angle:
+   center, offset d along its normal) cuts the torus in a loop pair whose
+   topology depends on α vs the critical angle:
 
-       sin α* = r/R        (Clifford torus R=√2, r=1 → α* = 45°)
+       sin α* = r/R        (sim torus R=1, r=0.45 → α* = 26.744°)
 
-   α < α*: two SEPARATE loops · α = α*: TANGENT (exact Villarceau pair,
-   linked) · α > α*: INTERLACED loops. The scope solves the section
-   condition per tube angle v:  n̂·torusXYZ(u,v) = d  is linear in
-   (cos u, sin u) → 0/1/2 roots u(v) → two (u,v) branch curves sampled
-   against the trail grid. Regime = classification of the root map.
+   Correct section semantics (v2.10.1, post adversarial review):
+   α < α*:  nested disjoint loops · α = α*: the two circles CROSS
+   TRANSVERSELY at two points ('tangent' = plane-torus contact, not
+   circle-circle tangency; crossing angle 53.49° here, orthogonal on the
+   Clifford image) · α > α*: non-nested disjoint loops.
+   LINKING: same-plane sections are coplanar — linking number 0 or
+   undefined (they intersect at α*). The famous linked Villarceau pair
+   consists of same-handed circles from DIFFERENT rotated critical planes
+   (verified: Gauss linking number −1 for azimuth 60° apart).
 
-   Trail readout mirrors sliceSample: per-θ trace per loop + difference,
-   first harmonic (amp/phase), geometry-normalized (BPM rule). At α=45°
-   on this torus the branches are the closed-form Villarceau circles
-   C±(t)=(cos t, ±sin t, cos t)/(√2−sin t) (verified to 1e-14). */
-const VLS = { on:false, alpha:45, trans:0 };  /* trans: last regime flip step */
+   Trail readout: per-v traces on both branch curves + difference, first
+   harmonic (amp/phase), geometry normalization, uncentered cosine
+   similarity ('agree' — NOT a linking number), and minimum 3D loop
+   separation ('sep'). */
+const VLS = { on:false, alpha:45 };  /* transition tracking deferred: needs
+  a persistent per-band field-structure detector — the v2.10 doc's 'transition
+  detection' claim was unimplemented (review defect #5); reintroduce with a
+  real design, not a stub flag */
 const VN = 96;                                 /* tube-angle samples */
-const VREC = 1.0/0.45;                         /* R/r of the sim's torus (R=1,r=0.45) */
 const VALPHA_STAR = Math.asin(0.45/1.0);       /* critical tilt, radians */
 
 function villSection(alphaRad, d){
-  /* plane through origin tilted alpha about y-axis, offset d along its normal:
+  /* plane tilted α about y-axis, offset d along its normal:
      n̂ = (sin α, 0, cos α);  condition: sinα·x + cosα·z = d
-     with torusXYZ(u,v) = ((1+ρ cos v)cos u, (1+ρ cos v)sin u, ρ sin v), ρ=0.45
-     → A(v)·cos u + B(v)·sin u = d, with
-        A(v) = sinα·(1+ρ cos v),  B(v) = cosα·ρ·sin v
-     roots: u = atan2(B,d) ± acos(d/hypot(A,B)) when |d|≤hypot(A,B). */
+     with torusXYZ(u,v) = ((1+ρ cos v)cos u, (1+ρ cos v)sin u, ρ sin v), ρ=0.45.
+     Substituting: sinα·(1+ρ cos v)·cos u + cosα·ρ·sin v = d.
+     NOTE (v2.10.1 fix): B = cosα·ρ·sin v does NOT multiply sin u — the z-term
+     is constant in u. The v2.10.0 solver treated it as a sin-u coefficient
+     (atan2/acos phase-shift form) and sampled near-misses of the true plane
+     (plane residual up to ~0.7 at α=45°). Correct roots:
+        u = ±arccos((d − B)/A),  A = sinα·(1+ρ cos v),  B = cosα·ρ·sin v
+     when |d − B| ≤ A; no solution otherwise.
+     At α=0 (and α=90° at v=0,π) A=0: the section is degenerate — handled by
+     the caller via the d=0 special case in villSample. */
   const r=0.45, sA=Math.sin(alphaRad), cA=Math.cos(alphaRad);
   const uA=[], uB=[], solv=[];
   for(let k=0;k<VN;k++){
     const v=TAU*k/VN, cv=Math.cos(v), sv=Math.sin(v);
-    const A=sA*(1+r*cv), B=cA*r*sv, h=Math.hypot(A,B);
-    if(h<1e-9 || Math.abs(d)>h+1e-12){ solv.push(0); uA.push(NaN); uB.push(NaN); continue; }
-    const base=Math.atan2(B,A), acc=Math.acos(Math.max(-1,Math.min(1,d/h)));
-    let u1=base+acc, u2=base-acc;
+    const A=sA*(1+r*cv), B=cA*r*sv;
+    const t=(d-B)/A;
+    if(A<1e-9 || Math.abs(t)>1+1e-12){ solv.push(0); uA.push(NaN); uB.push(NaN); continue; }
+    const acc=Math.acos(Math.max(-1,Math.min(1,t)));
+    let u1=acc, u2=-acc;
     u1=((u1%TAU)+TAU)%TAU; u2=((u2%TAU)+TAU)%TAU;
-    solv.push(2); uA.push(u1); uB.push(u2);
+    /* double root at acc=0 or acc=π: record ONE root, not two identical ones */
+    const same = Math.abs(((u1-u2)/TAU)%1) < 1e-9 || Math.abs(Math.abs(u1-u2)-TAU) < 1e-9;
+    solv.push(same?1:2); uA.push(u1); uB.push(same?NaN:u2);
   }
   return {uA, uB, solv};
 }
 function villRegime(alphaRad){
-  /* classification by α vs α*: exact, no root-counting ambiguity at grids */
+  /* classification by α vs α* (v2.10.1, post-review semantics):
+     α < α*:  nested disjoint loops (v2.10 "separate")
+     α = α*:  the two Villarceau circles CROSS TRANSVERSELY at two points —
+              'tangent' describes the plane's contact with the torus, NOT
+              circle-circle tangency (the crossing angle is 53.49° here,
+              orthogonal on the Clifford image). Linking number undefined —
+              the curves intersect.
+     α > α*:  non-nested disjoint loops (v2.10 "interlaced" — misleading;
+              the loops separate again, they do not interlace).
+     A ±0.5° dial interval can't resolve the exact critical angle; label it
+     'near α*' and keep the exact value readable. */
   const star=VALPHA_STAR, eps=0.5*Math.PI/180;
   if(alphaRad < star-eps) return 'separate';
-  if(alphaRad <= star+eps) return 'tangent';
-  return 'interlaced';
+  if(alphaRad <= star+eps) return 'near α*';
+  return 'separated';
 }
 function villSample(){
-  const alpha=Math.min(89.9*Math.PI/180, Math.max(0, VLS.alpha*Math.PI/180));
-  /* plane offset d sweeps 0..(tube reach) so the section is centered on the
-     band of structure: d=0 cuts through the central ring (the classic pair) */
+  let alpha=Math.min(89.9*Math.PI/180, Math.max(0, VLS.alpha*Math.PI/180));
+  /* plane offset d=0: the centered section family (classic pair). Snap the
+     dial onto the exact critical angle so the crossing configuration is
+     reachable (the ±0.5° regime band can't resolve it). */
+  const starDeg=VALPHA_STAR*180/Math.PI;
+  const snapped = Math.abs(VLS.alpha - starDeg) <= 0.5;
+  if(snapped) alpha=VALPHA_STAR;
   const d=0;
   const sec=villSection(alpha, d);
-  const data=[], dA=[], dB=[];
+  const data=[];
+  /* α=0 degeneracy (v2.10.1): the centered section is the two equatorial
+     circles — every u at v=0 and v=π. Reduce to the slice-scope section so
+     villSample(α=0) ≡ sliceSample(c=0) (design-doc verification #1, which
+     FAILED in v2.10.0: mean diff 2 vs 0 on the 1+cos v test field). */
+  if(alpha < 1e-9){
+    const savedC = SL.c; SL.c = 0;
+    const s0 = sliceSample();
+    SL.c = savedC;
+    const out = { alphaDeg:VLS.alpha, alphaStarDeg:starDeg, regime:'separate',
+      mean:s0.mean, norm:s0.norm, amp:s0.amp, phase:s0.phase,
+      agree:1, sep:2*(1-0.45), data:s0.data, c:0, equatorial:true };
+    return out;
+  }
+  let mx=1e-9;
   for(let k=0;k<VN;k++){
     const v=TAU*k/VN;
     const val=u=>{
@@ -1237,30 +1280,64 @@ function villSample(){
       return grid[gy*W+gx];
     };
     const a=val(sec.uA[k]), b=val(sec.uB[k]);
-    data.push(v, a, b, (isNaN(a)||isNaN(b))?0:a-b);
-    if(!isNaN(a)) dA.push(a); if(!isNaN(b)) dB.push(b);
+    const dd=(isNaN(a)||isNaN(b))?NaN:a-b;
+    data.push(v, a, b, dd);
+    if(!isNaN(a)) mx=Math.max(mx,Math.abs(a));
+    if(!isNaN(b)) mx=Math.max(mx,Math.abs(b));
+    if(!isNaN(dd)) mx=Math.max(mx,Math.abs(dd));
   }
-  /* first harmonic of the difference (phase = linking orientation) */
+  /* first harmonic of the difference (computed over VALID samples only —
+     v2.10.0 divided the mean by VN while pushing NaN→0, biasing stats by
+     valid-sample coverage) */
   let mean=0,re=0,im=0,n=0;
-  for(let k=0;k<VN;k++){ const dd=data[4*k+3]; mean+=dd;
-    const a=TAU*k/VN; re+=dd*Math.cos(a); im+=dd*Math.sin(a); if(dd||dd===0)n++; }
-  mean/=VN; re/=VN; im/=VN;
+  for(let k=0;k<VN;k++){ const dd=data[4*k+3];
+    if(isNaN(dd)) continue;
+    mean+=dd; const a=TAU*k/VN; re+=dd*Math.cos(a); im+=dd*Math.sin(a); n++; }
+  if(n>0){ mean/=n; re/=n; im/=n; }
   const amp=2*Math.hypot(re,im), phase=Math.atan2(im,re);
-  /* linkage: correlation between loop A and loop B traces */
-  let sab=0,sa=0,sb=0,na=0;
+  /* v2.10.1: 'agree' = uncentered cosine similarity of the two traces
+     (was 'link' — NOT a linking number; Pearson was claimed but the code
+     never subtracted means; baseline shifts dominate it; scene-dependent).
+     Added: 'sep' = minimum 3D separation between the two branch curves
+     (geometric proximity — the honest substitute for a linkage meter;
+     linking number is only defined for disjoint curves and same-plane
+     sections are coplanar, so its value here is always 0 or undefined). */
+  let sab=0,sa2=0,sb2=0,na=0;
   for(let k=0;k<VN;k++){ const a=data[4*k+1], b=data[4*k+2];
-    if(!isNaN(a)&&!isNaN(b)){ sab+=a*b; sa+=a*a; sb+=b*b; na++; } }
-  const link=na>0&&sa>0&&sb>0 ? sab/Math.sqrt(sa*sb) : 0;
+    if(!isNaN(a)&&!isNaN(b)){ sab+=a*b; sa2+=a*a; sb2+=b*b; na++; } }
+  const agree=na>0&&sa2>0&&sb2>0 ? sab/Math.sqrt(sa2*sb2) : 0;
+  let sep=Infinity;
+  for(let k=0;k<VN;k++){
+    const a=data[4*k+1], b=data[4*k+2];
+    if(isNaN(a)||isNaN(b)) continue;
+    const v=TAU*k/VN;
+    const p=torusXYZ(sec.uA[k]/TAU, v/TAU), q=torusXYZ(sec.uB[k]/TAU, v/TAU);
+    const dist=Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2]);
+    if(dist<sep) sep=dist;
+  }
+  if(!isFinite(sep)) sep=0;
+  const norm = mean/ (1 + Math.sqrt(Math.max(0,0.45*0.45-d*d)));  /* ρc at obliquity α≈equivalent */
   const reg=villRegime(alpha);
-  return { alphaDeg:VLS.alpha, alphaStarDeg:VALPHA_STAR*180/Math.PI,
-           regime:reg, mean, amp, phase:phase*180/Math.PI, link, data, c:d };
+  return { alphaDeg:VLS.alpha, alphaStarDeg:starDeg, regime:reg, snapped,
+           mean, norm, amp, phase:phase*180/Math.PI, agree, sep, data, c:d };
 }
 function drawVill(){
   const cv=document.getElementById('villCv'); if(!cv) return;
   const g=cv.getContext('2d'), w=cv.width, h=cv.height;
   g.clearRect(0,0,w,h);
   const s=villSample();
-  let mx=1e-9; for(let k=0;k<s.data.length;k++) if(!isNaN(s.data[k])) mx=Math.max(mx,Math.abs(s.data[k]));
+  /* v2.10.1: mx computed in villSample over AMPLITUDE entries only
+     (v2.10.0 maxed over the whole data array including the angle column,
+     so a field near TAU*0.99 dominated the scale of weak traces). */
+  let mx=s.amp>1e-9 ? s.amp : 1e-9;
+  mx=Math.max(mx, 1e-9);
+  // also cover raw a/b magnitudes so the trace rows don't clip
+  for(let k=0;k<VN;k++){
+    const a=s.data[4*k+1], b=s.data[4*k+2], dd=s.data[4*k+3];
+    if(!isNaN(a)) mx=Math.max(mx,Math.abs(a));
+    if(!isNaN(b)) mx=Math.max(mx,Math.abs(b));
+    if(!isNaN(dd)) mx=Math.max(mx,Math.abs(dd));
+  }
   const rows=[['loop A','#4fe08a'],['loop B','#4f9fe0'],['diff','#e0b04f']];
   const rh=(h-16)/3;
   rows.forEach((row,ri)=>{
@@ -1276,14 +1353,19 @@ function drawVill(){
     g.stroke();
     g.fillStyle='rgba(255,255,255,0.55)'; g.font='10px monospace'; g.fillText(lab,4,y0+12);
   });
-  g.fillStyle='#e0b04f'; g.font='10px monospace';
-  g.fillText('α='+s.alphaDeg.toFixed(1)+'° α*='+s.alphaStarDeg.toFixed(1)+'° '+s.regime+
-             '  Δ̄='+s.mean.toFixed(2)+' amp='+s.amp.toFixed(2)+' ph='+s.phase.toFixed(0)+'° link='+s.link.toFixed(2),
-             4, h-5);
-  /* regime flag: color the label when in the post-critical regime */
+  /* v2.10.1: two shorter readout lines (v2.10.0's single line overflowed the
+     280px canvas — 'link=' began at char 52 and ran past the edge) */
+  g.fillStyle='#e0b04f'; g.font='9px monospace';
+  const regimeColor = s.regime==='near α*' ? '#ffd166' : s.regime==='separated' ? '#ef476f' : '#4fe08a';
+  g.fillStyle=regimeColor;
+  g.fillText('α='+s.alphaDeg.toFixed(1)+'° α*='+s.alphaStarDeg.toFixed(2)+'° '+s.regime+(s.snapped?' [snap]':''), 4, h-15);
+  g.fillStyle='#e0b04f';
+  g.fillText('Δ̄='+s.mean.toFixed(1)+' norm='+s.norm.toFixed(2)+' amp='+s.amp.toFixed(1), 4, h-15+9);
+  g.fillStyle='rgba(255,255,255,0.7)';
+  g.fillText('agree='+s.agree.toFixed(2)+' sep='+s.sep.toFixed(3)+' ph='+s.phase.toFixed(0)+'°', 4, h-4);
   const regEl=document.getElementById('v-vls-reg');
   if(regEl){ regEl.textContent=s.regime;
-    regEl.style.color = s.regime==='tangent' ? '#ffd166' : s.regime==='interlaced' ? '#ef476f' : '#4fe08a'; }
+    regEl.style.color = regimeColor; }
 }
 function stepVill(){ if(VLS.on) drawVill(); }
 
