@@ -681,19 +681,26 @@ const _f=[0,0,0];
    for measuring τ_sim from a single run). Energy ledger: P_in (injected),
    P_loss (dissipation: leakage + trail evaporation), W_stored (coherent
    trail mass + momentum coherence), τ_sim = W_stored / P_in. */
-const CF = { mode:'closed', q:1.0, kappa:0.0, drift:0.0, decay:0, strength:1.0 };
+const CF = { mode:'closed', q:1.0, kappa:0.0, drift:0.0, shutdecay:0.97, arrows:false };
 /* per-step ledger + field-decay envelope for the τ_sim protocol */
-const CLEDGER = { P_in:0, P_loss:0, W_stored:0, tauSim:0, history:[], lastW:0 };
+const CLEDGER = { P_in:0, P_loss:0, W_stored:0, tauSim:0, crossField:0, history:[] };
 function confDir(gx, gy){
-  /* field direction in chart coords at a point: slope dv/du = q exactly
-     (toroidal turns per poloidal turn → Δu=1, Δv=q). v2.11.0-rc bug caught
-     in verification: earlier version returned (1/q, q) → slope q². */
-  const u = 1, v = CF.q, L = Math.hypot(u, v) || 1;
-  return [u/L, v/L];
-}
-function confApply(){
-  /* per-agent field coupling: steer heading toward field direction, add
-     cross-field drift. Called inside stepAgents loop when mode != closed. */
+  /* v2.11.2: seam-aware field direction. The field is a uniform slope-q
+     in the BASE image; an agent sitting on a mirrored image of the chart
+     must read the direction transformed through its seam rule, else the
+     field contradicts itself across the weld (slope q maps to −q under
+     the x-flip). Uses the sim's own crossed() logic: count the agent's
+     mirrored images and apply flipV per crossing. Uniform in the base
+     image; position-Dependent only through the fold — the (gx,gy) args
+     are now load-bearing. */
+  const [f0x, f0y] = [1, CF.q];
+  let vx = f0x, vy = f0y;
+  const L0 = Math.hypot(vx, vy) || 1; vx/=L0; vy/=L0;
+  /* which image is (gx,gy) on? mirror the vector per flip crossing */
+  if (topo.y.flip && Math.floor(((gy % (2*H)) + 2*H) % (2*H) / H) === 1) [vx, vy] = flipV(vx, vy, topo.y.flip);
+  if (topo.x.flip && Math.floor(((gx % (2*W)) + 2*W) % (2*W) / W) === 1) [vx, vy] = flipV(vx, vy, topo.x.flip);
+  const L = Math.hypot(vx, vy) || 1;
+  return [vx/L, vy/L];
 }
 function confLedgerStep(){
   /* one measure of the energy ledger */
@@ -706,22 +713,43 @@ function confLedgerStep(){
   /* coherent (stored) trail: cells above threshold thr */
   let coherent = 0;
   for(let i=0;i<grid.length;i++) if(grid[i] > P.thr*50) coherent += grid[i];
-  /* momentum coherence: alignment of the population's momentum field */
-  let coh = 0, wsum = 0;
+  /* v2.11.2: momentum coherence = true ALIGNMENT of the population's
+     momentum field (v2.11.0 summed raw magnitudes — mislabeled, scaled
+     with intensity not alignment, contaminating W_stored). Mean of
+     |mom| / (cell mass) = order parameter in [0,1]: 1 = all deposits
+     moving the same way, 0 = random. */
+  let coh = 0, cn = 0;
   if(P.mass > 0){
     for(let i=0;i<momX.length;i++){
       const w = Math.hypot(momX[i], momY[i]); if(w<1e-9) continue;
-      coh += w; wsum++;
+      coh += w; cn++;
     }
+    coh = cn>0 ? coh/(cn*P.mass) : 0;   /* mean magnitude / deposit size = alignment fraction */
+    if(coh > 1) coh = 1;
   }
-  /* leakage: cross-field heading error × population (drift acts as proxy) */
-  const P_leak = parts.length * (CF.drift + (1 - CF.kappa) * 0.002);
-  CLEDGER.P_in = CF.mode === 'field-on' ? CF.kappa * 40 / CF.q : CLEDGER.P_in * CF.decay;
+  /* v2.11.2: leakage from ACTUAL cross-field heading error (v2.11.0
+     billed the drift DIAL value — ~2 orders under the real transport).
+     |sin(angle between heading and local field)| per agent, averaged:
+     that is the fraction of motion not along the field. */
+  let xf = 0, xn = 0;
+  for(let i=0;i<parts.length;i++){
+    const p = parts[i];
+    const [fdx, fdy] = confDir(p.x, p.y);
+    const fa = Math.atan2(fdy, fdx);
+    xf += Math.abs(Math.sin(fa - p.a)); xn++;
+  }
+  const crossField = xn>0 ? xf/xn : 0;
+  const P_leak = parts.length * crossField * 2;
+  CLEDGER.P_in = CF.mode === 'field-on' ? CF.kappa * 40 / CF.q
+               : CLEDGER.P_in * CF.shutdecay;   /* v2.11.2: decaying mode decays (was ×CF.decay=0 → dead) */
+  if(CF.mode === 'field-on') CLEDGER.P_in0 = CLEDGER.P_in;  /* reference for the coupling-decay ratio */
+  if(CF.mode === 'field-decaying' && !CLEDGER.P_in0) CLEDGER.P_in0 = CLEDGER.P_in || 1e-9;
   CLEDGER.P_loss = P_evap * 0.01 + P_leak;
-  CLEDGER.W_stored = coherent * 0.01 + coh * 0.1;
+  CLEDGER.W_stored = coherent * 0.01 + coh * 100;
   CLEDGER.tauSim = CLEDGER.P_in > 1e-9 ? CLEDGER.W_stored / CLEDGER.P_in : 0;
   CLEDGER.history.push(CLEDGER.W_stored);
   if(CLEDGER.history.length > 600) CLEDGER.history.shift();
+  CLEDGER.crossField = +crossField.toFixed(3);
 }
 
 function stepAgents(){
@@ -769,9 +797,15 @@ function stepAgents(){
        cross-field drift ν (random heading kick perpendicular-ish).
        The field is agent-independent: confDir doesn't read the grid. */
     if(CF.mode !== 'closed' && CF.kappa > 0){
+      /* v2.11.2 (Astra finding): coupling strength must decay WITH the
+         billed power in field-decaying mode — otherwise the mode bills
+         zero power while still steering at full κ (free field = worse
+         than the bug it replaced). effKappa = κ × sqrt(P_in/P_in0). */
+      const effKappa = CF.mode === 'field-on' ? CF.kappa
+                     : CF.kappa * Math.sqrt(Math.min(1, CLEDGER.P_in / Math.max(1e-9, CLEDGER.P_in0 || 1)));
       const [fdx, fdy] = confDir(p.x, p.y);
       const fa = Math.atan2(fdy, fdx);
-      p.a += angDiff(fa, p.a) * CF.kappa;
+      p.a += angDiff(fa, p.a) * effKappa;
       if(CF.drift > 0) p.a += (rnd() - 0.5) * 2 * CF.drift;
     }
     if((ali>0 || adv>0) && (P.ng>0 || P.mass>0)){
@@ -992,6 +1026,7 @@ document.getElementById('vlsOn').addEventListener('change', e=>{
 /* ── confinement field wiring (v2.11) ── */
 document.getElementById('cfm').addEventListener('change', e=>{
   CF.mode = e.target.value;
+  CLEDGER.P_in0 = 0;  /* v2.11.2: reset decay reference on mode switch */
   document.getElementById('v-cfm').textContent = CF.mode;
   if(CF.mode === 'field-decaying' && CLEDGER.P_in === 0){
     /* entering decay with no prior field: seed from a field-on steady state */
@@ -1012,7 +1047,7 @@ document.getElementById('cfn').addEventListener('input', e=>{
   CF.drift = parseFloat(e.target.value);
   document.getElementById('v-cfn').textContent = CF.drift.toFixed(3);
 });
-document.getElementById('cfShow').addEventListener('change', e=>{ CF.strength = e.target.checked ? 1 : 0; });
+document.getElementById('cfShow').addEventListener('change', e=>{ CF.arrows = e.target.checked; });
 document.getElementById('qOn').addEventListener('change', e=>{
   QS.on = e.target.checked;
   if(!QS.on) QS.hist.length = 0;
@@ -1055,6 +1090,9 @@ function resetField(spawn){
   momRef=1; hormRef=1;
   img=ctx.createImageData(W,H);
   parts=new Array(P.N|0);
+  /* v2.11.2: clear winding accumulators — stale qPrev after reseed
+     produced ghost deltas on the first measure */
+  qAccum.length = 0; qPrev.length = 0;
   /* 'disc' is the ancestor's spawn and the interactive default. 'uniform'
      seeds the whole fundamental polygon, so a measurement at the seam is not
      really measuring how far a central blob has spread. */
@@ -1503,6 +1541,11 @@ function qHistSample(){
       /* wrap-aware: nearest image on the chart (period W in x, H in y) */
       if(dx >  W/2) dx -= W; else if(dx < -W/2) dx += W;
       if(dy >  H/2) dy -= H; else if(dy < -H/2) dy += H;
+      /* v2.11.2: mirror the displacement per seam crossing (the step's
+         nearest-image wrap is in PAGE coords; the chart-space displacement
+         on a flip surface also transforms by the seam rule) */
+      if(topo.y.flip && Math.abs(p.y - qPrev[i][1]) > H/2) [dx, dy] = flipV(dx, dy, topo.y.flip);
+      if(topo.x.flip && Math.abs(p.x - qPrev[i][0]) > W/2) [dx, dy] = flipV(dx, dy, topo.x.flip);
       qAccum[i][0] += dx; qAccum[i][1] += dy;
       /* rolling window: exponential decay keeps ~QW effective steps */
       const m2 = qAccum[i][0]*qAccum[i][0] + qAccum[i][1]*qAccum[i][1];
@@ -1534,6 +1577,18 @@ function drawConf(){
     g.fillStyle='rgba(255,255,255,0.4)'; g.font='10px monospace';
     g.fillText('closed system — no field ledger', 4, h/2);
     return;
+  }
+  /* v2.11.2: field-arrow overlay (the checkbox now does something) */
+  if(CF.arrows){
+    g.strokeStyle = 'rgba(120,180,255,0.35)'; g.lineWidth = 1;
+    const step = 30;
+    for(let ay = step/2; ay < h; ay += step) for(let ax = step/2; ax < w; ax += step){
+      const gx = ax/w*W, gy = ay/h*H;
+      const fd = confDir(gx, gy);
+      g.beginPath(); g.moveTo(ax-fd[0]*8, ay-fd[1]*8); g.lineTo(ax+fd[0]*8, ay+fd[1]*8); g.stroke();
+      g.beginPath(); g.moveTo(ax+fd[0]*8, ay+fd[1]*8);
+      g.lineTo(ax+fd[0]*5-fd[1]*3, ay+fd[1]*5+fd[0]*3); g.stroke();
+    }
   }
   const s = qHistSample();
   const mhist = Math.max(1, ...s.hist);
