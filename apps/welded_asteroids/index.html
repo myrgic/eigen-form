@@ -1110,6 +1110,7 @@ function setView3d(on){
     surfGroup.add(poly(samples(t=>[t,0]), 0x8a6fd8, 1));
     /* the field texture itself */
     fieldTex=new THREE.CanvasTexture(texCv);
+    fieldTex.flipY=false;  /* texture rows must match height-sampling rows — flipY default flipped the field vertically vs the relief */
     fieldTex.colorSpace=THREE.SRGBColorSpace;
     const SEG=64, pos=[], uvs=[], idx=[];
     for(let j=0;j<=SEG;j++) for(let i=0;i<=SEG;i++){
@@ -1137,6 +1138,21 @@ function setView3d(on){
     return new THREE.Line(g, new THREE.LineBasicMaterial({color, transparent:true, opacity}));
   }
   function samples(fn, n=96){ const out=[]; for(let i=0;i<=n;i++) out.push(fn(i/n)); return out; }
+
+  /* entities ride the ACTUAL displaced mesh, not the analytic surface:
+     barycentric interpolation on the displaced 64×64 grid, so contour
+     lines and agent points sit ON the rendered triangles (the analytic
+     projector floats/sinks between mesh vertices) */
+  function Pxyz(x, y){
+    const [u, v] = uvOf(x, y), g = fieldMesh.geometry;
+    const p = g.getAttribute('position'), n = Math.sqrt(p.count) - 1;
+    const U = u * n, V = v * n;
+    const i = Math.min(n - 1, Math.floor(U)), j = Math.min(n - 1, Math.floor(V));
+    const s = U - i, t = V - j, a = j * (n + 1) + i;
+    const ids = s + t <= 1 ? [a, a + 1, a + n + 1] : [a + 1, a + n + 2, a + n + 1];
+    const w = s + t <= 1 ? [1 - s - t, s, t] : [1 - t, s + t - 1, 1 - s];
+    return [0, 1, 2].map(c => ids.reduce((sum, k, q) => sum + w[q] * p.array[3 * k + c], 0));
+  }
 
   /* contours + agent sparkline pushed through Pxyz */
   const MAXV=30000;
@@ -1209,7 +1225,7 @@ function setView3d(on){
        trail height — the topology is the terrain, the field is the
        relief. Ridges = built loops riding the surface's curvature. */
     const amp = P.relief * 0.28;
-    if (fieldMesh && amp > 0.001) {
+    if (fieldMesh) {
       const geo=fieldMesh.geometry;
       const bp=geo.getAttribute('basePos'), bn=geo.getAttribute('baseNrm'),
             uv=geo.getAttribute('uv'), posA=geo.getAttribute('position');
