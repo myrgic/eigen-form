@@ -390,16 +390,23 @@ const P = { sa:60*Math.PI/180, ra:18*Math.PI/180, so:5,
    position AND heading by the surface's rule, and every field READ of a
    mirrored sample flips the vector it reads back into the square's frame. */
 function wrapPos(p) {                     // p has {x, y, a}
+  /* Each axis folds its own coordinate exactly once per crossing. The
+     while-loops used to re-enter the OTHER axis's branch after a flip
+     (y-fold sets x = W−nx, which can leave [0,W) → the x-loop then
+     flipped AGAIN: double flip = agent teleported to the far edge with
+     a mangled heading — the seam accumulator). One pass per axis. */
   if (topo.x.wrap) {
-    while (p.x < 0) { p.x += W; if (topo.x.flip) flipP(p, topo.x.flip); }
-    while (p.x >= W) { p.x -= W; if (topo.x.flip) flipP(p, topo.x.flip); }
+    /* k = floor division (rounds toward −∞), which is exactly the wrap
+       count for both signs: x=−4.5 → k=−1 → x += 300 ✓; x=320 → k=1 ✓ */
+    let k = Math.floor(p.x / W);
+    if (k !== 0) { p.x -= k * W; if (topo.x.flip) for (let j = 0; j < Math.abs(k); j++) flipP(p, topo.x.flip); }
   } else {
     if (p.x < 0) { p.x = 0; }
     if (p.x >= W) { p.x = W - 1e-4; }
   }
   if (topo.y.wrap) {
-    while (p.y < 0) { p.y += H; if (topo.y.flip) flipP(p, topo.y.flip); }
-    while (p.y >= H) { p.y -= H; if (topo.y.flip) flipP(p, topo.y.flip); }
+    let k = Math.floor(p.y / H);
+    if (k !== 0) { p.y -= k * H; if (topo.y.flip) for (let j = 0; j < Math.abs(k); j++) flipP(p, topo.y.flip); }
   } else {
     if (p.y < 0) { p.y = 0; }
     if (p.y >= H) { p.y = H - 1e-4; }
@@ -432,10 +439,12 @@ function momRead(x, y, out) {
   const w00=(1-tx)*(1-ty), w10=tx*(1-ty), w01=(1-tx)*ty, w11=tx*ty;
   let vx = momX[a+i0]*w00+momX[a+i1]*w10+momX[b+i0]*w01+momX[b+i1]*w11;
   let vy = momY[a+i0]*w00+momY[a+i1]*w10+momY[b+i0]*w01+momY[b+i1]*w11;
-  /* the folded read: on mirrored cells the vector is read through the seam */
-  const cx = x - Math.floor(x/(2*W))*0, cy = y;   // mirrored iff foldRead flipped
-  if (topo.x.flip && Math.floor((((x%W)+W)%W + 0) / W) === 0 && Math.floor(((x % (2*W)) + 2*W) % (2*W) / W) === 1) { vx = -vx; }
-  if (topo.y.flip && Math.floor(((y % (2*H)) + 2*H) % (2*H) / H) === 1) { vy = -vy; }
+  /* the folded read: on mirrored cells the vector is read through the seam.
+     Crossing the y-seam mirrors the X coordinate → the heading reflects
+     about the vertical axis → VX flips (Klein, Möbius).
+     Crossing the x-seam mirrors the Y coordinate → VY flips (projective). */
+  if (topo.y.flip && Math.floor(((y % (2*H)) + 2*H) % (2*H) / H) === 1) { vx = -vx; }
+  if (topo.x.flip && Math.floor(((x % (2*W)) + 2*W) % (2*W) / W) === 1) { vy = -vy; }
   out[0]=vx; out[1]=vy;
 }
 const _m=[0,0];
@@ -467,35 +476,71 @@ const Noise = {
 };
 
 /* ── diffusion + decay (ancestor, torus) ───────────────────────────── */
+/* neighbor index across a boundary, honoring the surface's gluing:
+   a mirrored seam samples the MIRRORED cell of the opposite row (the
+   pullback of a scalar on the Klein bottle is mirror-periodic, so the
+   y-neighbour of (x,0) is (W−1−x, H−1)). Plain torus wrap here was the
+   slow accumulator: flux at a mirrored seam never cancels, and mass
+   got pumped into the two seam rows over ~a minute. */
+function nb(x, y){
+  let fx = ((x % W) + W) % W, fy = ((y % H) + H) % H;
+  if (topo.x.flip && (x < 0 || x >= W)) fx = W - 1 - fx;
+  if (topo.y.flip && (y < 0 || y >= H)) fx = W - 1 - fx;
+  if (topo.x.flip === 'y' && (x < 0 || x >= W)) fy = H - 1 - fy;
+  if (topo.y.flip === 'y' && (y < 0 || y >= H)) fy = H - 1 - fy;
+  return grid[fy * W + fx];
+}
 function diffuseDecay(){
   for(let y=0;y<H;y++){
     const r=y*W;
     for(let x=0;x<W;x++){
-      const l=x===0?r+W-1:r+x-1, rt=x===W-1?r:r+x+1;
-      tmp[r+x]=(grid[l]+grid[r+x]+grid[rt])/3;
+      const l = nb(x-1,y), rt = nb(x+1,y);
+      tmp[r+x]=(l+grid[r+x]+rt)/3;
     }
   }
   const d=P.dec;
+  const nbT = (x, y) => {
+    let fx = ((x % W) + W) % W, fy = ((y % H) + H) % H;
+    if (topo.x.flip && (x < 0 || x >= W)) fx = W - 1 - fx;
+    if (topo.y.flip && (y < 0 || y >= H)) fx = W - 1 - fx;
+    if (topo.x.flip === 'y' && (x < 0 || x >= W)) fy = H - 1 - fy;
+    if (topo.y.flip === 'y' && (y < 0 || y >= H)) fy = H - 1 - fy;
+    return tmp[fy * W + fx];
+  };
   for(let y=0;y<H;y++){
-    const up=(y===0?H-1:y-1)*W, dn=(y===H-1?0:y+1)*W, r=y*W;
-    for(let x=0;x<W;x++) grid[r+x]=((tmp[up+x]+tmp[r+x]+tmp[dn+x])/3)*d;
+    const r=y*W;
+    for(let x=0;x<W;x++){
+      const up = nbT(x,y-1), dn = nbT(x,y+1);
+      grid[r+x]=((up+tmp[r+x]+dn)/3)*d;
+    }
   }
 }
 function diffuseDecayMom(){
+  /* momentum: same glued neighbor sampling, and across a mirrored seam
+     the VECTOR carries the mirror too — the x-component flips when the
+     seam mirrors x, the y-component flips when the seam mirrors y */
+  const mnb = (F, x, y, cx) => {
+    let fx = ((x % mW) + mW) % mW, fy = ((y % mH) + mH) % mH;
+    let s = 1;
+    if (topo.x.flip && (x < 0 || x >= mW)) { if (cx === 'x') s = -s; fx = mW - 1 - fx; }
+    if (topo.y.flip && (y < 0 || y >= mH)) { if (cx === 'x') s = -s; fx = mW - 1 - fx; }
+    if (topo.x.flip === 'y' && (x < 0 || x >= mW)) { if (cx === 'y') s = -s; fy = mH - 1 - fy; }
+    if (topo.y.flip === 'y' && (y < 0 || y >= mH)) { if (cx === 'y') s = -s; fy = mH - 1 - fy; }
+    return s * F[fy * mW + fx];
+  };
   for(let y=0;y<mH;y++){
     const r=y*mW;
     for(let x=0;x<mW;x++){
-      const l=x===0?r+mW-1:r+x-1, rt=x===mW-1?r:r+x+1;
-      mtX[r+x]=(momX[l]+momX[r+x]+momX[rt])/3;
-      mtY[r+x]=(momY[l]+momY[r+x]+momY[rt])/3;
+      mtX[r+x]=(mnb(momX,x-1,y,'x')+momX[r+x]+mnb(momX,x+1,y,'x'))/3;
+      mtY[r+x]=(mnb(momY,x-1,y,'y')+momY[r+x]+mnb(momY,x+1,y,'y'))/3;
     }
   }
   const d=P.mdec; let acc=0;
   for(let y=0;y<mH;y++){
-    const up=(y===0?mH-1:y-1)*mW, dn=(y===mH-1?0:y+1)*mW, r=y*mW;
+    const r=y*mW;
     for(let x=0;x<mW;x++){
-      const vx=((mtX[up+x]+mtX[r+x]+mtX[dn+x])/3)*d;
-      const vy=((mtY[up+x]+mtY[r+x]+mtY[dn+x])/3)*d;
+      const vx=((mnb(mtX,x,y-1,'x')+mtX[r+x]+mnb(mtX,x,y+1,'x'))/3)*d;
+      const vy=((mnb(mtY,x,y-1,'y')+mtY[r+x]+mnb(mtY,x,y+1,'y'))/3)*d;
       momX[r+x]=vx; momY[r+x]=vy; acc+=Math.hypot(vx,vy);
     }
   }
@@ -511,16 +556,40 @@ function stepAgents(){
   const so=P.so, dep=P.dep, adv=P.adv, ali=P.ali;
   for(let i=0;i<parts.length;i++){
     const p=parts[i];
+    /* Sense through the fold, chirality-aware: a sample that crosses a
+       mirrored seam reads the sheet through the mirror, which swaps its
+       left/right meaning relative to the agent's square frame. Without
+       this, near-seam agents turn the wrong way and pin at the edge —
+       the seam-wall accumulator. F stays F; L and R swap iff the agent's
+       current y-image (and x-image) is mirrored. */
     const sense=(off)=>{
       const a=p.a+off;
       return trailRead(p.x + Math.cos(a)*so, p.y + Math.sin(a)*so);
     };
+    /* the agent's own image: mirrored iff it sits on a fold image != base
+       (always false for wrapped agents) — the samples are what matter */
+    const crossed = (dx, dy) => {
+      const x2 = p.x + dx, y2 = p.y + dy;
+      let m = false;
+      if (topo.y.flip && Math.floor(((y2 % (2*H)) + 2*H) % (2*H) / H) === 1) m = !m;
+      if (topo.x.flip && Math.floor(((x2 % (2*W)) + 2*W) % (2*W) / W) === 1) m = !m;
+      return m;
+    };
+    const mF = crossed(Math.cos(p.a)*so, Math.sin(p.a)*so);
+    const mL = crossed(Math.cos(p.a - P.sa)*so, Math.sin(p.a - P.sa)*so);
+    const mR = crossed(Math.cos(p.a + P.sa)*so, Math.sin(p.a + P.sa)*so);
     const F=sense(0), L=sense(-P.sa), R=sense(P.sa);
-    if(F>L && F>R)      { /* straight */ }
-    else if(F<L && F<R) { p.a += Math.random()<0.5 ? P.ra : -P.ra; }
-    else if(L>R)        { p.a -= P.ra; }
-    else if(R>L)        { p.a += P.ra; }
-    else                { p.a += Math.random()<0.5 ? P.ra : -P.ra; }
+    /* samples on mixed images have incompatible chirality; the honest
+       comparison is between samples in the SAME image as the front.
+       When front and a flank disagree in image, mirror the flank's
+       reading by swapping L/R roles in the rule. */
+    const swapLR = mF !== mL ? 1 : (mF !== mR ? 1 : 0);
+    const Ls = swapLR ? R : L, Rs = swapLR ? L : R;
+    if(F>Ls && F>Rs)      { /* straight */ }
+    else if(F<Ls && F<Rs) { p.a += Math.random()<0.5 ? P.ra : -P.ra; }
+    else if(Ls>Rs)        { p.a -= P.ra; }
+    else if(Rs>Ls)        { p.a += P.ra; }
+    else                  { p.a += Math.random()<0.5 ? P.ra : -P.ra; }
 
     let nx, ny;
     if((ali>0 || adv>0) && (P.ng>0 || P.mass>0)){
@@ -917,9 +986,11 @@ function boy(a,b){
 /* square (x,y) → surface params, honoring the mirror so the texture reads
    through the seam the same way the agents do */
 function uvOf(x, y){
-  const u=((x%W)+W)%W / W;
-  let v=((y%H)+H)%H / H;
-  if (topo.y.flip==='x' && Math.floor(((y%H)+H)%H / H)===1) v = 1 - v;
+  let u=((x%W)+W)%W / W, v=((y%H)+H)%H / H;
+  /* fold the same way foldRead does: the flip TYPE names the axis that
+     mirrors, so the 3D texture matches what the agents actually read */
+  if (topo.y.flip && Math.floor((((y%H)+H)%H) / H) === 1) u = 1 - u;
+  if (topo.x.flip && Math.floor((((x%W)+W)%W) / W) === 1) v = 1 - v;
   return [u, v];
 }
 function Pxyz(x, y){
