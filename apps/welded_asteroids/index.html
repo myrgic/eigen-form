@@ -126,6 +126,11 @@ method:
     default: 8
     unit: percent
     meaning: TARGET COVERAGE, not a level — the invariance that makes β₁ comparable
+  - param: relief
+    label: 3D relief amplitude
+    range: [0, 1]
+    default: 0.6
+    meaning: how far the 3D surface displaces along its normal by the folded trail height — ridges are the swarm's built loops, valleys the evaporated field; the topology is the terrain the field deforms
   - param: proj3d
     label: 3D view
     range: [0, 1]
@@ -298,6 +303,8 @@ limitations:
       <input type="range" id="mass" min="0" max="2" step="0.02" value="1"></div>
     <div class="ctl"><label>Momentum decay <b id="v-mdec">0.940</b></label>
       <input type="range" id="mdec" min="0.700" max="0.995" step="0.005" value="0.940"></div>
+    <div class="ctl"><label>3D relief <b id="v-relief">0.60</b></label>
+      <input type="range" id="relief" min="0" max="1" step="0.05" value="0.6"></div>
     <div class="ctl"><label>Noise gain · exogenous <b id="v-ng">0.00</b></label>
       <input type="range" id="ng" min="0" max="2" step="0.02" value="0"></div>
     <div class="ctl"><label>Noise scale <b id="v-ns">0.0060</b></label>
@@ -381,7 +388,7 @@ let momX, momY, mtX, mtY, momRef = 1;
 let horm, hormRef = 1;
 
 /* defaults: the ancestor's operator regime */
-const P = { sa:60*Math.PI/180, ra:18*Math.PI/180, so:5,
+const P = { relief:0.6, sa:60*Math.PI/180, ra:18*Math.PI/180, so:5,
             dec:0.99, dep:25, adv:0.02, ali:0.02, ns:0.006, dr:0.005, thr:0.08,
             mass:1, mdec:0.94, ng:0, N:7000, b1Target:30, levelMode:'tour' };
 
@@ -772,6 +779,7 @@ bind('adv','adv',v=>v.toFixed(2));
 bind('ali','ali',v=>v.toFixed(2));
 bind('mass','mass',v=>v.toFixed(2));
 bind('mdec','mdec',v=>v.toFixed(3));
+bind('relief','relief', v=>v.toFixed(2));
 bind('ng','ng', v=>v.toFixed(2));
 bind('ns','ns', v=>v.toFixed(4));
 bind('dr','dr', v=>v.toFixed(4));
@@ -985,18 +993,38 @@ function boy(a,b){
 }
 /* square (x,y) → surface params, honoring the mirror so the texture reads
    through the seam the same way the agents do */
+/* fold (u,v) in [0,1)² onto the fundamental square: the flip TYPE names
+   the axis that mirrors, so the texture/relief at every point of the
+   parametrization shows the pullback value the agents actually read */
+function foldUv(u, v){
+  let fx = u, fy = v;
+  if (topo.y.flip && v >= 0.5) fx = 1 - fx;
+  if (topo.x.flip && u >= 0.5) fy = 1 - fy;
+  return [fx, fy];
+}
 function uvOf(x, y){
   let u=((x%W)+W)%W / W, v=((y%H)+H)%H / H;
-  /* fold the same way foldRead does: the flip TYPE names the axis that
-     mirrors, so the 3D texture matches what the agents actually read */
   if (topo.y.flip && Math.floor((((y%H)+H)%H) / H) === 1) u = 1 - u;
   if (topo.x.flip && Math.floor((((x%W)+W)%W) / W) === 1) v = 1 - v;
   return [u, v];
 }
 function Pxyz(x, y){
   const [u, v] = uvOf(x, y);
-  return SURFACES[topo.id](u, v);
+  const base = SURFACES[topo.id](u, v);
+  /* ride the relief: numeric normal from the parametrization + same
+     folded height the mesh displaces by */
+  const e=0.004;
+  const pu=SURFACES[topo.id](Math.min(1, u+e), v), pv=SURFACES[topo.id](u, Math.min(1, v+e));
+  const du=[pu[0]-base[0], pu[1]-base[1], pu[2]-base[2]], dv=[pv[0]-base[0], pv[1]-base[1], pv[2]-base[2]];
+  let n=[du[1]*dv[2]-du[2]*dv[1], du[2]*dv[0]-du[0]*dv[2], du[0]*dv[1]-du[1]*dv[0]];
+  const nl=Math.hypot(...n)||1; n=n.map(c=>c/nl);
+  const [fx, fy]=foldUv(u, v);
+  const gx=Math.min(W-1, Math.floor(fx*W)), gy=Math.min(H-1, Math.floor(fy*H));
+  let h=Math.sqrt(grid[gy*W+gx]*(ref3d>0?1/ref3d:0)); if(h>1)h=1;
+  const s=P.relief*0.28*h;
+  return [base[0]+n[0]*s, base[1]+n[1]*s, base[2]+n[2]*s];
 }
+let ref3d=1;   /* updated by the 3D frame so entity heights match the mesh's normalization */
 
 /* ── three.js 3D panel ─────────────────────────────────────────────── */
 let view3d=true, renderer=null, T3=null;
@@ -1018,6 +1046,9 @@ function setView3d(on){
   catch(e){ document.getElementById('hint3d').textContent='3D unavailable (no WebGL)'; return; }
   renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   const scene=new THREE.Scene(); scene.background=new THREE.Color(0x000000);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const keyL=new THREE.DirectionalLight(0xbfd4ff, 1.1); keyL.position.set(3,5,4); scene.add(keyL);
+  const rimL=new THREE.DirectionalLight(0xa78bfa, 0.5); rimL.position.set(-4,-2,-3); scene.add(rimL);
   const camera=new THREE.PerspectiveCamera(38,1,0.05,100); camera.up.set(0,0,1);
   let theta=0.7, phi=1.05, dist=4.6, lastPtr=null;
   c3.addEventListener('pointerdown',e=>{lastPtr=[e.clientX,e.clientY];c3.setPointerCapture(e.pointerId);});
@@ -1058,10 +1089,12 @@ function setView3d(on){
       idx.push(a,b,c, b,d,c);
     }
     const g=new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos.slice(),3));
+    g.setAttribute('basePos', new THREE.Float32BufferAttribute(pos.slice(),3));  /* undisplaced */
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
     g.setIndex(idx); g.computeVertexNormals();
-    fieldMesh=new THREE.Mesh(g, new THREE.MeshBasicMaterial({map:fieldTex, side:THREE.DoubleSide, transparent:true, opacity:0.92}));
+    g.setAttribute('baseNrm', new THREE.Float32BufferAttribute(g.getAttribute('normal').array.slice(),3));
+    fieldMesh=new THREE.Mesh(g, new THREE.MeshStandardMaterial({map:fieldTex, side:THREE.DoubleSide, roughness:0.75, metalness:0.0, emissive:0x0d3320, emissiveIntensity:0.5}));
     surfGroup.add(fieldMesh);
     scene.add(surfGroup);
   }
@@ -1125,18 +1158,41 @@ function setView3d(on){
       renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
     }
     if (topo.id!==surfId) buildSurface(topo.id);
-    /* repaint the texture from the live grid */
     const {ref}=refs();
-    const d=texCx.createImageData(W,H).data;
+    ref3d = ref;
+    /* repaint the texture from the live grid — texels folded so the
+       parametrization shows the pullback (mirror-correct at seams) */
     const imgd=texCx.getImageData(0,0,W,H);
     const dd=imgd.data, inv=ref>0?1/ref:0;
-    for(let i=0;i<grid.length;i++){
-      let v=Math.sqrt(grid[i]*inv); if(v>1)v=1;
-      const px=i*4;
+    for(let j=0;j<H;j++) for(let i=0;i<W;i++){
+      const [fx, fy] = foldUv(i/W, j/H);
+      const src = (Math.min(H-1, Math.floor(fy*H)))*W + Math.min(W-1, Math.floor(fx*W));
+      let v=Math.sqrt(grid[src]*inv); if(v>1)v=1;
+      const px=(j*W+i)*4;
       dd[px]=v*40; dd[px+1]=v*255; dd[px+2]=v*140; dd[px+3]=255;
     }
     texCx.putImageData(imgd,0,0);
     fieldTex.needsUpdate=true;
+    /* RELIEF: displace vertices along their base normal by the folded
+       trail height — the topology is the terrain, the field is the
+       relief. Ridges = built loops riding the surface's curvature. */
+    const amp = P.relief * 0.28;
+    if (fieldMesh && amp > 0.001) {
+      const geo=fieldMesh.geometry;
+      const bp=geo.getAttribute('basePos'), bn=geo.getAttribute('baseNrm'),
+            uv=geo.getAttribute('uv'), posA=geo.getAttribute('position');
+      const n=bp.count;
+      for(let k=0;k<n;k++){
+        const u=uv.getX(k), v=uv.getY(k);
+        const [fx, fy]=foldUv(u, v);
+        const gx=Math.min(W-1, Math.floor(fx*W)), gy=Math.min(H-1, Math.floor(fy*H));
+        let h=Math.sqrt(grid[gy*W+gx]*inv); if(h>1)h=1;
+        const s=amp*h;
+        posA.setXYZ(k, bp.getX(k)+bn.getX(k)*s, bp.getY(k)+bn.getY(k)*s, bp.getZ(k)+bn.getZ(k)*s);
+      }
+      posA.needsUpdate=true;
+      geo.computeVertexNormals();
+    }
     theta+=0.0006;
     camera.position.set(dist*Math.sin(phi)*Math.cos(theta), dist*Math.sin(phi)*Math.sin(theta), dist*Math.cos(phi));
     camera.lookAt(0,0,0);
