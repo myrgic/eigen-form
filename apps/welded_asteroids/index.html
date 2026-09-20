@@ -226,7 +226,7 @@ limitations:
   canvas#sim{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
   canvas#over{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
   #v3{flex:1 1 50%;position:relative;min-width:0;background:#000;border-left:1px solid var(--line)}
-  canvas#c3{width:100%;height:100%;display:block;cursor:grab}
+  canvas#c3{width:100%;height:100%;display:block;cursor:grab;touch-action:none}
   canvas#c3:active{cursor:grabbing}
   #hint3d{position:absolute;right:10px;bottom:8px;font-size:11px;color:var(--faint);pointer-events:none;font-family:var(--mono)}
 
@@ -256,6 +256,34 @@ limitations:
          padding:9px 16px;font:12.5px var(--mono);color:var(--fg);opacity:0;transition:opacity .4s;pointer-events:none;z-index:9}
   .note{font-size:10.5px;line-height:1.45;color:var(--faint);margin:0}
   .note b{color:var(--dim);font-weight:600}
+
+/* ── mobile / fold layout ─────────────────────────────────────────────
+   Narrow or coarse-pointer: the three fixed panels become a stacked,
+   tabbed stage (sim ⇄ 3D full-width) with the control sidebar as a
+   slide-in drawer behind a toggle. One-handed: drag the 3D, swipe the
+   tabs, tap the drawer. */
+#panelToggle{display:none}
+@media (max-width: 900px), (pointer: coarse) and (max-width: 1100px){
+  #stage{flex-direction:column}
+  #sq, #v3{flex:1 1 50%; border-left:none; border-top:1px solid var(--line)}
+  /* tab bar: two buttons to switch which stage pane is shown */
+  #stageTabs{display:flex; flex:0 0 auto; gap:0; border-bottom:1px solid var(--line)}
+  #stageTabs button{flex:1; padding:10px 0; background:none; color:var(--faint);
+    border:none; border-bottom:2px solid transparent; font:inherit; font-size:13px; cursor:pointer}
+  #stageTabs button.on{color:var(--text); border-bottom-color:var(--accent)}
+  .mobile-sim #sq{display:flex} .mobile-sim #v3{display:none}
+  .mobile-3d #sq{display:none} .mobile-3d #v3{display:flex}
+  /* drawer */
+  #panel{position:fixed; z-index:30; top:0; left:0; bottom:0; width:min(78vw, 340px);
+    transform:translateX(-102%); transition:transform .22s ease; overflow-y:auto;
+    box-shadow:0 0 40px rgba(0,0,0,.6); background:inherit}
+  body.panel-open #panel{transform:translateX(0)}
+  #panelToggle{display:flex; position:fixed; z-index:31; top:10px; left:10px;
+    width:40px; height:40px; align-items:center; justify-content:center;
+    border-radius:8px; border:1px solid var(--line); background:rgba(10,10,18,.85);
+    color:var(--faint); font-size:18px; cursor:pointer}
+  #stage{padding-left:0}
+}
 </style>
 </head>
 <body>
@@ -362,7 +390,12 @@ limitations:
   <p class="note"><b>Closed loop:</b> noise gain at 0 — every structure on screen is agents reading their own deposits, glued onto the selected quotient. The tour levels are the simulation's own.</p>
 </div>
 
+<button id="panelToggle" aria-label="controls">☰</button>
 <div id="stage">
+  <div id="stageTabs">
+    <button id="tabSim" class="on">sim</button>
+    <button id="tab3d">3D</button>
+  </div>
   <div id="sq"><div id="sqbox"><canvas id="sim"></canvas><canvas id="over"></canvas></div></div>
   <div id="v3"><canvas id="c3"></canvas><div id="hint3d">drag to orbit · wheel to zoom</div></div>
 </div>
@@ -862,6 +895,15 @@ document.getElementById('qOn').addEventListener('change', e=>{
 });
 document.getElementById('btnReset').addEventListener('click', ()=>{ resetField(); updateLevelNote(); });
 document.getElementById('btn3d').addEventListener('click', ()=>setView3d(!view3d));
+/* mobile tabs + drawer */
+const bodyCl=document.body.classList;
+if(matchMedia('(max-width: 900px), (pointer: coarse) and (max-width: 1100px)').matches) bodyCl.add('mobile-sim');
+document.getElementById('tabSim').addEventListener('click', ()=>{ bodyCl.add('mobile-sim'); bodyCl.remove('mobile-3d');
+  document.getElementById('tabSim').classList.add('on'); document.getElementById('tab3d').classList.remove('on'); });
+document.getElementById('tab3d').addEventListener('click', ()=>{ bodyCl.add('mobile-3d'); bodyCl.remove('mobile-sim');
+  document.getElementById('tab3d').classList.add('on'); document.getElementById('tabSim').classList.remove('on');
+  if(typeof setView3d==='function') setView3d(true); });
+document.getElementById('panelToggle').addEventListener('click', ()=> bodyCl.toggle('panel-open'));
 /* assigned by the 3D module once the mesh exists; stays a no-op if 3D is unavailable */
 let applyShell=()=>{};
 document.getElementById('shell').addEventListener('change', e=>{ P.shell=e.target.value; applyShell(); });
@@ -1427,6 +1469,13 @@ function setView3d(on){
     lastPtr=[e.clientX,e.clientY]; });
   c3.addEventListener('pointerup',()=>{lastPtr=null;});
   c3.addEventListener('wheel',e=>{e.preventDefault(); dist=Math.min(12,Math.max(1.6,dist*(1+e.deltaY*0.0012)));},{passive:false});
+  /* pinch zoom: two active pointers → distance delta drives dist */
+  const ptrs=new Map(); let pinchD=0;
+  c3.addEventListener('pointerdown',e=>{ ptrs.set(e.pointerId,[e.clientX,e.clientY]); if(ptrs.size===2){ const a=[...ptrs.values()]; pinchD=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]); } });
+  c3.addEventListener('pointermove',e=>{ if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,[e.clientX,e.clientY]);
+    if(ptrs.size===2){ const a=[...ptrs.values()], d=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]);
+      if(pinchD>0) dist=Math.min(12,Math.max(1.6,dist*(pinchD/d))); pinchD=d; } });
+  for(const ev of ['pointerup','pointercancel']) c3.addEventListener(ev,e=>{ ptrs.delete(e.pointerId); pinchD=0; });
 
   /* field texture: grid → canvas → three texture, flipped per the rule */
   const texCv=document.createElement('canvas'); texCv.width=W; texCv.height=H;
