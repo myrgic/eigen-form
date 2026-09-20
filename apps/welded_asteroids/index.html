@@ -703,50 +703,81 @@ function confDir(gx, gy){
   return [vx/L, vy/L];
 }
 function confLedgerStep(){
-  /* one measure of the energy ledger */
-  if(CF.mode === 'closed'){ CLEDGER.P_in = 0; CLEDGER.P_loss = 0; CLEDGER.W_stored = 0; CLEDGER.tauSim = 0; return; }
+  /* one measure of the energy ledger.
+     v2.11.3: compute in ALL modes. The old early-return in closed mode
+     zeroed W_stored, which made the shutoff/bootstrap experiment
+     unobservable exactly when it mattered (the field is OFF and we want
+     to watch the structure die or persist). Only the INPUT is zero in
+     closed mode; stored structure and losses are always measurable. */
   const dec = P.dec, dt = 1;
   /* trail mass + decay loss: what evaporates this step is (1-dec)×mass */
   let mass = 0;
   for(let i=0;i<grid.length;i++) mass += grid[i];
+  const mean = mass / grid.length;
   const P_evap = (1 - dec) * mass;
   /* coherent (stored) trail: cells above threshold thr */
   let coherent = 0;
   for(let i=0;i<grid.length;i++) if(grid[i] > P.thr*50) coherent += grid[i];
+  /* v2.11.3 structure contrast: excess mass above uniform baseline */
+  let contrast = 0;
+  for(let i=0;i<grid.length;i++){ const ex = grid[i] - mean; if(ex > 0) contrast += ex; }
+  /* v2.11.3: W_stored must measure STRUCTURE, not trail mass. The old
+     coherent*0.01 saturates (~175k) for ANY uniform trail field — the
+     bootstrap control run read the same value cold as field-on steady
+     state, so the metric couldn't distinguish a flux band from fog.
+     New definition: trail CONTRAST = coherent mass above the uniform
+     baseline, i.e. sum over cells of max(0, grid[i] - mean). A uniform
+     field scores 0; a concentrated band scores its excess. Momentum
+     alignment keeps its own term. */
   /* v2.11.2: momentum coherence = true ALIGNMENT of the population's
      momentum field (v2.11.0 summed raw magnitudes — mislabeled, scaled
      with intensity not alignment, contaminating W_stored). Mean of
      |mom| / (cell mass) = order parameter in [0,1]: 1 = all deposits
      moving the same way, 0 = random. */
-  let coh = 0, cn = 0;
+  /* v2.11.3 (Opus): the old mean-|mom|/(cn*P.mass) was a density proxy
+     that saturated to 1 — a latch, not an order parameter. True global
+     alignment: |vector sum| / (sum of magnitudes), in [0,1]. */
+  let sxm = 0, sym = 0, smag = 0, coh = 0;
   if(P.mass > 0){
     for(let i=0;i<momX.length;i++){
       const w = Math.hypot(momX[i], momY[i]); if(w<1e-9) continue;
-      coh += w; cn++;
+      sxm += momX[i]; sym += momY[i]; smag += w;
     }
-    coh = cn>0 ? coh/(cn*P.mass) : 0;   /* mean magnitude / deposit size = alignment fraction */
-    if(coh > 1) coh = 1;
+    coh = smag>1e-9 ? Math.hypot(sxm, sym)/smag : 0;
   }
   /* v2.11.2: leakage from ACTUAL cross-field heading error (v2.11.0
      billed the drift DIAL value — ~2 orders under the real transport).
      |sin(angle between heading and local field)| per agent, averaged:
      that is the fraction of motion not along the field. */
-  let xf = 0, xn = 0;
-  for(let i=0;i<parts.length;i++){
-    const p = parts[i];
-    const [fdx, fdy] = confDir(p.x, p.y);
-    const fa = Math.atan2(fdy, fdx);
-    xf += Math.abs(Math.sin(fa - p.a)); xn++;
+  /* v2.11.3 (Opus): cross-field error is only defined against an ACTIVE
+     field. In closed mode confDir is a phantom — measuring against it
+     produced the bogus cf=0.65-in-closed. In decaying mode the error
+     must scale with the applied coupling. No field, no leak term. */
+  let xf = 0, xn = 0, crossField = 0, P_leak = 0;
+  const fieldActive = CF.mode === 'field-on' ||
+    (CF.mode === 'field-decaying' && CLEDGER.P_in > 1e-6);
+  if(fieldActive){
+    const effK = CF.mode === 'field-on' ? CF.kappa
+               : CF.kappa * Math.sqrt(Math.min(1, CLEDGER.P_in / Math.max(1e-9, CLEDGER.P_in0 || 1e-9)));
+    for(let i=0;i<parts.length;i++){
+      const p = parts[i];
+      const [fdx, fdy] = confDir(p.x, p.y);
+      const fa = Math.atan2(fdy, fdx);
+      xf += Math.abs(Math.sin(fa - p.a)); xn++;
+    }
+    crossField = xn>0 ? (xf/xn) * effK : 0;
+    P_leak = parts.length * crossField * 2;
   }
-  const crossField = xn>0 ? xf/xn : 0;
-  const P_leak = parts.length * crossField * 2;
-  CLEDGER.P_in = CF.mode === 'field-on' ? CF.kappa * 40 / CF.q
-               : CLEDGER.P_in * CF.shutdecay;   /* v2.11.2: decaying mode decays (was ×CF.decay=0 → dead) */
-  if(CF.mode === 'field-on') CLEDGER.P_in0 = CLEDGER.P_in;  /* reference for the coupling-decay ratio */
-  if(CF.mode === 'field-decaying' && !CLEDGER.P_in0) CLEDGER.P_in0 = CLEDGER.P_in || 1e-9;
+  /* v2.11.3: input semantics per mode — closed bills 0; decaying carries
+     the seeded P_in down; field-on re-bills each measure. */
+  if(CF.mode === 'closed') CLEDGER.P_in = 0;
+  else if(CF.mode === 'field-on'){ CLEDGER.P_in = CF.kappa * 40 / CF.q; CLEDGER.P_in0 = CLEDGER.P_in; }
+  else { CLEDGER.P_in = CLEDGER.P_in * CF.shutdecay; if(!CLEDGER.P_in0) CLEDGER.P_in0 = CLEDGER.P_in || 1e-9; }
   CLEDGER.P_loss = P_evap * 0.01 + P_leak;
-  CLEDGER.W_stored = coherent * 0.01 + coh * 100;
-  CLEDGER.tauSim = CLEDGER.P_in > 1e-9 ? CLEDGER.W_stored / CLEDGER.P_in : 0;
+  CLEDGER.W_stored = contrast * 0.01 + coh * 100;   /* v2.11.3: structure contrast, not mass */
+  /* v2.11.3 (Opus): tau = W/P_in only at constant P_in (field-on);
+     in decaying mode the denominator vanishes -> ramp then snap. */
+  CLEDGER.tauSim = (CF.mode === 'field-on' && CLEDGER.P_in > 1e-9) ? CLEDGER.W_stored / CLEDGER.P_in : 0;
   CLEDGER.history.push(CLEDGER.W_stored);
   if(CLEDGER.history.length > 600) CLEDGER.history.shift();
   CLEDGER.crossField = +crossField.toFixed(3);
@@ -806,7 +837,9 @@ function stepAgents(){
       const [fdx, fdy] = confDir(p.x, p.y);
       const fa = Math.atan2(fdy, fdx);
       p.a += angDiff(fa, p.a) * effKappa;
-      if(CF.drift > 0) p.a += (rnd() - 0.5) * 2 * CF.drift;
+      /* v2.11.3 (Opus): cross-field drift = kick toward +/-90 deg of
+         the field line (transport ACROSS flux surfaces) */
+      if(CF.drift > 0) p.a += angDiff(fa + (rnd()<0.5 ? Math.PI/2 : -Math.PI/2), p.a) * CF.drift;
     }
     if((ali>0 || adv>0) && (P.ng>0 || P.mass>0)){
       fieldAt(p.x, p.y, _f);
@@ -1026,7 +1059,9 @@ document.getElementById('vlsOn').addEventListener('change', e=>{
 /* ── confinement field wiring (v2.11) ── */
 document.getElementById('cfm').addEventListener('change', e=>{
   CF.mode = e.target.value;
-  CLEDGER.P_in0 = 0;  /* v2.11.2: reset decay reference on mode switch */
+  /* v2.11.3 (Opus): seed the decay reference with the CURRENT P_in so
+     the first decaying measure divides by the true field-on value. */
+  CLEDGER.P_in0 = CLEDGER.P_in > 1e-9 ? CLEDGER.P_in : 0;
   document.getElementById('v-cfm').textContent = CF.mode;
   if(CF.mode === 'field-decaying' && CLEDGER.P_in === 0){
     /* entering decay with no prior field: seed from a field-on steady state */
