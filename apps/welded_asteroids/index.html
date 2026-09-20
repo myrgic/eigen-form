@@ -831,7 +831,7 @@ function fitCanvases(){
 }
 
 /* render + contours (ancestor's pipeline) */
-const RAMP=[[78,30,26],[156,58,42],[212,98,56],[240,166,102],[255,232,198]];
+const RAMP=[[70,52,120],[124,92,200],[167,139,250],[200,180,255],[236,230,255]];  /* violet family — distinct from the green chemical field */
 const LEVELS_C=[0.06,0.11,0.18,0.28,0.42,0.60,0.82];
 let refMax=1;
 function pool(){
@@ -891,9 +891,22 @@ function drawContours(max){
     const col=`${(a[0]+(b[0]-a[0])*f)|0},${(a[1]+(b[1]-a[1])*f)|0},${(a[2]+(b[2]-a[2])*f)|0}`;
     const path=new Path2D();
     buildContour(p*refMax, path);
+    /* seam continuation: a segment touching an edge repeats shifted by
+       the wrap so closed loops read continuously across the weld */
+    const pathW=new Path2D();
+    for(const s of segStore){
+      const nearL=s[0]<CS||s[2]<CS, nearR=s[0]>W-CS||s[2]>W-CS;
+      const nearT=s[1]<CS||s[3]<CS, nearB=s[1]>H-CS||s[3]>H-CS;
+      if(nearL){ pathW.moveTo(s[0]+W,s[1]); pathW.lineTo(s[2]+W,s[3]); }
+      if(nearR){ pathW.moveTo(s[0]-W,s[1]); pathW.lineTo(s[2]-W,s[3]); }
+      if(nearT){ pathW.moveTo(s[0],s[1]+H); pathW.lineTo(s[2],s[3]+H); }
+      if(nearB){ pathW.moveTo(s[0],s[1]-H); pathW.lineTo(s[2],s[3]-H); }
+    }
     contourSegs.push({level:p, segs:segStore.slice()});
-    octx.strokeStyle=`rgba(${col},${(0.06+0.13*p).toFixed(3)})`; octx.lineWidth=3.2-1.5*p; octx.stroke(path);
-    octx.strokeStyle=`rgba(${col},${(0.42+0.58*p).toFixed(3)})`; octx.lineWidth=0.8+0.6*p; octx.stroke(path);
+    octx.strokeStyle=`rgba(${col},${(0.06+0.13*p).toFixed(3)})`; octx.lineWidth=3.2-1.5*p;
+    octx.stroke(path); octx.stroke(pathW);
+    octx.strokeStyle=`rgba(${col},${(0.42+0.58*p).toFixed(3)})`; octx.lineWidth=0.8+0.6*p;
+    octx.stroke(path); octx.stroke(pathW);
   }
   octx.globalCompositeOperation='source-over';
 }
@@ -919,6 +932,21 @@ function render(max){
     octx.moveTo(x*vsx, y*vsy); octx.lineTo((x+o[0]*L)*vsx, (y+o[1]*L)*vsy);
   }
   octx.stroke();
+}
+
+/* agent dots: cyan-white, distinct from the green chemical — sparse
+   sample so the swarm reads as a flow, not noise */
+function drawAgents2D(){
+  octx.fillStyle='rgba(140,240,255,0.85)';
+  const stride=Math.max(1, Math.floor(parts.length/1400));
+  const rx=ov.width/(Math.min(window.devicePixelRatio||1,2))/W;
+  const ry=ov.height/(Math.min(window.devicePixelRatio||1,2))/H;
+  octx.beginPath();
+  for(let i=0;i<parts.length;i+=stride){
+    const a=parts[i], x=a.x*rx, y=a.y*ry;
+    octx.moveTo(x+1.1,y); octx.arc(x,y,1.1,0,7);
+  }
+  octx.fill();
 }
 
 /* ── Easter egg: the asteroids game, hidden ────────────────────────── */
@@ -1068,14 +1096,14 @@ function setView3d(on){
     surfGroup=new THREE.Group(); surfId=id;
     for(let i=0;i<GN;i++){
       const u=i/GN;
-      surfGroup.add(poly(samples(t=>[u,t]), 0x3a3050, 0.35));
+      surfGroup.add(poly(samples(t=>[u,t]), 0x2a2340, 0.35));
     }
     for(let j=0;j<GN;j++){
       const v=j/GN;
-      surfGroup.add(poly(samples(t=>[t,v]), 0x3a3050, 0.35));
+      surfGroup.add(poly(samples(t=>[t,v]), 0x2a2340, 0.35));
     }
-    surfGroup.add(poly(samples(t=>[0,t]), 0x4fa3ff, 1));
-    surfGroup.add(poly(samples(t=>[t,0]), 0xff8a3d, 1));
+    surfGroup.add(poly(samples(t=>[0,t]), 0x9a7ff0, 1));
+    surfGroup.add(poly(samples(t=>[t,0]), 0x8a6fd8, 1));
     /* the field texture itself */
     fieldTex=new THREE.CanvasTexture(texCv);
     fieldTex.colorSpace=THREE.SRGBColorSpace;
@@ -1144,7 +1172,7 @@ function setView3d(on){
     let np=0;
     for(let i=0;i<parts.length && np<4000;i+=stride){
       const p=Pxyz(parts[i].x, parts[i].y);
-      ptPos.set(p, np*3); ptCol.set([0.55,0.95,0.75], np*3); np++;
+      ptPos.set(p, np*3); ptCol.set([0.75,1.0,1.0], np*3); np++;  /* cyan-white agents vs green chemical */
     }
     ptGeo.setDrawRange(0,np); ptGeo.attributes.position.needsUpdate=true; ptGeo.attributes.color.needsUpdate=true;
   }
@@ -1218,6 +1246,7 @@ function loop(now){
   R=refs();
   render(R.ref);
   drawContours(R.ref);
+  drawAgents2D();
   if(frame%20===0) measure(R.cut);
   if(frame%15===0){
     const half=Math.log(0.5)/Math.log(P.dec);
