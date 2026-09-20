@@ -819,6 +819,11 @@ function resetField(){
   hist.length=0;
 }
 window.addEventListener('resize', fitCanvases);
+/* grid→overlay scale, committed once per fit. Every draw path uses these.
+   Re-reading devicePixelRatio at draw time is the bug: the buffer and the
+   transform are stamped with the DPR that was live at fit time, so a later
+   DPR that disagrees puts the whole overlay at 1/DPR scale, top-left. */
+let ovSX=1, ovSY=1;
 function fitCanvases(){
   const sq=document.getElementById('sq'), box=document.getElementById('sqbox');
   cv.width=W; cv.height=H;
@@ -828,7 +833,20 @@ function fitCanvases(){
   const DPR=Math.min(window.devicePixelRatio||1,2);
   ov.width=Math.round(s*DPR); ov.height=Math.round(s*DPR);
   octx.setTransform(DPR,0,0,DPR,0,0);
+  ovSX=s/W; ovSY=s/H;
+  watchDPR();
 }
+/* a window dragged to a display of different pixel density changes
+   devicePixelRatio without changing the window's CSS size, so `resize`
+   never fires. This is the only reliable signal for it. */
+let dprMQ=null;
+function watchDPR(){
+  if(dprMQ) dprMQ.removeEventListener('change', fitCanvases);
+  dprMQ=matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  dprMQ.addEventListener('change', fitCanvases);
+}
+/* layout can change without a window resize (panel reflow, font settle) */
+if(window.ResizeObserver) new ResizeObserver(fitCanvases).observe(document.getElementById('sq'));
 
 /* render + contours (ancestor's pipeline) */
 const RAMP=[[70,52,120],[124,92,200],[167,139,250],[200,180,255],[236,230,255]];  /* violet family — distinct from the green chemical field */
@@ -880,8 +898,7 @@ function drawContours(max){
   pool();
   const inst=max<1e-6?1e-6:max;
   refMax += (inst-refMax)*0.02;
-  const sx=ov.width/(Math.min(window.devicePixelRatio||1,2))/W;
-  const sy=ov.height/(Math.min(window.devicePixelRatio||1,2))/H;
+  const sx=ovSX, sy=ovSY;
   octx.globalCompositeOperation='lighter';
   octx.lineCap='round'; octx.lineJoin='round';
   contourSegs=[];
@@ -922,8 +939,7 @@ function render(max){
   /* vector-field overlay on the square */
   octx.strokeStyle='rgba(167,139,250,0.30)'; octx.lineWidth=0.6;
   const s=Math.max(14, Math.round(W/44)), o=[0,0,0];
-  const vsx=ov.width/(Math.min(window.devicePixelRatio||1,2))/W;
-  const vsy=ov.height/(Math.min(window.devicePixelRatio||1,2))/H;
+  const vsx=ovSX, vsy=ovSY;
   octx.beginPath();
   for(let y=s/2;y<H;y+=s) for(let x=s/2;x<W;x+=s){
     fieldAt(x,y,o);
@@ -939,8 +955,7 @@ function render(max){
 function drawAgents2D(){
   octx.fillStyle='rgba(140,240,255,0.85)';
   const stride=Math.max(1, Math.floor(parts.length/1400));
-  const rx=ov.width/(Math.min(window.devicePixelRatio||1,2))/W;
-  const ry=ov.height/(Math.min(window.devicePixelRatio||1,2))/H;
+  const rx=ovSX, ry=ovSY;
   octx.beginPath();
   for(let i=0;i<parts.length;i+=stride){
     const a=parts[i], x=a.x*rx, y=a.y*ry;
@@ -1275,8 +1290,7 @@ function loop(now){
     document.getElementById('r-tm').textContent=P.mass>0?mhalf.toFixed(1)+' f':'off';
     document.getElementById('r-mratio').textContent=P.mass>0?(mhalf/half).toFixed(2)+'×':'–';
   }
-  sx_=ov.width/(Math.min(window.devicePixelRatio||1,2))/W;
-  sy_=ov.height/(Math.min(window.devicePixelRatio||1,2))/H;
+  sx_=ovSX; sy_=ovSY;
   drawEgg();
   frame++;
   requestAnimationFrame(loop);
