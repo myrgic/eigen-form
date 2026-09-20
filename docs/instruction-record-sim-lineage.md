@@ -63,6 +63,31 @@ levels and knobs to drive the physarium."
   09-20 14:07, untriaged. THIS IS THE TOP OPEN ITEM.
 - Cold handoff written and pushed: docs/welded-asteroids-cold-start.md.
 
+## The eigenthaurus (worked out 09-19, immediately before the sim push)
+
+Operator definition (verbatim): "Cog is the expression of Chaz's interactions with
+the corpus. The traces of his verified input in the output are the measure of Cog."
+Three things at once: the corpus (his voice banked verbatim), the instrument
+(harvest with variable aim), the measure (self-expression mode = pairs as the audit).
+
+State as of 09-20:
+- Bank: projects/eigenthaurus-aphorisms.md — 79 verbatim aphorisms, 9 themes, from
+  127,090 user msgs / 44,594 observatory files. Judgment-harvested, never
+  scorer-trusted. Coined by Chaz mid-session, zero hesitation.
+- Self-expression audit (maiden aim run): projects/self-expression-audit.md —
+  23,927 pairs. Median echo ~2%; coined vocab preserved 5–20%, mostly dropped;
+  verbatim-echo = 0/300 pairs; 65% of surface is operative narration; the residual
+  (rendering's contribution) = physics metaphor, em-dash cadence, second-person
+  assent ritual.
+- Skill: eigenthaurus (workspace-management), six modes. DONE: aphorisms,
+  self-expression. PENDING: verse corpus (HIGHEST PRIORITY — projection over the
+  book repo's §5.x corpus + VOICE-CORPUS-ADDENDUM, not a new dig), book passages,
+  themes, coin-harvest.
+- Book repo: myrgic/thinking-through-distinction-internal; verse corpus source =
+  its corpus/VOICE-CORPUS-ADDENDUM.
+- The verse corpus is the lyric well for found-speech songwriting (Symphony of
+  Science register) — feeds the pass-3+ song work directly.
+
 ## Where these live
 
 - Session archaeology dump: /tmp/sim-archaeology/ (all-slowbro-aug20-sep19.txt is the
