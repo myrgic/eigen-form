@@ -1025,10 +1025,14 @@ function boy(a,b){
    the axis that mirrors, so the texture/relief at every point of the
    parametrization shows the pullback value the agents actually read */
 function foldUv(u, v){
-  let fx = u, fy = v;
-  if (topo.y.flip && v >= 0.5) fx = 1 - fx;
-  if (topo.x.flip && u >= 0.5) fy = 1 - fy;
-  return [fx, fy];
+  /* IDENTITY — deliberately. The surface parametrization is already the
+     folded immersion: it IS the quotient map, so a parametrization point
+     (u,v) corresponds to the square cell (u*W, v*H) directly. Folding
+     again here (v0.22 guess) split the texture along a line the
+     geometry never folds — the operator's "left planes don't line up".
+     The gluing lives in SURFACES[..] and in the sim-side foldRead; the
+     texture/relief must not fold a second time. */
+  return [u, v];
 }
 function uvOf(x, y){
   let u=((x%W)+W)%W / W, v=((y%H)+H)%H / H;
