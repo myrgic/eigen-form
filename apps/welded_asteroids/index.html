@@ -1482,20 +1482,33 @@ function stepVill(){ if(VLS.on) drawVill(); }
    = mean |cos(angle between heading and local field)|. */
 const QW = 64;                       /* window length (steps) */
 const qAccum = [];                   /* per-agent [du, dv] accumulators */
+const qPrev = [];                    /* per-agent previous position [x, y] */
 function qHistSample(){
   const n = parts.length;
-  while(qAccum.length < n) qAccum.push([0,0]);
-  qAccum.length = n;
+  while(qAccum.length < n){ qAccum.push([0,0]); qPrev.push([NaN,NaN]); }
+  qAccum.length = n; qPrev.length = n;
+  /* v2.11.1 FIX: accumulate ACTUAL chart-position deltas, wrap-aware, not
+     heading vectors. v2.11.0 summed cos(a),sin(a) with a decay — but agents
+     parked ON the field direction have the front/back degeneracy (a and
+     a+π give the same tan) and the decay drives the distribution onto a
+     fixed attractor (~1.8) DECOUPLED from the driving q. The sweep showed
+     qPeak ~1.7-1.9 regardless of q at full coherence — impossible if the
+     instrument tracked the field. Position deltas give the path's TRUE
+     winding number q_agent = Δv/Δu; the front/back ambiguity is gone
+     because the displacement vector is what's summed, unambiguously. */
   for(let i=0;i<n;i++){
     const p = parts[i];
-    /* wrap-aware increments: if the step crossed a seam, add the
-       chart-space delta that accounts for the fold (approximate: use
-       unwrapped delta by nearest-image convention) */
-    let du = Math.cos(p.a), dv = Math.sin(p.a);  /* heading = velocity dir */
-    qAccum[i][0] += du; qAccum[i][1] += dv;
-    if(qAccum[i][0]*qAccum[i][0]+qAccum[i][1]*qAccum[i][1] > QW*QW){
-      qAccum[i][0]*=0.9; qAccum[i][1]*=0.9;
+    if(!isNaN(qPrev[i][0])){
+      let dx = p.x - qPrev[i][0], dy = p.y - qPrev[i][1];
+      /* wrap-aware: nearest image on the chart (period W in x, H in y) */
+      if(dx >  W/2) dx -= W; else if(dx < -W/2) dx += W;
+      if(dy >  H/2) dy -= H; else if(dy < -H/2) dy += H;
+      qAccum[i][0] += dx; qAccum[i][1] += dy;
+      /* rolling window: exponential decay keeps ~QW effective steps */
+      const m2 = qAccum[i][0]*qAccum[i][0] + qAccum[i][1]*qAccum[i][1];
+      if(m2 > QW*QW){ qAccum[i][0]*=0.9; qAccum[i][1]*=0.9; }
     }
+    qPrev[i][0] = p.x; qPrev[i][1] = p.y;
   }
   /* histogram of q_agent = atan2-summed ratio, bucketed over [0.2,5] */
   const NB2 = 96, hist = new Array(NB2).fill(0);
