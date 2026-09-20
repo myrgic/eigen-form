@@ -340,6 +340,8 @@ limitations:
     <div class="hd">Quadrant scope</div>
     <div class="ctl"><label><input type="checkbox" id="qOn"> scope on</label></div>
     <canvas id="quadCv" width="280" height="240" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px"></canvas>
+
+    <canvas id="bpmCv" width="280" height="200" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px;margin-top:6px"></canvas>
   </div>
     <div class="ctl"><label>Mask coverage <b id="v-thr">8%</b></label>
       <input type="range" id="thr" min="1" max="40" step="1" value="8"></div>
@@ -1223,6 +1225,68 @@ function drawQuadrant(){
 }
 function stepQuadrant(){ if(QS.on) drawQuadrant(); }
 
+
+/* ── collector plates: the quarters as beam-position monitors ────────
+   Reframe (operator): the quadrant masses are collector plates in a
+   particle accelerator — pickup electrodes sampling a beam. A four-plate
+   BPM does NOT read raw charge; it reads the NORMALIZED DIFFERENCE,
+   which divides out total intensity:
+
+       x = (Q_R - Q_L) / (Q_R + Q_L)      horizontal steering
+       y = (Q_U - Q_D) / (Q_U + Q_D)      vertical steering
+
+   On the torus: the four quarters at meridian angle cut give a 2D
+   steering vector (bx, by) in [−1, 1]². |b| is how off-axis the field's
+   mass sits; atan2(by, bx) is its steering angle — the precession angle
+   in BPM dress. A centered beam reads (0,0) no matter how bright it is;
+   a beam hugging one plate reads toward ±1. The trace of (bx, by) over
+   time IS the gyroscopic precession plot — normalized, total-charge-
+   free, and directly comparable across runs. */
+function plateSignal(){
+  const q=quadrantMasses(QS.cut);
+  const sum=q[0]+q[1]+q[2]+q[3]||1;
+  const w=q.map(x=>x/sum);
+  /* quarters 0..3 at cut, cut+90, cut+180, cut+270 → right, up, left, down */
+  const bx=(w[0]-w[2]), by=(w[1]-w[3]);
+  const mag=Math.hypot(bx,by), ang=Math.atan2(by,bx);
+  return { w, bx, by, mag, ang };
+}
+let bpmHist=[];
+function drawPlates(){
+  const cv=document.getElementById('bpmCv'); if(!cv) return;
+  const g=cv.getContext('2d'), w=cv.width, h=cv.height;
+  g.clearRect(0,0,w,h);
+  const s=plateSignal();
+  const cx=w/2, cy=h/2, rad=Math.min(w,h)/2-14;
+  /* four collector plates at the rim, brightness = charge collected */
+  const mx=Math.max(...s.w, 1e-9);
+  s.w.forEach((m,k)=>{
+    const a=QS.cut+k*Math.PI/2 - Math.PI/2 + Math.PI/4;  /* plates sit at sector centers */
+    g.fillStyle='rgba(79,224,138,'+(0.15+0.75*m/mx).toFixed(2)+')';
+    g.beginPath();
+    const pr=12+10*(m/mx);
+    g.arc(cx+ (rad)*Math.cos(a), cy+(rad)*Math.sin(a), pr, 0, TAU); g.fill();
+    g.strokeStyle='rgba(79,224,138,0.5)'; g.lineWidth=1; g.stroke();
+  });
+  /* normalized steering vector + its trace (the precession plot) */
+  bpmHist.push({bx:s.bx, by:s.by});
+  if(bpmHist.length>180) bpmHist.shift();
+  g.strokeStyle='rgba(224,176,79,0.7)'; g.lineWidth=1; g.beginPath();
+  bpmHist.forEach((p,i)=>{
+    const x=cx+p.bx*rad*0.85, y=cy-p.by*rad*0.85;
+    i? g.lineTo(x,y) : g.moveTo(x,y);
+  });
+  g.stroke();
+  g.fillStyle='#e8e8ff';
+  g.beginPath(); g.arc(cx+s.bx*rad*0.85, cy-s.by*rad*0.85, 3.5, 0, TAU); g.fill();
+  /* crosshair */
+  g.strokeStyle='rgba(255,255,255,0.1)';
+  g.beginPath(); g.moveTo(cx-rad,cy); g.lineTo(cx+rad,cy); g.moveTo(cx,cy-rad); g.lineTo(cx,cy+rad); g.stroke();
+  g.fillStyle='#e0b04f'; g.font='10px monospace';
+  g.fillText(`b=[${s.bx.toFixed(2)}, ${s.by.toFixed(2)}]  |b|=${s.mag.toFixed(3)}  steer=${(s.ang*180/Math.PI).toFixed(0)}\u00b0`, 4, h-6);
+}
+function stepPlates(){ if(QS.on) drawPlates(); }
+
 /* ── Easter egg: the asteroids game, hidden ────────────────────────── */
 let egg = null;   // {x,y,vx,vy,a,hand,cool}
 window.addEventListener('keydown', e=>{
@@ -1559,7 +1623,7 @@ function simStep(dtReal){
   if(P.mass>0) diffuseDecayMom();
   stepAgents();
   if (egg) stepEgg(dtReal||0);
-  if(frame%20===0){ measure(refs().cut); stepSlice(); stepQuadrant(); }
+  if(frame%20===0){ measure(refs().cut); stepSlice(); stepQuadrant(); stepPlates(); }
   frame++;
 }
 
@@ -1610,7 +1674,7 @@ function loop(now){
 
 /* ── test port ─────────────────────────────────────────────────────── */
 window.__welded={
-  TOPOLOGIES, LEVELS, SURFACES, P, slice: () => sliceSample(), SL, com: () => fieldCOM(), quadrants: () => quadrantMasses(QS.cut), QS,
+  TOPOLOGIES, LEVELS, SURFACES, P, slice: () => sliceSample(), SL, com: () => fieldCOM(), quadrants: () => quadrantMasses(QS.cut), plates: () => plateSignal(), QS,
   get topo(){return topo;}, get grid(){return grid;}, get W(){return W;}, get H(){return H;},
   get parts(){return parts;}, get B(){return B;}, get egg(){return egg;},
   get frames(){return frame;}, get refsNow(){return R;},
