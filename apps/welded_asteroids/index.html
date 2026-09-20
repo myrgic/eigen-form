@@ -902,6 +902,12 @@ function drawContours(max){
   octx.globalCompositeOperation='lighter';
   octx.lineCap='round'; octx.lineJoin='round';
   contourSegs=[];
+  /* buildContour works in GRID units (0..W) because segStore is reused for
+     the 3D push, which needs grid coordinates. The strokes therefore have to
+     carry the grid→CSS scale themselves — without this the contours draw one
+     grid unit per CSS pixel, i.e. a W-sized patch in the top-left of an
+     s-sized box. Line widths are authored in CSS px, so divide them back out. */
+  octx.save(); octx.scale(sx,sy);
   for(const p of LEVELS_C){
     const t=0.30+0.70*p, x=t*(RAMP.length-1), i=Math.min(RAMP.length-2, Math.floor(x)), f=x-i;
     const a=RAMP[i], b=RAMP[i+1];
@@ -920,11 +926,12 @@ function drawContours(max){
       if(nearB){ pathW.moveTo(s[0],s[1]-H); pathW.lineTo(s[2],s[3]-H); }
     }
     contourSegs.push({level:p, segs:segStore.slice()});
-    octx.strokeStyle=`rgba(${col},${(0.06+0.13*p).toFixed(3)})`; octx.lineWidth=3.2-1.5*p;
+    octx.strokeStyle=`rgba(${col},${(0.06+0.13*p).toFixed(3)})`; octx.lineWidth=(3.2-1.5*p)/sx;
     octx.stroke(path); octx.stroke(pathW);
-    octx.strokeStyle=`rgba(${col},${(0.42+0.58*p).toFixed(3)})`; octx.lineWidth=0.8+0.6*p;
+    octx.strokeStyle=`rgba(${col},${(0.42+0.58*p).toFixed(3)})`; octx.lineWidth=(0.8+0.6*p)/sx;
     octx.stroke(path); octx.stroke(pathW);
   }
+  octx.restore();
   octx.globalCompositeOperation='source-over';
 }
 function render(max){
@@ -1302,6 +1309,7 @@ window.__welded={
   get topo(){return topo;}, get grid(){return grid;}, get W(){return W;}, get H(){return H;},
   get parts(){return parts;}, get B(){return B;}, get egg(){return egg;},
   get frames(){return frame;}, get refsNow(){return R;},
+  get ovScale(){return [ovSX,ovSY,ov.width,ov.height,octx.getTransform().a];},
   setSurface:(i)=>setSurface(i,false),
   loadLevel:(i)=>loadLevel(i),
   fold:(x,y)=>{ const p={x,y,a:0}; wrapPos(p); return [p.x,p.y]; },
