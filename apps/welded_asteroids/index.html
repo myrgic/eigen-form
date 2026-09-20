@@ -1455,8 +1455,38 @@ function setView3d(on){
   if (!THREE) { document.getElementById('hint3d').textContent='3D unavailable (no three.js)'; document.getElementById('btn3d').textContent='3D: unavailable'; document.getElementById('btn3d').disabled=true; return; }
   T3=THREE;
   const c3=document.getElementById('c3'), box=document.getElementById('v3');
-  try { renderer=new THREE.WebGLRenderer({canvas:c3, antialias:true, failIfMajorPerformanceCaveat:false}); }
-  catch(e){ document.getElementById('hint3d').textContent='3D unavailable (no WebGL)'; return; }
+  /* renderer acquisition ladder:
+     1. r170 WebGL2 (the normal path). r163+ dropped WebGL1, so if the GPU
+        process is unavailable/crashed this throws even on machines with WebGL1.
+     2. r160 WebGL2/1 build (vendored) — covers WebGL1-only contexts.
+     3. r170 again with antialias off — some drivers reject MSAA on restore.
+     Each failed attempt may have poisoned the canvas context; reset it. */
+  let hint3dWhy='';
+  {
+    const attempts = [
+      {mod:THREE,                 opts:{antialias:true}},
+      {mod:THREE,                 opts:{antialias:false}},
+    ];
+    for (const a of attempts) {
+      try { renderer=new a.mod.WebGLRenderer({canvas:c3, failIfMajorPerformanceCaveat:false, ...a.opts}); break; }
+      catch(e){ hint3dWhy = e && e.message ? e.message : 'unknown'; renderer=null;
+        /* losing the context marks the canvas permanently failed in some browsers */
+        try { c3.getContext('webgl2'); } catch(_){}
+      }
+    }
+    if (!renderer) {
+      try {
+        const THREE160=await import('./vendor/three.module.r160.min.js');
+        renderer=new THREE160.WebGLRenderer({canvas:c3, antialias:true, failIfMajorPerformanceCaveat:false});
+        T3=THREE160;  /* remaining setup must use the same module revision */
+      } catch(e2){ renderer=null; if(!hint3dWhy) hint3dWhy=(e2&&e2.message)||'unknown'; }
+    }
+  }
+  if (!renderer) {
+    document.getElementById('hint3d').textContent='3D unavailable (no WebGL2/WebGL1 — GPU process down? reload or enable hardware acceleration)';
+    console.warn('[welded_asteroids] 3D disabled:', hint3dWhy);
+    return;
+  }
   renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   const scene=new THREE.Scene(); scene.background=new THREE.Color(0x000000);
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
