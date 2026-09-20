@@ -52,6 +52,7 @@
   }
   .badge.frozen { color: var(--faint); }
   .badge.sdk { color: var(--accent); border-color: var(--accent); }
+  .badge.unvetted { color: #e0b04f; border-color: #e0b04f; }
 
   /* Provenance + changes disclosure, fix #5: real <details> markup at all
      sizes, closed by default; opened programmatically at desktop widths
@@ -201,6 +202,11 @@
       const m = /^eigen-form@(\d+\.\d+\.\d+)/.exec(built);
       const version = m ? m[1] : built;
       return '<div class="badges"><span class="badge sdk">built on eigen-form ' + version + '</span></div>';
+    }
+    // Unvetted shelf label: an app whose lane hasn't been through review
+    // (vetted: true in its manifest) carries a visible warning badge.
+    if (app.vetted === false) {
+      return '<div class="badges"><span class="badge unvetted">unvetted &mdash; not yet reviewed</span></div>';
     }
     // instrument-view: no app of this kind exists yet; fall through to no
     // badge rather than guess at a shape for an unimplemented kind.
