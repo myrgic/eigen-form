@@ -1447,7 +1447,13 @@ function setView3d(on){
   document.getElementById('btn3d').textContent = '3D: '+(view3d?'on':'off');
   fitCanvases();
 }
-(async ()=>{
+/* 3D init is DEFERRED on mobile: v2.9's tabbed stage hides #v3 (display:none)
+   while the sim tab is active, and iOS Safari / several Android browsers fail
+   WebGLRenderer construction on a hidden canvas — the backing store is never
+   allocated. Pre-v2.9 both panes were visible, which is why mobile worked
+   before the update. On mobile we wait for the first reveal (mobile-3d class),
+   then run the same ladder. */
+let start3D = async function(){
   let THREE=null;
   for (const src of ['./vendor/three.module.min.js', 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js']) {
     try { THREE=await import(src); break; } catch(e){}
@@ -1682,9 +1688,27 @@ function setView3d(on){
     renderer.render(scene, camera);
   }
   buildSurface(topo.id);
+  document.getElementById('hint3d').textContent='drag to orbit · wheel to zoom';
   requestAnimationFrame(frame3d);
   setView3d(true);
-})();
+};
+/* mobile: #v3 is display:none until the 3D tab is tapped (hidden-canvas WebGL
+   init fails on iOS Safari) — defer until first reveal. Desktop: #v3 is
+   visible from load, so start immediately. */
+if (document.body.classList.contains('mobile-sim')) {
+  document.getElementById('hint3d').textContent='tap the 3D tab to load the surface view';
+  const mo=new MutationObserver(()=>{
+    if (document.body.classList.contains('mobile-3d')) {
+      mo.disconnect();
+      start3D().catch(e=>console.warn('[welded_asteroids] 3D start failed:', e));
+    }
+  });
+  mo.observe(document.body, {attributes:true, attributeFilter:['class']});
+  /* belt-and-braces: if the class flips before the observer attaches */
+  if (document.body.classList.contains('mobile-3d')) { mo.disconnect(); start3D().catch(()=>{}); }
+} else {
+  start3D().catch(e=>console.warn('[welded_asteroids] 3D start failed:', e));
+}
 
 /* ── main loop ─────────────────────────────────────────────────────── */
 let R={ref:1, cut:Infinity, max:0};
