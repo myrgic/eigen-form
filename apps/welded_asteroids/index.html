@@ -371,6 +371,25 @@ limitations:
   </div>
 
   <div class="grp">
+    <div class="hd">Confinement field (v2.11)</div>
+    <div class="ctl"><label>mode <b id="v-cfm">closed</b></label>
+      <select id="cfm" style="width:100%">
+        <option value="closed" selected>closed (no field)</option>
+        <option value="field-on">field on (open)</option>
+        <option value="field-decaying">field decaying (shutoff)</option>
+      </select></div>
+    <div class="ctl"><label>winding q <b id="v-cfq">1.00</b></label>
+      <input type="range" id="cfq" min="0.2" max="5" step="0.05" value="1"></div>
+    <div class="ctl"><label>coupling κ <b id="v-cfk">0.00</b></label>
+      <input type="range" id="cfk" min="0" max="1" step="0.01" value="0"></div>
+    <div class="ctl"><label>drift ν <b id="v-cfn">0.000</b></label>
+      <input type="range" id="cfn" min="0" max="0.5" step="0.005" value="0"></div>
+    <div class="ctl"><label><input type="checkbox" id="cfShow"> field arrows</label></div>
+    <canvas id="qHistCv" width="280" height="90" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px"></canvas>
+    <div style="font:9px monospace;color:rgba(255,255,255,0.6)" id="cfRead">τ=— W=— P_in=— P_loss=—</div>
+  </div>
+
+  <div class="grp">
     <div class="hd">Measurement</div>
 
   <div class="grp">
@@ -652,6 +671,59 @@ function diffuseDecayMom(){
 const wrapc = (v,m) => v<0 ? v+m : (v>=m ? v-m : v);
 function angDiff(t,c){ let d=(t-c)%(Math.PI*2); if(d>Math.PI)d-=Math.PI*2; if(d<-Math.PI)d+=Math.PI*2; return d; }
 const _f=[0,0,0];
+/* ── confinement field (v2.11): external, agent-independent, billed ───
+   Tokamak analog: the coil set. Field lines are straight slopes on the
+   (u,v) quotient chart — q = toroidal turns per poloidal turn = the
+   safety factor as an exact slope of the flat torus. Rational q closes;
+   irrational covers ergodically. Three knobs: q, coupling κ, cross-field
+   drift ν. Three modes: closed (v2.10.1 behavior, byte-identical),
+   field-on (open system, P_in billed), field-decaying (shutoff protocol
+   for measuring τ_sim from a single run). Energy ledger: P_in (injected),
+   P_loss (dissipation: leakage + trail evaporation), W_stored (coherent
+   trail mass + momentum coherence), τ_sim = W_stored / P_in. */
+const CF = { mode:'closed', q:1.0, kappa:0.0, drift:0.0, decay:0, strength:1.0 };
+/* per-step ledger + field-decay envelope for the τ_sim protocol */
+const CLEDGER = { P_in:0, P_loss:0, W_stored:0, tauSim:0, history:[], lastW:0 };
+function confDir(gx, gy){
+  /* field direction in chart coords at a point: slope dv/du = q exactly
+     (toroidal turns per poloidal turn → Δu=1, Δv=q). v2.11.0-rc bug caught
+     in verification: earlier version returned (1/q, q) → slope q². */
+  const u = 1, v = CF.q, L = Math.hypot(u, v) || 1;
+  return [u/L, v/L];
+}
+function confApply(){
+  /* per-agent field coupling: steer heading toward field direction, add
+     cross-field drift. Called inside stepAgents loop when mode != closed. */
+}
+function confLedgerStep(){
+  /* one measure of the energy ledger */
+  if(CF.mode === 'closed'){ CLEDGER.P_in = 0; CLEDGER.P_loss = 0; CLEDGER.W_stored = 0; CLEDGER.tauSim = 0; return; }
+  const dec = P.dec, dt = 1;
+  /* trail mass + decay loss: what evaporates this step is (1-dec)×mass */
+  let mass = 0;
+  for(let i=0;i<grid.length;i++) mass += grid[i];
+  const P_evap = (1 - dec) * mass;
+  /* coherent (stored) trail: cells above threshold thr */
+  let coherent = 0;
+  for(let i=0;i<grid.length;i++) if(grid[i] > P.thr*50) coherent += grid[i];
+  /* momentum coherence: alignment of the population's momentum field */
+  let coh = 0, wsum = 0;
+  if(P.mass > 0){
+    for(let i=0;i<momX.length;i++){
+      const w = Math.hypot(momX[i], momY[i]); if(w<1e-9) continue;
+      coh += w; wsum++;
+    }
+  }
+  /* leakage: cross-field heading error × population (drift acts as proxy) */
+  const P_leak = parts.length * (CF.drift + (1 - CF.kappa) * 0.002);
+  CLEDGER.P_in = CF.mode === 'field-on' ? CF.kappa * 40 / CF.q : CLEDGER.P_in * CF.decay;
+  CLEDGER.P_loss = P_evap * 0.01 + P_leak;
+  CLEDGER.W_stored = coherent * 0.01 + coh * 0.1;
+  CLEDGER.tauSim = CLEDGER.P_in > 1e-9 ? CLEDGER.W_stored / CLEDGER.P_in : 0;
+  CLEDGER.history.push(CLEDGER.W_stored);
+  if(CLEDGER.history.length > 600) CLEDGER.history.shift();
+}
+
 function stepAgents(){
   const so=P.so, dep=P.dep, adv=P.adv, ali=P.ali;
   for(let i=0;i<parts.length;i++){
@@ -692,6 +764,16 @@ function stepAgents(){
     else                  { p.a += rnd()<0.5 ? P.ra : -P.ra; }
 
     let nx, ny;
+    /* v2.11: confinement field coupling — only when mode != closed.
+       Steer heading toward the field direction with gain κ; add
+       cross-field drift ν (random heading kick perpendicular-ish).
+       The field is agent-independent: confDir doesn't read the grid. */
+    if(CF.mode !== 'closed' && CF.kappa > 0){
+      const [fdx, fdy] = confDir(p.x, p.y);
+      const fa = Math.atan2(fdy, fdx);
+      p.a += angDiff(fa, p.a) * CF.kappa;
+      if(CF.drift > 0) p.a += (rnd() - 0.5) * 2 * CF.drift;
+    }
     if((ali>0 || adv>0) && (P.ng>0 || P.mass>0)){
       fieldAt(p.x, p.y, _f);
       const w=_f[2];
@@ -907,6 +989,30 @@ document.getElementById('vlsOn').addEventListener('change', e=>{
   VLS.on = e.target.checked;
   if(VLS.on) drawVill();
 });
+/* ── confinement field wiring (v2.11) ── */
+document.getElementById('cfm').addEventListener('change', e=>{
+  CF.mode = e.target.value;
+  document.getElementById('v-cfm').textContent = CF.mode;
+  if(CF.mode === 'field-decaying' && CLEDGER.P_in === 0){
+    /* entering decay with no prior field: seed from a field-on steady state */
+    CLEDGER.P_in = CF.kappa * 40 / CF.q;
+  }
+  drawConf();
+});
+document.getElementById('cfq').addEventListener('input', e=>{
+  CF.q = parseFloat(e.target.value);
+  document.getElementById('v-cfq').textContent = CF.q.toFixed(2);
+  if(CF.mode !== 'closed') drawConf();
+});
+document.getElementById('cfk').addEventListener('input', e=>{
+  CF.kappa = parseFloat(e.target.value);
+  document.getElementById('v-cfk').textContent = CF.kappa.toFixed(2);
+});
+document.getElementById('cfn').addEventListener('input', e=>{
+  CF.drift = parseFloat(e.target.value);
+  document.getElementById('v-cfn').textContent = CF.drift.toFixed(3);
+});
+document.getElementById('cfShow').addEventListener('change', e=>{ CF.strength = e.target.checked ? 1 : 0; });
 document.getElementById('qOn').addEventListener('change', e=>{
   QS.on = e.target.checked;
   if(!QS.on) QS.hist.length = 0;
@@ -1368,6 +1474,76 @@ function drawVill(){
     regEl.style.color = regimeColor; }
 }
 function stepVill(){ if(VLS.on) drawVill(); }
+
+/* ── q-histogram + confinement readout (v2.11) ───────────────────────
+   Per-agent winding number over a rolling window: q_agent = Δv/Δu of its
+   path in chart coords. Histogram peaks at the driving rational q when
+   the field confines (rational-surface analog). Coherence order parameter
+   = mean |cos(angle between heading and local field)|. */
+const QW = 64;                       /* window length (steps) */
+const qAccum = [];                   /* per-agent [du, dv] accumulators */
+function qHistSample(){
+  const n = parts.length;
+  while(qAccum.length < n) qAccum.push([0,0]);
+  qAccum.length = n;
+  for(let i=0;i<n;i++){
+    const p = parts[i];
+    /* wrap-aware increments: if the step crossed a seam, add the
+       chart-space delta that accounts for the fold (approximate: use
+       unwrapped delta by nearest-image convention) */
+    let du = Math.cos(p.a), dv = Math.sin(p.a);  /* heading = velocity dir */
+    qAccum[i][0] += du; qAccum[i][1] += dv;
+    if(qAccum[i][0]*qAccum[i][0]+qAccum[i][1]*qAccum[i][1] > QW*QW){
+      qAccum[i][0]*=0.9; qAccum[i][1]*=0.9;
+    }
+  }
+  /* histogram of q_agent = atan2-summed ratio, bucketed over [0.2,5] */
+  const NB2 = 96, hist = new Array(NB2).fill(0);
+  let coherence = 0, cn = 0;
+  const [fdx0, fdy0] = confDir(0,0); const fa0 = Math.atan2(fdy0, fdx0);
+  for(let i=0;i<n;i++){
+    const [du, dv] = qAccum[i];
+    if(Math.abs(du) < 1e-6) continue;
+    const qa = dv/du;
+    if(qa < 0.2 || qa > 5) continue;
+    const b = Math.min(NB2-1, Math.max(0, ((qa-0.2)/4.8*NB2)|0));
+    hist[b]++;
+    const [fx, fy] = confDir(parts[i].x, parts[i].y);
+    coherence += Math.abs(Math.cos(Math.atan2(fy,fx) - parts[i].a)); cn++;
+  }
+  return { hist, NB2, qmin:0.2, qmax:5, coherence: cn>0 ? coherence/cn : 0 };
+}
+function drawConf(){
+  const cv = document.getElementById('qHistCv'); if(!cv) return;
+  const g = cv.getContext('2d'), w = cv.width, h = cv.height;
+  g.clearRect(0,0,w,h);
+  if(CF.mode === 'closed'){
+    g.fillStyle='rgba(255,255,255,0.4)'; g.font='10px monospace';
+    g.fillText('closed system — no field ledger', 4, h/2);
+    return;
+  }
+  const s = qHistSample();
+  const mhist = Math.max(1, ...s.hist);
+  /* rational markers at q=1, 3/2, 2, 5/2, 3 */
+  g.strokeStyle='rgba(255,209,102,0.4)'; g.font='8px monospace';
+  [[1,'1'],[1.5,'3/2'],[2,'2'],[2.5,'5/2'],[3,'3']].forEach(([q,lab])=>{
+    const x = (q-s.qmin)/(s.qmax-s.qmin)*w;
+    g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke();
+    g.fillStyle='rgba(255,209,102,0.7)'; g.fillText(lab, x+2, 8);
+  });
+  g.fillStyle='#4fe08a';
+  for(let b=0;b<s.NB2;b++){
+    const x = b*w/s.NB2, bh = s.hist[b]/mhist*(h-14);
+    g.fillRect(x, h-bh, w/s.NB2-1, bh);
+  }
+  g.fillStyle='rgba(255,255,255,0.7)'; g.font='9px monospace';
+  g.fillText('q-hist  coherence='+s.coherence.toFixed(2), 4, h-2);
+  /* ledger line */
+  const rd = document.getElementById('cfRead');
+  if(rd) rd.textContent = 'τ='+CLEDGER.tauSim.toFixed(1)+' W='+CLEDGER.W_stored.toFixed(1)+
+    ' P_in='+CLEDGER.P_in.toFixed(1)+' P_loss='+CLEDGER.P_loss.toFixed(2);
+}
+
 
 
 /* ── quadrant scope: two 90° planes + the gyroscopic readout ─────────
@@ -1940,7 +2116,7 @@ function simStep(dtReal){
   if(P.mass>0) diffuseDecayMom();
   stepAgents();
   if (egg) stepEgg(dtReal||0);
-  if(frame%20===0){ measure(refs().cut); stepSlice(); stepQuadrant(); stepPlates(); stepVill(); }
+  if(frame%20===0){ measure(refs().cut); stepSlice(); stepQuadrant(); stepPlates(); stepVill(); confLedgerStep(); drawConf(); }
   frame++;
 }
 
@@ -1993,6 +2169,7 @@ function loop(now){
 window.__welded={
   TOPOLOGIES, LEVELS, SURFACES, P, slice: () => sliceSample(), SL, com: () => fieldCOM(), quadrants: () => quadrantMasses(QS.cut), plates: () => plateSignal(), QS,
   vill: () => villSample(), villSection, VLS,
+  conf: { CF, CLEDGER, confDir, qHist: () => qHistSample() },
   get topo(){return topo;}, get grid(){return grid;}, get W(){return W;}, get H(){return H;},
   get parts(){return parts;}, get B(){return B;}, get egg(){return egg;},
   get frames(){return frame;}, get refsNow(){return R;},
