@@ -131,6 +131,11 @@ method:
     range: [0, 1]
     default: 0.6
     meaning: how far the 3D surface displaces along its normal by the folded trail height — ridges are the swarm's built loops, valleys the evaporated field; the topology is the terrain the field deforms
+  - param: shell
+    label: 3D shell rendering
+    values: [solid, translucent, wireframe]
+    default: translucent
+    meaning: how the surface itself is drawn. A closed quotient surface hides its own far side when opaque, so the default is translucent (the mesh stops writing depth and the whole shape — including contours and agents on the far side — reads at once); wireframe exposes the 64×64 parametrization grid; solid is the lit opaque shell
   - param: proj3d
     label: 3D view
     range: [0, 1]
@@ -139,9 +144,10 @@ method:
 observables:
   port: window.__welded
   state: >
-    __welded.state() -> {surface, b0, b1, coverage, agents, level, levelName,
-    solved} — the topology readout measured ON the current surface, level
-    progress, and whether the level's β₁ target has been reached.
+    __welded.state() -> {surface, shell, b0, b1, coverage, agents, level,
+    levelName, solved} — the topology readout measured ON the current surface,
+    how the 3D shell is being drawn, level progress, and whether the level's
+    β₁ target has been reached. __welded.setShell(mode) drives the shell.
   field: >
     __welded.fieldAt(x, y, out) -> [dirX, dirY, weight] — the combined
     exogenous+endogenous field at square coordinates, folded by the
@@ -305,6 +311,12 @@ limitations:
       <input type="range" id="mdec" min="0.700" max="0.995" step="0.005" value="0.940"></div>
     <div class="ctl"><label>3D relief <b id="v-relief">0.60</b></label>
       <input type="range" id="relief" min="0" max="1" step="0.05" value="0.6"></div>
+    <div class="ctl"><label>3D shell</label>
+      <select id="shell">
+        <option value="translucent">translucent</option>
+        <option value="wireframe">wireframe</option>
+        <option value="solid">solid</option>
+      </select></div>
     <div class="ctl"><label>Noise gain · exogenous <b id="v-ng">0.00</b></label>
       <input type="range" id="ng" min="0" max="2" step="0.02" value="0"></div>
     <div class="ctl"><label>Noise scale <b id="v-ns">0.0060</b></label>
@@ -388,7 +400,7 @@ let momX, momY, mtX, mtY, momRef = 1;
 let horm, hormRef = 1;
 
 /* defaults: the ancestor's operator regime */
-const P = { relief:0.6, sa:60*Math.PI/180, ra:18*Math.PI/180, so:5,
+const P = { relief:0.6, shell:'translucent', sa:60*Math.PI/180, ra:18*Math.PI/180, so:5,
             dec:0.99, dep:25, adv:0.02, ali:0.02, ns:0.006, dr:0.005, thr:0.08,
             mass:1, mdec:0.94, ng:0, N:7000, b1Target:30, levelMode:'tour' };
 
@@ -787,6 +799,9 @@ bind('thr','thr',v=>v+'%', v=>v/100);
 bind('b1Target','b1Target', v=>String(v|0));
 document.getElementById('btnReset').addEventListener('click', ()=>{ resetField(); updateLevelNote(); });
 document.getElementById('btn3d').addEventListener('click', ()=>setView3d(!view3d));
+/* assigned by the 3D module once the mesh exists; stays a no-op if 3D is unavailable */
+let applyShell=()=>{};
+document.getElementById('shell').addEventListener('change', e=>{ P.shell=e.target.value; applyShell(); });
 
 const sel = document.getElementById('topo');
 TOPOLOGIES.forEach((t,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=`${t.name} · ${t.word}`; sel.appendChild(o); });
@@ -1152,7 +1167,23 @@ function setView3d(on){
     fieldMesh=new THREE.Mesh(g, new THREE.MeshStandardMaterial({map:fieldTex, side:THREE.DoubleSide, roughness:0.75, metalness:0.0, emissive:0x0d3320, emissiveIntensity:0.5}));
     surfGroup.add(fieldMesh);
     scene.add(surfGroup);
+    applyShell();   /* the mesh is rebuilt on every surface change */
   }
+  /* A closed quotient surface occludes its own far side. Dropping depthWrite —
+     not merely lowering opacity — is what lets the back of the torus, and the
+     contours and agent points riding it, show through; with depth still
+     written the shell would hide them however transparent it looked. */
+  const SHELL={
+    translucent:{wireframe:false, transparent:true,  opacity:0.42, depthWrite:false},
+    wireframe:  {wireframe:true,  transparent:true,  opacity:0.85, depthWrite:false},
+    solid:      {wireframe:false, transparent:false, opacity:1.00, depthWrite:true },
+  };
+  applyShell=()=>{
+    if(!fieldMesh) return;
+    const m=fieldMesh.material, k=SHELL[P.shell]||SHELL.translucent;
+    m.wireframe=k.wireframe; m.transparent=k.transparent;
+    m.opacity=k.opacity; m.depthWrite=k.depthWrite; m.needsUpdate=true;
+  };
   function poly(pts, color, opacity){
     const pos=[];
     for(let i=0;i+1<pts.length;i++) pos.push(...SURFACES[surfId||topo.id](...pts[i]), ...SURFACES[surfId||topo.id](...pts[i+1]));
@@ -1314,7 +1345,8 @@ window.__welded={
   loadLevel:(i)=>loadLevel(i),
   fold:(x,y)=>{ const p={x,y,a:0}; wrapPos(p); return [p.x,p.y]; },
   fieldAt:(x,y)=>{ const o=[0,0,0]; fieldAt(x,y,o); return o; },
-  state(){ return { surface:topo.id, b0:B.b0, b1:B.b1, coverage:B.coverage,
+  setShell:(m)=>{ P.shell=m; document.getElementById('shell').value=m; applyShell(); return P.shell; },
+  state(){ return { surface:topo.id, shell:P.shell, b0:B.b0, b1:B.b1, coverage:B.coverage,
                     agents:parts.length, level:LEVELS[levelIdx].name,
                     target:LEVELS[levelIdx].target, solved:levelSolved, egg:!!egg }; },
   spawnEgg(){ if(!egg && B.b1>=42){ egg={x:W/2,y:H/2,vx:0,vy:0,a:-Math.PI/2,hand:1,cool:0,inv:2}; } return !!egg; },
