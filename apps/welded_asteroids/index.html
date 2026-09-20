@@ -335,6 +335,12 @@ limitations:
 
   <div class="grp">
     <div class="hd">Measurement</div>
+
+  <div class="grp">
+    <div class="hd">Quadrant scope</div>
+    <div class="ctl"><label><input type="checkbox" id="qOn"> scope on</label></div>
+    <canvas id="quadCv" width="280" height="240" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px"></canvas>
+  </div>
     <div class="ctl"><label>Mask coverage <b id="v-thr">8%</b></label>
       <input type="range" id="thr" min="1" max="40" step="1" value="8"></div>
     <div class="read">
@@ -848,6 +854,10 @@ document.getElementById('slcOn').addEventListener('change', e=>{
   SL.on = e.target.checked;
   if(SL.on) drawSlice();
 });
+document.getElementById('qOn').addEventListener('change', e=>{
+  QS.on = e.target.checked;
+  if(!QS.on) QS.hist.length = 0;
+});
 document.getElementById('btnReset').addEventListener('click', ()=>{ resetField(); updateLevelNote(); });
 document.getElementById('btn3d').addEventListener('click', ()=>setView3d(!view3d));
 /* assigned by the 3D module once the mesh exists; stays a no-op if 3D is unavailable */
@@ -1100,6 +1110,118 @@ function drawSlice(){
   g.fillText('\u03c1c='+s.rhoC.toFixed(2)+'  \u0394\u0304='+s.mean.toFixed(2)+'  \u0394\u0304/\u03c1c='+s.norm.toFixed(3)+'  amp='+s.amp.toFixed(2)+'  ph='+((s.phase*180/Math.PI).toFixed(0))+'\u00b0', 4, h-6);
 }
 function stepSlice(){ if(SL.on) drawSlice(); }
+
+
+/* ── quadrant scope: two 90° planes + the gyroscopic readout ─────────
+
+   Two orthogonal planes through the torus axis (the meridian pair at
+   φ_cut and φ_cut+90°) carve the ring into four quarter-sections. Each
+   quarter carries trail mass; the four masses are the vector components
+   of a first moment.
+
+   The field's center of mass is computed EVERY FRAME directly from the
+   grid: sample every cell, map it through the torus embedding to xyz,
+   weight by trail. The torus is the reference frame — the COM comes out
+   in toroidal coordinates, no external reference needed:
+
+     C      the COM in xyz (torus frame)
+     rho    radial offset of the COM from the torus's central ring
+     omega  the angular rate of the COM's precession about the axis,
+             measured frame-to-frame (theta COM(t) − theta COM(t−dt))
+
+   Precession/gyroscopic reading: if the swarm holds a tilted, off-axis
+   structure, its COM orbits the axis — the quadrant diffs + omega
+   measure that "gyroscopic" rotation. A balanced ring has COM on the
+   axis, omega undefined/zero. */
+const QS = { on: false, cut: 0.0, hist: [] };  /* cut = meridian plane angle */
+const QN = 64;
+let lastCOM = null;
+
+function torusXYZ(u, v){
+  const th=TAU*u, ph=TAU*v, R=1.0, r=0.45;
+  return [(R+r*Math.cos(ph))*Math.cos(th), (R+r*Math.cos(ph))*Math.sin(th), r*Math.sin(ph)];
+}
+
+function fieldCOM(){
+  let mx=0, my=0, mz=0, m=0;
+  for(let gy=0; gy<H; gy++) for(let gx=0; gx<W; gx++){
+    const g=grid[gy*W+gx]; if(g<=0) continue;
+    const xyz=torusXYZ(gx/W, gy/H);
+    mx+=g*xyz[0]; my+=g*xyz[1]; mz+=g*xyz[2]; m+=g;
+  }
+  if(m<=0) return null;
+  const C=[mx/m, my/m, mz/m];
+  const rho=Math.hypot(C[0], C[1]);
+  const theta=Math.atan2(C[1], C[0]);
+  let omega=null;
+  if(lastCOM){
+    let d=theta-lastCOM.theta;
+    while(d>Math.PI) d-=TAU; while(d<-Math.PI) d+=TAU;
+    omega=d;  /* per measure-step; the caller supplies dt */
+  }
+  const z=C[2];
+  lastCOM={theta, rho, z};
+  return { C, rho, theta, omega, mass: m, z };
+}
+
+function quadrantMasses(cut){
+  /* two meridian planes at angles cut and cut+PI/2 → four quarters.
+     A cell (theta) belongs to quarter k in [0..3] by its angular sector. */
+  const q=[0,0,0,0];
+  for(let gy=0; gy<H; gy++) for(let gx=0; gx<W; gx++){
+    const g=grid[gy*W+gx]; if(g<=0) continue;
+    const th=TAU*gx/W;
+    let a=th-cut; while(a<0) a+=TAU;
+    const k=Math.floor(a/(Math.PI/2))%4;
+    q[k]+=g;
+  }
+  const tot=q[0]+q[1]+q[2]+q[3]||1;
+  return q.map(x=>x/tot);
+}
+
+function drawQuadrant(){
+  const cv=document.getElementById('quadCv'); if(!cv) return;
+  const g=cv.getContext('2d'), w=cv.width, h=cv.height;
+  g.clearRect(0,0,w,h);
+  const com=fieldCOM(); if(!com) return;
+  const q=quadrantMasses(QS.cut);
+  const cx=w/2, cy=h/2, rad=Math.min(w,h)/2-18;
+  /* the torus ring, seen from above: circle + the two cutting planes */
+  g.strokeStyle='rgba(255,255,255,0.18)'; g.lineWidth=1;
+  g.beginPath(); g.arc(cx,cy,rad,0,TAU); g.stroke();
+  for(const a of [QS.cut, QS.cut+Math.PI/2, QS.cut+Math.PI, QS.cut+3*Math.PI/2]){
+    g.strokeStyle='rgba(224,176,79,0.5)';
+    g.beginPath(); g.moveTo(cx,cy);
+    g.lineTo(cx+rad*Math.cos(a), cy+rad*Math.sin(a)); g.stroke();
+  }
+  /* quarter masses as arc thickness */
+  const mx=Math.max(...q, 1e-9);
+  q.forEach((m,k)=>{
+    const a0=QS.cut+k*Math.PI/2;
+    g.strokeStyle='rgba(79,224,138,0.9)'; g.lineWidth=2+14*(m/mx);
+    g.beginPath(); g.arc(cx,cy,rad,a0+0.06,a0+Math.PI/2-0.06); g.stroke();
+  });
+  /* the COM as a marker, displaced by rho (scaled), with its precession trace */
+  QS.hist.push({theta:com.theta, rho:com.rho});
+  if(QS.hist.length>120) QS.hist.shift();
+  g.strokeStyle='rgba(224,176,79,0.7)'; g.lineWidth=1; g.beginPath();
+  QS.hist.forEach((p,i)=>{
+    const rr=rad*(0.25+0.7*(p.rho/(1.45)));  /* rho in [0, ~1.45] scaled */
+    const x=cx+rr*Math.cos(p.theta), y=cy+rr*Math.sin(p.theta);
+    i? g.lineTo(x,y) : g.moveTo(x,y);
+  });
+  g.stroke();
+  g.fillStyle='#e8e8ff';
+  const rr=rad*(0.25+0.7*(com.rho/1.45));
+  g.beginPath(); g.arc(cx+rr*Math.cos(com.theta), cy+rr*Math.sin(com.theta), 4, 0, TAU); g.fill();
+  /* the text: quadrant balance + gyroscopic scalars */
+  g.fillStyle='#e0b04f'; g.font='10px monospace';
+  const om = com.omega==null ? '–' : (com.omega*180/Math.PI).toFixed(1);
+  const imb = Math.max(...q)-Math.min(...q);
+  g.fillText(`quarters ${q.map(x=>(100*x).toFixed(0)).join('/')}%  imbalance ${(imb*100).toFixed(1)}`, 4, 12);
+  g.fillText(`COM \u03c1=${com.rho.toFixed(3)}  z=${com.z.toFixed(3)}  \u03c9=${om}\u00b0/step`, 4, h-6);
+}
+function stepQuadrant(){ if(QS.on) drawQuadrant(); }
 
 /* ── Easter egg: the asteroids game, hidden ────────────────────────── */
 let egg = null;   // {x,y,vx,vy,a,hand,cool}
@@ -1437,7 +1559,7 @@ function simStep(dtReal){
   if(P.mass>0) diffuseDecayMom();
   stepAgents();
   if (egg) stepEgg(dtReal||0);
-  if(frame%20===0){ measure(refs().cut); stepSlice(); }
+  if(frame%20===0){ measure(refs().cut); stepSlice(); stepQuadrant(); }
   frame++;
 }
 
@@ -1488,7 +1610,7 @@ function loop(now){
 
 /* ── test port ─────────────────────────────────────────────────────── */
 window.__welded={
-  TOPOLOGIES, LEVELS, SURFACES, P, slice: () => sliceSample(), SL,
+  TOPOLOGIES, LEVELS, SURFACES, P, slice: () => sliceSample(), SL, com: () => fieldCOM(), quadrants: () => quadrantMasses(QS.cut), QS,
   get topo(){return topo;}, get grid(){return grid;}, get W(){return W;}, get H(){return H;},
   get parts(){return parts;}, get B(){return B;}, get egg(){return egg;},
   get frames(){return frame;}, get refsNow(){return R;},
