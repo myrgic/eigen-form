@@ -122,11 +122,11 @@
     {
       "id": "welded_asteroids",
       "title": "Welded Asteroids",
-      "description": "Asteroids riding a closed-loop stigmergic field: the ship advects on agent-deposited momentum, the rocks are the trail's own beta_1 contours, both projected onto the quotient surfaces of the topology game.",
+      "description": "The closed-loop stigmergic field itself, living on the quotient surfaces of the topology game: physarum agents, trail and agent-deposited momentum all obey the surface's gluing rule. Six tour levels bind surface + parameter presets + a beta_1 target; 18 declared sliders drive the physarum; the asteroids game survives as a hidden Easter egg (X when beta_1 >= 42).",
       "path": "../apps/welded_asteroids/index.html",
       "kind": "instrument-view",
       "provenance": {
-        "builtOn": "eigen-form@0.4.0 04f57af"
+        "builtOn": "eigen-form@0.4.0 fd5759c"
       },
       "pwa": {
         "installable": false
