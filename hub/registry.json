@@ -122,7 +122,7 @@
     {
       "id": "welded_asteroids",
       "title": "Welded Asteroids",
-      "description": "The closed-loop stigmergic field itself, living on the quotient surfaces of the topology game: physarum agents, trail and agent-deposited momentum all obey the surface's gluing rule. Six tour levels bind surface + parameter presets + a beta_1 target; 18 declared sliders drive the physarum; the asteroids game survives as a hidden Easter egg (X when beta_1 >= 42).",
+      "description": "The closed-loop stigmergic field itself, living on the quotient surfaces of the topology game: physarum agents, trail and agent-deposited momentum all obey the surface's gluing rule. Six tour levels bind surface + parameter presets + a beta_1 target; 18 declared sliders drive the physarum; the asteroids game survives as a hidden Easter egg (X when beta_1 >= 42). v2.0.1: seam crossings now transform position AND heading together (topo-asteroids flipP protocol — fixes agents stranding at the Klein/projective seams); sim square letterboxed to true 1:1 (fixes stretched height map).",
       "path": "../apps/welded_asteroids/index.html",
       "kind": "instrument-view",
       "provenance": {
