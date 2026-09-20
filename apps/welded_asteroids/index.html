@@ -434,10 +434,25 @@ function wrapPos(p) {                     // p has {x, y, a}
 /* fold a square sample point for field reads: mirrored cells read the
    field through the mirror (the read is of the SAME deposit, seen
    through the seam's rule) */
+/* topo.<axis>.flip NAMES THE AXIS THAT MIRRORS — Klein is y:{flip:'x'},
+   i.e. crossing the y-seam mirrors the x coordinate. wrapPos (agent
+   re-entry) and diffuseDecay's nbT (trail diffusion) both read it that
+   way; foldRead did not, and mirrored the crossed axis instead. So an
+   agent sensing across the weld read the field from a point its own
+   deposits never reach, and the momentum path flipped vx while folding
+   in y. 'legacy' preserves that behaviour as an ablation control. */
+let seamFold='named';
 function foldRead(x, y) {
   let fx = ((x % W) + W) % W, fy = ((y % H) + H) % H;
-  if (topo.x.flip && Math.floor((x % (2*W)) / W) === 1) fx = W - 1 - fx;
-  if (topo.y.flip && Math.floor((y % (2*H)) / H) === 1) fy = H - 1 - fy;
+  const xc = topo.x.flip && Math.floor((x % (2*W)) / W) === 1;
+  const yc = topo.y.flip && Math.floor((y % (2*H)) / H) === 1;
+  if (seamFold === 'legacy') {
+    if (xc) fx = W - 1 - fx;
+    if (yc) fy = H - 1 - fy;
+    return [fx, fy];
+  }
+  if (xc) { if (topo.x.flip === 'x') fx = W - 1 - fx; else fy = H - 1 - fy; }
+  if (yc) { if (topo.y.flip === 'x') fx = W - 1 - fx; else fy = H - 1 - fy; }
   return [fx, fy];
 }
 /* trail read at a (possibly out-of-square) point, honoring the rule */
@@ -1444,6 +1459,9 @@ window.__welded={
     return lastRun;
   },
   manifest(){ return lastRun; },
+  /* ablation control for the seam study: 'named' honours topo.flip as the
+     axis that mirrors, 'legacy' reproduces the pre-fix sensing fold */
+  ablate(o={}){ if(o.seamFold) seamFold=o.seamFold; return {seamFold}; },
   state(){ return { surface:topo.id, shell:P.shell, b0:B.b0, b1:B.b1, coverage:B.coverage,
                     agents:parts.length, level:LEVELS[levelIdx].name,
                     target:LEVELS[levelIdx].target, solved:levelSolved, egg:!!egg }; },
