@@ -450,7 +450,7 @@ limitations:
     <button id="tabSim" class="on">sim</button>
     <button id="tab3d">3D</button>
   </div>
-  <div id="sq"><div id="sqbox"><canvas id="sim"></canvas><canvas id="over"></canvas></div></div>
+  <div id="sq"><div id="sqbox"><canvas id="sim"></canvas><canvas id="over"></canvas><div id="verBadge">v2.11.6</div></div></div>
   <div id="v3"><canvas id="c3"></canvas><div id="hint3d">drag to orbit · wheel to zoom</div></div>
 </div>
 <div id="toast"></div>
@@ -2394,7 +2394,7 @@ window.__weldedCam={ get:()=>({theta,phi,dist}), set:(o)=>{ if(o.theta!=null)the
       posA.needsUpdate=true;
       geo.computeVertexNormals();
     }
-    theta += (P.view3dmode==='map' ? 0 : 0.0006);  /* map mode: no auto-spin */
+    /* v2.11.6: auto-spin removed — orbit is fully drag-controlled */
     camera.position.set(dist*Math.sin(phi)*Math.cos(theta), dist*Math.sin(phi)*Math.sin(theta), dist*Math.cos(phi));
     camera.lookAt(0,0,0);
     pushContours(); pushAgents();
