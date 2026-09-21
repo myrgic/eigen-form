@@ -95,6 +95,21 @@ method:
     range: [0, 1]
     default: 0.02
     meaning: gain with which the agent rotates its heading toward the local momentum direction
+  - param: exclR
+    label: exclusion radius
+    range: [0, 3]
+    default: 0
+    meaning: v2.11.5 Pauli-analog — occupancy-blockade radius in cells (lagged occupancy of the BASE image; 0 = off, no cost). At 0 every prior result must reproduce bit-identical.
+  - param: exclMode
+    label: exclusion mode
+    range: [excl, jitter]
+    default: excl
+    meaning: ABLATION CONTROL (not an operator knob in normal use) — 'excl' applies the occupancy force; 'jitter' applies a random-direction kick of IDENTICAL magnitude from the same dedicated stream. If the jitter control reproduces the exclusion arm's band behavior, the measured effect is lateral noise, not exclusion coupling.
+  - param: exclK
+    label: exclusion stiffness
+    range: [0, 1]
+    default: 0
+    meaning: 0-0.7 soft — steering force away from coincident-heading occupied cells (weighted by momentum-field heading dot, seam-aware); >= 0.75 hard — veto the chosen move if the target cell is occupied (fallback: second-choice sensor direction, stochastic); occupancy alone (no heading clause) in the hard limit.
   - param: mass
     label: self-field mass
     range: [0, 2]
@@ -334,6 +349,10 @@ limitations:
       <input type="range" id="adv" min="0" max="2" step="0.02" value="0.02"></div>
     <div class="ctl"><label>Alignment <b id="v-ali">0.02</b></label>
       <input type="range" id="ali" min="0" max="1" step="0.01" value="0.02"></div>
+    <div class="ctl"><label>Exclusion radius <b id="v-exclR">0</b></label>
+      <input type="range" id="exclR" min="0" max="3" step="1" value="0"></div>
+    <div class="ctl"><label>Exclusion stiffness <b id="v-exclK">0.00</b></label>
+      <input type="range" id="exclK" min="0" max="1" step="0.05" value="0"></div>
     <div class="ctl"><label>Self-field · mass <b id="v-mass">1.00</b></label>
       <input type="range" id="mass" min="0" max="2" step="0.02" value="1"></div>
     <div class="ctl"><label>Momentum decay <b id="v-mdec">0.940</b></label>
@@ -481,12 +500,24 @@ const CS = 3, cW = W/CS, cH = H/CS;
 let coarse;
 const MS = 8, mW = Math.floor(W/MS), mH = Math.floor(H/MS);
 let momX, momY, mtX, mtY, momRef = 1;
+/* v2.11.5 exclusion: LAGGED occupancy of the base image (foldRead folds
+   all seam images onto the base square — correct: mirror images are the
+   same physical place on the quotient). Built from PREVIOUS frame
+   positions before the agent loop; no mid-loop scatter (order-invariance
+   preserved). Pressure readout: rejected moves per agent-step. */
+let occ, exclReject = 0, exclPins = 0, exclSteps = 0;
+/* review M3: dedicated RNG stream — exclusion's random draws must not
+   consume the shared physarum stream, or treatment arms and controls
+   decorrelate after the first veto. */
+let rndExcl = null;
+const EXCL_SEED = 0x5e1a;
 let horm, hormRef = 1;
 
 /* defaults: the ancestor's operator regime */
 const P = { relief:0.6, shell:'translucent', view3dmode:'globe', tspeed:1.0, sa:60*Math.PI/180, ra:18*Math.PI/180, so:5,
             dec:0.99, dep:25, adv:0.02, ali:0.02, ns:0.006, dr:0.005, thr:0.08,
-            mass:1, mdec:0.94, ng:0, N:7000, b1Target:30, levelMode:'tour' };
+            mass:1, mdec:0.94, ng:0, N:7000, b1Target:30, levelMode:'tour',
+            exclR:0, exclK:0, exclMode:'excl' };
 
 /* ── THE WELD: wrap + fold under the gluing rule ─────────────────────
    The ancestor's wrap was plain torus. Here every crossing transforms
@@ -528,8 +559,11 @@ function wrapPos(p) {                     // p has {x, y, a}
 let seamFold='named';
 function foldRead(x, y) {
   let fx = ((x % W) + W) % W, fy = ((y % H) + H) % H;
-  const xc = topo.x.flip && Math.floor((x % (2*W)) / W) === 1;
-  const yc = topo.y.flip && Math.floor((y % (2*H)) / H) === 1;
+  /* v2.11.5 (review H3): negative coords missed the mirror — use the
+     momRead/crossed() double-mod form so x=-0.5 folds to the mirrored
+     image like every other read path. */
+  const xc = topo.x.flip && Math.floor((((x % (2*W)) + 2*W) % (2*W)) / W) === 1;
+  const yc = topo.y.flip && Math.floor((((y % (2*H)) + 2*H) % (2*H)) / H) === 1;
   if (seamFold === 'legacy') {
     if (xc) fx = W - 1 - fx;
     if (yc) fy = H - 1 - fy;
@@ -580,6 +614,7 @@ function fieldAt(x, y, out) {
    reproducible from its seed alone. run() swaps in a seeded stream;
    interactive use keeps Math.random. */
 let rnd = Math.random;
+let curSeed = 0;   /* v2.11.5: remembered per-run seed (rndExcl stream derivation) */
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
   let t=Math.imul(a^a>>>15, 1|a); t=t+Math.imul(t^t>>>7, 61|t)^t;
   return ((t^t>>>14)>>>0)/4294967296; }; }
@@ -858,10 +893,89 @@ function stepAgents(){
       nx = p.x + Math.cos(p.a);
       ny = p.y + Math.sin(p.a);
     }
+    /* v2.11.5 EXCLUSION — two regimes, one gate. Gated on exclR>0; at 0
+       this whole block vanishes and the step is bit-identical to 2.11.4. */
+    if(P.exclR > 0 && P.exclK > 0){
+      /* -- SOFT (exclK < 0.75): steering force away from occupied cells,
+            weighted by heading-coincidence via the momentum field.
+            Grid-local (3x3..7x7 stencil = O(N)), seam-aware through
+            foldRead; momentum read seam-aware through momRead. */
+      if(P.exclK < 0.75){
+        const R = P.exclR|0;  /* review nit: integer coercion */
+        let px=0, py=0, hits=0, wsum=0;
+        for(let oy=-R; oy<=R; oy++) for(let ox=-R; ox<=R; ox++){
+          if(ox===0 && oy===0) continue;
+          const [fx, fy] = foldRead(nx+ox, ny+oy);
+          const idx = (((Math.floor(fy)%H)+H)%H)*W + (((Math.floor(fx)%W))+W)%W;
+          if(idx === p._oc) continue;  /* C1 fix: never repel self */
+          const cnt = occ[idx];
+          if(!(cnt > 0)) continue;  /* review nit: NaN/undefined-safe */
+          hits++;
+          /* heading-coincidence: same-state repels. Compare the agent's
+             heading with the cell's momentum vector, in the cell's OWN
+             image (momRead flips components per mirror, matching the
+             agent's chart frame). */
+          momRead(nx+ox, ny+oy, _m);
+          const mw = Math.hypot(_m[0], _m[1]);
+          let w;
+          if(mw > 1e-6){
+            const cosh = (Math.cos(p.a)*_m[0] + Math.sin(p.a)*_m[1]) / mw;
+            w = Math.max(0, cosh);          // parallel = repel; anti/orthogonal = ignore
+          } else w = 0.5;                   // no momentum info: mild repulsion
+          px -= ox * w * cnt;
+          py -= oy * w * cnt;
+          wsum += w * cnt;
+          hits++;
+        }
+        if(hits > 0 && wsum > 1e-9){
+          exclReject++;
+          /* NORMALIZED: unit-magnitude direction — occupancy saturation
+             (thousands of neighbors inside a dense band) must not scale
+             the kick to teleport-level magnitudes. */
+          const pl = Math.hypot(px, py);
+          if (isFinite(pl) && pl > 1e-9) {
+            if (P.exclMode === 'jitter') {
+              /* reviewer control #2: identical-magnitude random direction */
+              const ja = rndExcl()*Math.PI*2;
+              nx += Math.cos(ja) * P.exclK * 1.2;
+              ny += Math.sin(ja) * P.exclK * 1.2;
+            } else {
+              nx += px / pl * P.exclK * 1.2;
+              ny += py / pl * P.exclK * 1.2;
+            }
+          }
+        }
+      }
+      /* -- HARD (exclK >= 0.75): veto the move if the target cell is
+            occupied. Fallback: second-choice sensor direction, else keep
+            heading (pin). Stochastic among allowed choices, seeded. */
+      else {
+        const R = P.exclR|0;
+        const [gfx, gfy] = foldRead(nx, ny);
+        const gi = (((Math.floor(gfy)%H)+H)%H)*W + (((Math.floor(gfx)%W))+W)%W;
+        if(occ[gi] > 0 && gi !== p._oc){  /* C1 fix: self cell is not a collision */
+          exclReject++;
+          /* try the two flank directions, in randomized order (seeded by
+             rnd() so reproducibility holds) */
+          const first = rndExcl()<0.5 ? -P.sa : P.sa;
+          let done = false;
+          for(const off of [first, -first]){
+            const a2 = p.a + off;
+            const tx = p.x + Math.cos(a2)*1, ty = p.y + Math.sin(a2)*1;
+            const [tfx, tfy] = foldRead(tx, ty);
+            const ti = ((Math.floor(tfy)%H)+H)%H*W + (((Math.floor(tfx)%W))+W)%W;
+            if(occ[ti] === 0){ nx = tx; ny = ty; done = true; break; }
+          }
+          if(!done){ exclPins++; nx = p.x; ny = p.y; }  // pinned: stay put
+        }
+      }
+    }
     /* the weld: position AND heading transform together through the rule
        (topo-asteroids' flipP protocol — mirroring the heading without
        mirroring the position strands the agent at the wrong image of
        itself, which used to trap it at the seam) */
+    if(!isFinite(nx) || !isFinite(ny)){ nx = p.x; ny = p.y; exclReject++; }  /* v2.11.5 NaN guard */
+    if(!isFinite(p.a)) p.a = rnd()*Math.PI*2;  /* review M4: NaN heading = invisible pinned depositor */
     const q = { x:nx, y:ny, a:p.a };
     wrapPos(q);
     p.x = q.x; p.y = q.y; p.a = q.a;
@@ -1037,6 +1151,8 @@ bind('dec','dec',v=>v.toFixed(3));
 bind('dep','dep',v=>String(v));
 bind('adv','adv',v=>v.toFixed(2));
 bind('ali','ali',v=>v.toFixed(2));
+bind('exclR','exclR',v=>v.toFixed(0));
+bind('exclK','exclK',v=>v.toFixed(2));
 bind('mass','mass',v=>v.toFixed(2));
 bind('mdec','mdec',v=>v.toFixed(3));
 bind('relief','relief', v=>v.toFixed(2));
@@ -1132,6 +1248,7 @@ function resetField(spawn){
   grid=new Float32Array(W*H); tmp=new Float32Array(W*H); mask=new Uint8Array(W*H);
   coarse=new Float32Array(cW*cH);
   momX=new Float32Array(mW*mH); momY=new Float32Array(mW*mH);
+  occ=new Int16Array(W*H);
   mtX=new Float32Array(mW*mH); mtY=new Float32Array(mW*mH);
   horm=new Float32Array(mW*mH);
   momRef=1; hormRef=1;
@@ -1140,6 +1257,9 @@ function resetField(spawn){
   /* v2.11.2: clear winding accumulators — stale qPrev after reseed
      produced ghost deltas on the first measure */
   qAccum.length = 0; qPrev.length = 0;
+  /* review C2: exclusion counters + dedicated stream reset per run */
+  exclReject = 0; exclPins = 0; exclSteps = 0;
+  rndExcl = mulberry32(EXCL_SEED ^ curSeed);
   /* 'disc' is the ancestor's spawn and the interactive default. 'uniform'
      seeds the whole fundamental polygon, so a measurement at the seam is not
      really measuring how far a central blob has spread. */
@@ -2318,6 +2438,23 @@ function simStep(dtReal){
   time+=P.dr;
   diffuseDecay();
   if(P.mass>0) diffuseDecayMom();
+  /* v2.11.5: build lagged occupancy BEFORE stepAgents reads it.
+     Uses PREVIOUS frame positions (parts still hold last step's x,y at
+     this point). Gated: at exclR===0 the occ arrays are never touched
+     and the step is bit-identical to v2.11.4. */
+  if(P.exclR > 0 && P.exclK > 0){
+    exclSteps++;
+    occ.fill(0);
+    for(let i=0;i<parts.length;i++){
+      const [fx, fy] = foldRead(parts[i].x, parts[i].y);
+      const ci = (((Math.floor(fy)%H)+H)%H)*W + (((Math.floor(fx)%W))+W)%W;
+      occ[ci]++;
+      /* C1 fix: record own lagged cell so the stencil can skip SELF —
+         a lone agent's own previous cell otherwise reads as a neighbor
+         at offset -heading and exclusion becomes a speed multiplier. */
+      parts[i]._oc = ci;
+    }
+  }
   stepAgents();
   if (egg) stepEgg(dtReal||0);
   if(frame%20===0){ measure(refs().cut); stepSlice(); stepQuadrant(); stepPlates(); stepVill(); confLedgerStep(); drawConf(); }
@@ -2414,6 +2551,7 @@ window.__welded={
               at: spec.at || null,
               steps: spec.steps|0};
     paused=true;
+    curSeed = sp.seed|0;
     rnd=mulberry32(sp.seed); Noise.seed=rnd()*100;
     setSurface(sp.surface, false);
     Object.assign(P, normParams(sp.params)); syncControls();
@@ -2429,7 +2567,11 @@ window.__welded={
   ablate(o={}){ if(o.seamFold) seamFold=o.seamFold; return {seamFold}; },
   state(){ return { surface:topo.id, shell:P.shell, b0:B.b0, b1:B.b1, coverage:B.coverage,
                     agents:parts.length, level:LEVELS[levelIdx].name,
-                    target:LEVELS[levelIdx].target, solved:levelSolved, egg:!!egg }; },
+                    target:LEVELS[levelIdx].target, solved:levelSolved, egg:!!egg,
+                    exclReject:(exclReject||0),
+                    exclPins:(exclPins||0),
+                    exclSteps:(exclSteps||0) }; },
+  qhist(){ return qHistSample(); },
   spawnEgg(){ if(!egg && B.b1>=42){ egg={x:W/2,y:H/2,vx:0,vy:0,a:-Math.PI/2,hand:1,cool:0,inv:2}; } return !!egg; },
 };
 
