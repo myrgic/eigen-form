@@ -9,12 +9,12 @@
   },
   "extractor": {
     "path": "tools/extract.py",
-    "version": "1.0.0",
-    "sha256": "84801a65245acd2384c17267f88c412e5cb7b78a6f53b639b4557d5bd0dddbbb"
+    "version": "1.1.0",
+    "sha256": "ec4ac3e1ebca860b51dae97f32614c72a9046979ab896a73448dcf5784ea59e5"
   },
   "artifacts": {
     "events.json": "sha256:7fd49545cef85491fca27792fe96227d0d3d79fd299fc604ecf1347078ff6444",
-    "results.json": "sha256:7e8c6415bf102869dcbbed0f3a9988312aea19965ce9083ee955bae78e70faa0"
+    "results.json": "sha256:674f210710921f57922ededc4b14f0d594b99e5bbb7a010a75219446bcc3ab49"
   },
   "params": {
     "half_life_days": 14.0,
