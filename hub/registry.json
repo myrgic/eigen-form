@@ -147,13 +147,16 @@
     },
     {
       "id": "smoke_rings",
-      "title": "Smoke Rings, Topographical",
-      "description": "Smoke rings settling toward the center, drawn as the field's own contours.",
+      "title": "Smoke Rings",
+      "description": "An art piece: particles orbit a slowly wandering centre in a softened-gravity well, and their blurred density is drawn as contour lines, like a map of a hill.",
       "path": "../apps/smoke_rings/index.html",
       "kind": "frozen-golden",
       "provenance": {
         "derivesFrom": "sha256:3732086b17a6b6e81b6b917db0889502d907700ba6fb175448b4ace542a24193",
-        "changes": []
+        "changes": [
+          "frame-rate-independent field (2026-09-24 correctness pass): relax() (two diffusion passes at 0.19 then decay x0.992) ran once per animation frame while particle deposits scaled with dt, so the field's memory was 125 frames (4.2 s at 30 Hz, 0.87 s at 144 Hz) and steady-state mean density scaled with frame time. Now relax() is one fixed tick of RELAX_DT = 1/60 s and a new relaxFor(dt) runs it on a fixed-dt accumulator; frame(), the reduced-motion warm-up, reset() and the window.TOPO.step harness all call relaxFor(dt) (the reduced-motion warm-up previously relaxed on every other 1/30 s step, i.e. once per 1/15 s; it now uses the same 1/60 s clock as the live page). reset() also zeroes the accumulator. Measured on the real page, rAF timestamps driven at 30/60/144 Hz for 12 simulated seconds, TOPO.stat().mean, seeds 1/2/3: before 0.592/0.279/0.127, 0.593/0.300/0.132, 0.595/0.343/0.146 (spread 4.66x, 4.49x, 4.08x); after 0.305/0.279/0.304, 0.300/0.300/0.327, 0.309/0.343/0.339 (spread 1.09x, 1.09x, 1.11x). At 60 Hz the output is bit-identical to before.",
+          "honest text: plate 'settling toward the center -- drawn as the field's own contours' -> 'particles orbit a wandering centre, drawn as contour lines' (the central hump comes from the anchor's wander, not from damping; DAMP=0 gives the same picture per the 2026-09-23 review); <title> 'smoke rings -- topographical' -> 'Smoke rings'; knob labels 'settle' -> 'pull strength' and 'wander' -> 'centre wander' (aria labels to match); reset -> 'start over' with a plain title. Stale comments fixed: the tracer block said 'Ornstein-Uhlenbeck in a harmonic well' and 'damping slowly spirals them in' (the force is Plummer-softened gravity, OU applies to the anchor only, and its noise is uniform, not Gaussian); 'near-zero anchor -> tight vortex' and the Kepler 'still (nearly) close' comment removed. Added a cogdoc+yaml block that says this is an art piece and declares MU, ASIG, DAMP and the field clock."
+        ]
       },
       "pwa": {
         "installable": false
