@@ -41,7 +41,8 @@ export function torusKnotRadii(scale) {
 
 // Standard (p,q) torus-knot point, projected to 2D with the suppressed
 // axis z = sin(radialPhase) kept purely as a depth proxy (over/under
-// crossing order), not literal 3D rendering. orbitalRadius/radialAmp are
+// crossing order: the engine composites z < 0 steps beneath the trail),
+// not literal 3D rendering. orbitalRadius/radialAmp are
 // passed in already emergence-ramped; passing the full R0/RHO from
 // torusKnotRadii() reproduces the closed-form steady state.
 export function knotPoint({ orbitalRadius, radialAmp, angularPhase, radialPhase, precessionPhase, cx, cy }) {

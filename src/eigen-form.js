@@ -4,10 +4,14 @@
    pure dynamics/palette modules with the canvas2d backend and the
    lifecycle layer below. The mark is what the substrate remembers of a
    constant-velocity wavefront processing through an (p,q) eigen-orbit.
-   The crossings' over/under is not stored: it emerges from the drawing
-   process itself — freshly deposited trail painting over the dimming
-   trail beneath it, a stable path continually re-traced against the
-   fade. The mark's depth is an eigenform of its own maintenance.
+   The crossings' over/under is not stored in any buffer: each step is
+   composited by the sign of the knot's depth z = sin(radialPhase) —
+   z >= 0 paints over the trail, z < 0 paints beneath it. In this
+   projection the two passes through any crossing have equal r, hence
+   equal cos(radialPhase) and opposite-signed z, so the sign alone gives
+   the torus knot's own alternating diagram (OUOUOU for the (2,3)
+   trefoil). Paint order alone (newest on top) would give a descending
+   diagram, which is an unknot (GH #35).
    Features:
    - Precession: the entire trefoil slowly rotates around the centroid.
      Successive revolutions land slightly offset, so the substrate
@@ -226,7 +230,7 @@ function createTrefoilMark(canvas, opts) {
 
       const orbitalRadius = R0 * orbitalRadiusFactor;
       const radialAmp     = RHO * radialAmpFactor;
-      const { x, y } = torusKnot.knotPoint({
+      const { x, y, z } = torusKnot.knotPoint({
         orbitalRadius, radialAmp, angularPhase, radialPhase, precessionPhase, cx, cy
       });
 
@@ -240,7 +244,7 @@ function createTrefoilMark(canvas, opts) {
 
         const c = colorFor(u, chromaRamp, params.gradient);
         const style = colorStyle(c);
-        canvas2d.paintStep(ctx, { x, y, prevX, prevY, jumped, style, lineWidth: strokeW });
+        canvas2d.paintStep(ctx, { x, y, prevX, prevY, jumped, style, lineWidth: strokeW, under: z < 0 });
       }
       prevX = x;
       prevY = y;
@@ -260,8 +264,8 @@ function createTrefoilMark(canvas, opts) {
   // Run the live deposit/dissipate loop synchronously up to targetMs, so
   // the mark reaches its living steady state the same way it sustains it:
   // by re-tracing a stable path against the fade. No stored depth — the
-  // (2,3) crossings' over/under emerge from paint order, exactly as they
-  // do in motion.
+  // crossings' over/under come from each step's z-sign compositing,
+  // exactly as they do in motion.
   function warmTo(targetMs) {
     const dtStep = 16;
     let vt = virtualTime, guard = 0;

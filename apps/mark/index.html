@@ -81,7 +81,7 @@
     <div class="stage"><canvas id="mark" width="1080" height="1080"></canvas></div>
     <div class="meta">
       <div class="title">The Mark</div>
-      <div class="tagline">(2,3) torus knot, traced live against a fading substrate</div>
+      <div class="tagline" id="tagline">(2,3) torus knot, traced live against a fading substrate</div>
     </div>
   </div>
 
@@ -134,6 +134,8 @@ const schema = {
 };
 
 const store = defineParams(schema);
+// The eigenmode actually handed to the mark: the last coprime (p,q).
+let knotP = Math.round(store.get('p')), knotQ = Math.round(store.get('q'));
 
 // store.values() keys line up 1:1 with createTrefoilMark's opts for
 // every param except the hue group, which the controller expects
@@ -154,6 +156,8 @@ function optsFromStore(overrides) {
   const values = store.values();
   const rest = { ...values };
   for (const k of HUE_KEYS) delete rest[k];
+  // The mark's eigenmode is the last coprime pair (see eigenmodeChanged).
+  rest.p = knotP; rest.q = knotQ;
   return { ...rest, gradient: bandFromStore(), ...overrides };
 }
 
@@ -164,9 +168,30 @@ let mark = createTrefoilMark(canvas, optsFromStore({ emergence: false }));
 // the controller through one subscription, no per-slider handlers. A
 // hue-group key folds through bandFromStore() into one `gradient` set;
 // every other key maps straight through to setParam.
+//
+// p and q are only a knot when gcd(p,q) = 1; a pair with a common factor
+// d closes after 1/d of a period and re-traces a (p/d, q/d) curve d times
+// (GH #35). The mark therefore only ever receives a coprime pair: a
+// non-coprime choice is held back and the tagline says why. The slider
+// yields fractional values between its declared integer steps, so p and
+// q are rounded to that step (step: 1) before they reach the mark.
+const tagline = document.getElementById('tagline');
+function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+function eigenmodeChanged() {
+  const p = Math.round(store.get('p')), q = Math.round(store.get('q')), d = gcd(p, q);
+  if (d !== 1) {
+    tagline.textContent = `(${p},${q}) share the factor ${d}: not a knot, so the mark stays at (${knotP},${knotQ})`;
+    return;
+  }
+  knotP = p; knotQ = q;
+  mark.setParam('p', p);
+  mark.setParam('q', q);
+  tagline.textContent = `(${p},${q}) torus knot, traced live against a fading substrate`;
+}
 store.subscribe((key, value) => {
   if (!mark || !mark.setParam) return;
   if (HUE_KEYS.includes(key)) mark.setParam('gradient', bandFromStore());
+  else if (key === 'p' || key === 'q') eigenmodeChanged();
   else mark.setParam(key, value);
 });
 

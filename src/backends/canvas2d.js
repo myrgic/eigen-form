@@ -37,8 +37,13 @@ export function applyFade(ctx, logical, alpha) {
 
 // Paints one wavefront step: a dot if the point jumped further than the
 // ball's own width since the last point (a resumed/first point), or a
-// stroked segment from the previous point otherwise.
-export function paintStep(ctx, { x, y, prevX, prevY, jumped, style, lineWidth }) {
+// stroked segment from the previous point otherwise. `under` (the knot's
+// depth z < 0 at this step) composites the step BENEATH everything
+// already deposited ('destination-over') instead of on top, so at a
+// crossing the strand with z > 0 is the one that shows, whichever pass
+// was painted more recently (GH #35).
+export function paintStep(ctx, { x, y, prevX, prevY, jumped, style, lineWidth, under }) {
+  if (under) ctx.globalCompositeOperation = 'destination-over';
   ctx.fillStyle = style;
   ctx.strokeStyle = style;
   ctx.lineWidth = lineWidth;
@@ -53,4 +58,5 @@ export function paintStep(ctx, { x, y, prevX, prevY, jumped, style, lineWidth })
     ctx.lineTo(x, y);
     ctx.stroke();
   }
+  if (under) ctx.globalCompositeOperation = 'source-over';
 }
