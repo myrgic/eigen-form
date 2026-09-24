@@ -372,8 +372,13 @@ function applyReactions(spec, state) {
         if (m <= 0) continue;
         const s = S[i], b = B[i];
         const mu = r.growthRate * s / (s + r.halfSaturation + 1e-12);
-        const uptake = mu * b * m;
-        S[i] = Math.max(0, s - uptake);
+        // Uptake cannot exceed the substrate the cell holds. Before
+        // 2026-09-24 S was floored at 0 but P was credited with the
+        // unclamped uptake, which created nitrogen (total N reached
+        // 205-250x the ammonia ever deposited). With the clamp, what
+        // leaves S is exactly what reaches P (times yieldFactor).
+        const uptake = Math.min(s, mu * b * m);
+        S[i] = s - uptake;
         P[i] += uptake * r.yieldFactor;
         const growth = (mu * (1 - b / r.carryingCapacity) - r.deathRate) * b * m;
         B[i] = Math.max(0, b + growth);
@@ -414,19 +419,50 @@ function applyReactions(spec, state) {
       caller (this file, tests, twin.js) goes through this one function,
       so the convention only has to be right once. */
 
+/* No-penetration walls (2026-09-24). With the backward-divergence /
+   forward-correction pair above, vec.x[x,y] acts as the flux through the
+   RIGHT face of cell (x,y) and vec.y[x,y] as the flux through its BOTTOM
+   face (+y is down). For boundary 'wall' the faces on the tank's edge are
+   solid: the flux through the left/top wall (index -1) is 0, and the
+   right-most column's x-flux and the bottom row's y-flux are forced to 0.
+   The pressure solve then uses Neumann ghost cells (a wall neighbour
+   contributes nothing and the diagonal counts only open faces), so
+   div(grad p) is exactly the divergence operator's adjoint on the closed
+   box, and the sum of the divergence over the box is 0, which makes the
+   Poisson problem solvable. Before this, clamped reads dropped the wall
+   flux: a uniform flow passed through projection unchanged and the whole
+   tank drifted upward under buoyancy. 'wrap' and 'absorb' keep the old
+   clamped/periodic reads. */
+function wallFaces(vec, W, H) {
+  for (let y = 0; y < H; y++) vec.x[y * W + (W - 1)] = 0;
+  const last = (H - 1) * W;
+  for (let x = 0; x < W; x++) vec.y[last + x] = 0;
+}
+
 function divergenceField(vec, out, W, H, boundary) {
+  const wall = boundary === 'wall';
   for (let y = 0; y < H; y++) {
     const r = y * W;
     for (let x = 0; x < W; x++) {
-      const l = readCell(vec.x, x - 1, y, W, H, boundary);
-      const u = readCell(vec.y, x, y - 1, W, H, boundary);
-      out[r + x] = (vec.x[r + x] - l) + (vec.y[r + x] - u);
+      if (wall) {
+        const rx = x === W - 1 ? 0 : vec.x[r + x];
+        const lx = x === 0 ? 0 : vec.x[r + x - 1];
+        const dy = y === H - 1 ? 0 : vec.y[r + x];
+        const uy = y === 0 ? 0 : vec.y[r + x - W];
+        out[r + x] = (rx - lx) + (dy - uy);
+      } else {
+        const l = readCell(vec.x, x - 1, y, W, H, boundary);
+        const u = readCell(vec.y, x, y - 1, W, H, boundary);
+        out[r + x] = (vec.x[r + x] - l) + (vec.y[r + x] - u);
+      }
     }
   }
   return out;
 }
 
 function project(vec, proj, W, H, boundary, iterations) {
+  const wall = boundary === 'wall';
+  if (wall) wallFaces(vec, W, H);
   divergenceField(vec, proj.div, W, H, boundary);
   proj.p.fill(0);
   const p = proj.p;
@@ -434,11 +470,20 @@ function project(vec, proj, W, H, boundary, iterations) {
     for (let y = 0; y < H; y++) {
       const r = y * W;
       for (let x = 0; x < W; x++) {
-        const l = readCell(p, x - 1, y, W, H, boundary);
-        const rt = readCell(p, x + 1, y, W, H, boundary);
-        const u = readCell(p, x, y - 1, W, H, boundary);
-        const d = readCell(p, x, y + 1, W, H, boundary);
-        p[r + x] = (l + rt + u + d - proj.div[r + x]) / 4;
+        if (wall) {
+          let acc = 0, n = 0;
+          if (x > 0) { acc += p[r + x - 1]; n++; }
+          if (x < W - 1) { acc += p[r + x + 1]; n++; }
+          if (y > 0) { acc += p[r + x - W]; n++; }
+          if (y < H - 1) { acc += p[r + x + W]; n++; }
+          p[r + x] = (acc - proj.div[r + x]) / n;
+        } else {
+          const l = readCell(p, x - 1, y, W, H, boundary);
+          const rt = readCell(p, x + 1, y, W, H, boundary);
+          const u = readCell(p, x, y - 1, W, H, boundary);
+          const d = readCell(p, x, y + 1, W, H, boundary);
+          p[r + x] = (l + rt + u + d - proj.div[r + x]) / 4;
+        }
       }
     }
   }
@@ -451,6 +496,8 @@ function project(vec, proj, W, H, boundary, iterations) {
       vec.y[r + x] -= (d - proj.p[r + x]);
     }
   }
+  // Clamped reads give rt == p on the right column and d == p on the
+  // bottom row, so the correction leaves the wall faces at the 0 set above.
 }
 
 function projectionPass(spec, state) {

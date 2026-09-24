@@ -3,7 +3,68 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Aquarium: eigen-form lab</title>
+<title>Aquarium (sketch)</title>
+<script type="application/cogdoc+yaml">
+id: app-aquarium
+type: artifact
+title: "Aquarium (sketch)"
+description: >
+  A layered visual analog of a fish tank on the lab's agent-substrate
+  engine: a projected flow that is not self-advecting, buoyant heat, a
+  nitrification motif in the filter sponge, and three populations (fish,
+  plankton, bubbles) plus plant chains. Unvetted.
+sector: research
+status: draft
+created: 2026-09-11
+updated: 2026-09-24
+authors: [chaz, cog]
+tags: [aquarium, fluid, projection, nitrification, agents, sketch]
+claim: >
+  A layered visual analog of a tank: projected (non-self-advecting) flow in
+  a closed box, buoyant heat and a nitrification motif that conserves
+  nitrogen. Unvetted.
+method:
+  - name: projection
+    value: "Gauss-Seidel pressure solve, backward divergence / forward correction, no-penetration walls with Neumann ghost cells"
+    fixed: true
+    meaning: >
+      Removes the divergent part of the flow each step. Flux through the
+      tank's edges is zero, so a uniform flow projects to zero.
+  - name: nitrify
+    value: "uptake = min(S, mu*B*mask), mu = r*S/(S+K); S -= uptake; P += uptake; B += (mu*(1-B) - d)*B*mask"
+    fixed: true
+    meaning: >
+      Monod uptake with the uptake capped at the substrate present, so what
+      leaves ammonia (or nitrite) is what arrives as nitrite (or nitrate).
+  - name: chemistrySpeed
+    default: 8
+    meaning: Multiplies bacteria growth and death rates.
+  - name: simSpeed
+    default: 1
+    meaning: Engine steps per rendered frame. App-level physics (surface, light, plants, bubble recycling) runs once per engine step.
+observables:
+  panel: "nitrogen {total, addedByFish, removedByWaterChange, ratio}, filter {per-cell means in the filter sponge}, meanAbsDivergence, kineticEnergy, verdict"
+  harness: "window.__aquarium: world(), observables(), bubbles()"
+findings:
+  - >
+    Total nitrogen stays at 0.93-1.01 of the ammonia the fish added (CPU
+    engine, full grid, 1000 steps, 3 seeds; the spread is the advection
+    step's small loss/gain). Before the uptake cap it was 205-250 times.
+  - >
+    A uniform flow in a closed 40x30 box projects to zero (2000 solver
+    passes); uniform warm water no longer lifts the whole tank. At the
+    reference engine's half grid the mean vertical velocity after 1500
+    steps is -0.006, not -6.3.
+  - "Bubbles rise: mean vertical speed about 0.26 cells per step upward (3 seeds)."
+limitations:
+  - "No momentum self-advection (issue #40): the flow is forced, damped and projected, not Navier-Stokes."
+  - "Surface light lands only on the bottom row; plant oxygen and plankton light coupling are near zero above it."
+  - "The caustic refraction uses tan(theta_t) instead of tan(theta_i - theta_t)."
+  - "Bacteria use an explicit logistic step with growth 3.2 per step at the default speed-up, which oscillates."
+  - "Heater, filter and source rates are not rescaled at the reference engine's coarser grid."
+  - "Fish grazing is negligible against plankton growth."
+refs: []
+</script>
 <link rel="stylesheet" href="../../src/panel/tokens.css">
 <link rel="stylesheet" href="../../src/panel/panel.css">
 <style>
@@ -47,36 +108,44 @@
     <div class="stage"><canvas id="tank" width="896" height="560"></canvas></div>
     <div class="meta">
       <div class="title">Aquarium</div>
-      <div class="tagline">the agent-substrate engine's first configuration — momentum, heat, chemistry, and three populations sharing one tank</div>
+      <div class="tagline">a fish tank sketch: currents, heat, water chemistry, fish, plankton and plants. Simplified; see what it does not model below.</div>
     </div>
     <p class="note">
-      <strong>The equations, in words.</strong> Water is an incompressible
-      velocity field (projected divergence-free every step) carrying heat by
-      advection; a heater sources temperature, a Boussinesq term
-      (beta&middot;&Delta;T) turns warmer water buoyant, and the surface loses
-      heat back toward room temperature. Ammonia (from fish) becomes nitrite
-      then nitrate through two Monod-limited, logistically-growing bacteria
-      populations confined to the filter media &mdash; the nitrogen cycle a
-      real fresh tank runs, sped up by a declared time-scale multiplier so it
-      plays out in minutes rather than weeks. Fish are boids on their own
-      density/velocity field, reading the current for rheotaxis and a nutrient
-      gradient for food; plankton are a physarum weld on that same nutrient
-      field &mdash; they grow it, fish graze it down. Bubbles rise at a
-      radius-dependent terminal speed with a random walk and pop at the
-      surface. Plants are the one hand-stepped exception: small Verlet chains
-      reading the current and the light field, not a declared population.
-      <strong>The CPU reference implementation (engine/cpu.js) is the
-      instrument of record</strong> &mdash; the WebGL2 backend is a checked
-      projection of it, verified within a declared tolerance
-      (<a href="twin.html" style="color:var(--accent)">twin.html</a>), never
-      trusted past that tolerance (docs/aquarium-design.md).
+      <strong>How it works.</strong> Water flows but can't be squeezed: every
+      step the flow is corrected so no cell gains or loses water, and nothing
+      flows through the glass. The water carries heat. The heater warms it and
+      warm water rises. Fish waste becomes ammonia, and two kinds of bacteria
+      in the filter sponge turn it into nitrite, then nitrate, without making
+      or losing nitrogen (the panel's <code>nitrogen.ratio</code> compares what
+      is in the water with what the fish added). The chemistry runs sped up.
+      Fish school like simulated birds and turn to face the current. Plankton
+      follow a food scent like the slime-mould dots. Bubbles rise from the
+      gravel and pop at the surface. Plants are chains of linked points that
+      sway.
+    </p>
+    <p class="note">
+      <strong>What it does not model.</strong> The water does not carry its
+      own motion along (no self-advection), so it moves like thick syrup
+      pushed by the filter, not like real swirling water. Light from the
+      surface lands only on the bottom row, so plants and plankton get almost
+      no light above it, and the ripple-light bending uses the wrong angle.
+      The bacteria grow in large jumps that swing up and down instead of
+      settling. Fish eat very little of the plankton food. The reference
+      engine's coarser grid (the default for "cpu") keeps the heater and
+      filter rates of the full grid, so its tank is not the same tank.
+      A slower reference version checks the fast graphics-card version for
+      100 steps on a small grid, starting from this page's own setup
+      (<a href="twin.html" style="color:var(--accent)">twin check</a>).
+      The check solves the water-squeeze step to the end; at this page's
+      44 passes the two versions give slightly different water, so the
+      fish in the two versions soon swim different paths.
     </p>
     <div class="actions">
       <button type="button" id="btn-feed">feed</button>
-      <button type="button" id="btn-waterchange">water change</button>
-      <button type="button" id="btn-reset">reset (new seed)</button>
+      <button type="button" id="btn-waterchange">change water</button>
+      <button type="button" id="btn-reset">start over</button>
     </div>
-    <pre id="observables">warming up&hellip;</pre>
+    <pre id="observables">starting&hellip;</pre>
   </div>
 
   <div class="panel" id="panel"></div>
@@ -86,7 +155,7 @@ import { defineParams } from '../../src/params/define.js';
 import { renderPanel } from '../../src/panel/render.js';
 import { createAnimationLoop, prefersReducedMotion } from '../../src/lifecycle/mount.js';
 
-import { SCHEMA, CHANNELS, buildAquariumSpec, seedAquarium, bubbleRadius } from './spec.js';
+import { SCHEMA, CHANNELS, buildAquariumSpec, setupState, bubbleRadius } from './spec.js';
 import { createSurface, stepSurface, castCaustics } from './surface.js';
 import { createPlants, stepPlants, plantDepositPoints } from './plants.js';
 import { rand01 } from './engine/rng.js';
@@ -135,8 +204,9 @@ function setup(seed) {
   const values = store.values();
   const { spec, meta } = buildAquariumSpec(values, seed);
   const cpuState = cpuEngine.createState(spec);
-  seedAquarium(spec, cpuState, meta, values);
-  cpuEngine.resetAgents(spec, cpuState);
+  // resetAgents then seedAquarium (see spec.js setupState): the same
+  // function twin.html runs, so the twin check tests this page's start.
+  setupState(spec, cpuState, meta, values, cpuEngine);
 
   const backend = values.backend;
   let gl = null, glState = null;
@@ -158,6 +228,11 @@ function setup(seed) {
   return {
     values, spec, meta, backend, gl, glState, cpuState, surface, plants, bubbleRadii,
     t: 0, steps: 0, stepAccumulator: 0,
+    // Nitrogen ledger (2026-09-24): ammonia the fish have added, and what
+    // water changes removed (measured at the click). Plants only remove
+    // nitrate, so total N in the water must stay at or below
+    // added - removed, up to the small loss/gain of the advection step.
+    nAdded: 0, nRemovedByWaterChange: 0,
     frameCache: null, // { momentum, light, fish, plankton, bubbles } — one per rendered frame
     lastVerdict: 'settling in'
   };
@@ -213,7 +288,9 @@ function refreshSlowCache(w, force) {
     nutrient: getFieldDirect(w, CHANNELS.NUTRIENT),
     bacteriaA: getFieldDirect(w, CHANNELS.BACTERIA_A),
     bacteriaB: getFieldDirect(w, CHANNELS.BACTERIA_B),
-    fishDensity: getFieldDirect(w, CHANNELS.FISH_DENSITY)
+    fishDensity: getFieldDirect(w, CHANNELS.FISH_DENSITY),
+    // static after setup; re-read with the slow tier to stay backend-agnostic
+    filterMask: getFieldDirect(w, CHANNELS.FILTER_MASK)
   };
 }
 
@@ -264,12 +341,18 @@ function engineStep(w) {
   else stepGL(w.gl, w.glState);
   w.steps += 1;
   w.t += 1;
+  // Every fish deposits fishAmmoniaRate per step (spec.js fish weld 6,
+  // a bilinear 'wall' deposit, which keeps all of it on the grid).
+  w.nAdded += w.values.fishCount * w.values.fishAmmoniaRate;
 }
 
-/* ---- app-level physics, once per rendered frame -------------------
+/* ---- app-level physics, once per ENGINE STEP ----------------------
    Surface wave + caustics, plant Verlet + deposits, bubble surface
    recycling, plankton light-speed coupling. All backend-agnostic
-   through the accessors above. */
+   through the accessors above. Called right after each engineStep (see
+   tick), so its rates relative to the engine do not change with the
+   sim-speed knob (before 2026-09-24 it ran once per rendered frame while
+   sim speed ran up to 4 engine steps per frame). */
 function stepAppPhysics(w) {
   const { width: W, height: H } = w.spec;
   const c = w.frameCache;
@@ -579,7 +662,43 @@ function computeObservables(w) {
   }
   const meanStress = fish.x.length ? stressAcc / fish.x.length : 0;
 
-  let verdict = 'settling in';
+  // Nitrogen ledger: total N now in the water vs what fish added minus
+  // what water changes took out. ratio <= ~1 means no nitrogen is being
+  // created (before 2026-09-24 this was 205-250 at the defaults).
+  const nTotal = sum(ammonia) + sum(nitrite) + sum(nitrate);
+  const nBudget = w.nAdded - w.nRemovedByWaterChange;
+  const nitrogen = {
+    total: +nTotal.toFixed(3), addedByFish: +w.nAdded.toFixed(3),
+    removedByWaterChange: +w.nRemovedByWaterChange.toFixed(3),
+    ratio: nBudget > 1e-9 ? +(nTotal / nBudget).toFixed(4) : null
+  };
+
+  // Verdict (2026-09-24): read from per-cell concentrations INSIDE the
+  // filter sponge (the only cells where bacteria live), not whole-grid
+  // sums. The old version compared whole-grid sums with thresholds far
+  // below their size, so every run read "nitrate accumulating, tank
+  // stabilizing" by step 291. The threshold is the Monod half-saturation
+  // (the level at which bacteria grow at half speed).
+  const mask = s.filterMask;
+  let nf = 0, fNH3 = 0, fNO2 = 0, fNO3 = 0, fBacA = 0, fBacB = 0;
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] <= 0) continue;
+    nf++; fNH3 += ammonia[i]; fNO2 += nitrite[i]; fNO3 += nitrate[i]; fBacA += bacteriaA[i]; fBacB += bacteriaB[i];
+  }
+  if (nf) { fNH3 /= nf; fNO2 /= nf; fNO3 /= nf; fBacA /= nf; fBacB /= nf; }
+  const half = w.values.nitrifyHalfSat;
+  const tankNH3 = mean(ammonia);
+  let verdict;
+  if (w.t < 120) verdict = 'starting';
+  else if (fBacA < 0.05 || fBacB < 0.05) verdict = 'filter bacteria not established yet';
+  else if (fNH3 > half) verdict = 'ammonia in the filter faster than its bacteria use it';
+  else if (fNO2 > half) verdict = 'nitrite in the filter faster than its bacteria use it';
+  else verdict = 'filter turns the ammonia that reaches it into nitrate';
+  if (w.t >= 120 && tankNH3 > 10 * Math.max(fNH3, half)) verdict += '; most ammonia stays in the open water';
+  const filter = {
+    cells: nf, ammonia: +fNH3.toExponential(2), nitrite: +fNO2.toExponential(2), nitrate: +fNO3.toExponential(3),
+    bacteriaA: +fBacA.toFixed(3), bacteriaB: +fBacB.toFixed(3)
+  };
   const meanBac = mean(bacteriaA) + mean(bacteriaB);
   // Threshold rescaled 2026-09-11 alongside spec.js's nitrifyHalfSat
   // fix (see that SCHEMA entry's comment): bacteriaA/bacteriaB only
@@ -592,18 +711,14 @@ function computeObservables(w) {
   // yet started" even once bacteria were established. 0.002 sits well
   // above the bootstrap seed's own whole-grid mean (~0.0004) and well
   // below the achieved-healthy mean, so it actually discriminates.
-  if (w.t < 120) verdict = 'filling and warming up';
-  else if (meanBac < 0.002) verdict = 'nitrogen cycle not yet started';
-  else if (sum(ammonia) > 0.5 && sum(nitrite) < 0.01) verdict = 'cycling: ammonia rising, bacteria establishing';
-  else if (sum(nitrite) > 0.01 && sum(nitrate) < 0.01) verdict = 'cycling: nitrite spike';
-  else if (sum(nitrate) > 0.01) verdict = 'cycling: nitrate accumulating, tank stabilizing';
 
   return {
     t: w.t, steps: w.steps, backend: w.backend,
     kineticEnergy: ke, enstrophy, meanAbsDivergence,
     meanT: mean(temperature), surfaceRms: oxygenSurfaceRms,
     nh3: sum(ammonia), no2: sum(nitrite), no3: sum(nitrate), o2: mean(oxygen), nutrient: sum(nutrient),
-    bacteriaA: mean(bacteriaA), bacteriaB: mean(bacteriaB),
+    nitrogen, filter, tankMeanAmmonia: +tankNH3.toExponential(2),
+    bacteriaA: mean(bacteriaA), bacteriaB: mean(bacteriaB), meanBacteria: meanBac,
     fishCount: fish.x.length, fishInside,
     meanStress, planktonCount: c.plankton.x.length, bubbles: c.bubbles.x.length,
     plantTilt,
@@ -635,17 +750,18 @@ function tick(now) {
   lastFrameTime = now;
 
   const reduced = prefersReducedMotion();
+  let stepped = 0;
   if (!reduced) {
     world.stepAccumulator += world.values.simSpeed;
-    let guard = 0;
-    while (world.stepAccumulator >= 1 && guard < 240) {
+    while (world.stepAccumulator >= 1 && stepped < 240) {
       engineStep(world);
+      refreshFrameCache(world);
+      stepAppPhysics(world);
       world.stepAccumulator -= 1;
-      guard++;
+      stepped++;
     }
   }
-  refreshFrameCache(world);
-  if (!reduced) stepAppPhysics(world);
+  if (!stepped || !world.frameCache) refreshFrameCache(world);
   refreshSlowCache(world, world.slowCache == null);
   render(world);
   if (world.slowCache.atStep === world.steps || world.lastObservables == null) {
@@ -657,6 +773,19 @@ function tick(now) {
 }
 
 const loop = createAnimationLoop(tick);
+
+// Test port for headless checks (2026-09-24): the live world, its latest
+// observables, and the bubbles' current positions/speeds.
+window.__aquarium = {
+  world: () => world,
+  observables: () => world && world.lastObservables,
+  bubbles: () => {
+    const b = world && world.frameCache && world.frameCache.bubbles;
+    if (!b) return null;
+    let y = 0, sp = 0; for (let i = 0; i < b.y.length; i++) { y += b.y[i]; sp += b.speed[i]; }
+    return { count: b.y.length, meanY: y / b.y.length, meanSpeed: sp / b.y.length, steps: world.steps, H: world.spec.height };
+  }
+};
 
 function rebuild() {
   world = setup((seedCounter++) * 104729 + 7);
@@ -679,18 +808,19 @@ document.getElementById('btn-feed').addEventListener('click', () => {
 document.getElementById('btn-waterchange').addEventListener('click', () => {
   if (!world) return;
   const scaleDown = (name, fraction) => {
+    let removed = 0;
     if (world.backend === 'cpu') {
       const grid = world.cpuState.fields[name];
-      for (let i = 0; i < grid.length; i++) grid[i] *= fraction;
+      for (let i = 0; i < grid.length; i++) { removed += grid[i] * (1 - fraction); grid[i] *= fraction; }
     } else {
       const data = readback(world.gl, world.glState, name);
-      for (let i = 0; i < data.length; i++) data[i] *= fraction;
+      for (let i = 0; i < data.length; i++) { removed += data[i] * (1 - fraction); data[i] *= fraction; }
       uploadChannel(world.gl, world.glState, name, data);
     }
+    return removed;
   };
-  scaleDown(CHANNELS.AMMONIA, 0.3);
-  scaleDown(CHANNELS.NITRITE, 0.3);
-  scaleDown(CHANNELS.NITRATE, 0.5);
+  world.nRemovedByWaterChange += scaleDown(CHANNELS.AMMONIA, 0.3)
+    + scaleDown(CHANNELS.NITRITE, 0.3) + scaleDown(CHANNELS.NITRATE, 0.5);
   scaleDown(CHANNELS.NUTRIENT, 0.6);
 });
 

@@ -238,6 +238,15 @@ void main() {
    cover". */
 
 function buildProjectionPrograms(gl, boundaryMode) {
+  // boundaryMode 1 ('wall'): no-penetration walls, the same discrete
+  // operators as cpu.js's project() (see its wallFaces comment): the
+  // flux through the tank's edge faces is 0 in the divergence, the
+  // pressure update uses Neumann ghost cells (only open neighbours count,
+  // and the divisor is their number), and the corrected field has 0
+  // x-flux on the right column and 0 y-flux on the bottom row. The GPU
+  // solve is weighted Jacobi (see jacobiFS), not Gauss-Seidel: same
+  // solution when converged, different iterates at the page's 44 passes.
+  const isWall = boundaryMode === 1 ? 'true' : 'false';
   const divergenceFS = `#version 300 es
 ${GLSL_PREAMBLE}
 uniform sampler2D u_vec;
@@ -246,9 +255,18 @@ out vec4 outColor;
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
   vec4 m = texelFetch(u_vec, c, 0);
-  vec4 l = efReadCellB(u_vec, c + ivec2(-1, 0), u_size, ${boundaryMode});
-  vec4 u = efReadCellB(u_vec, c + ivec2(0, -1), u_size, ${boundaryMode});
-  float div = (m.r - l.r) + (m.g - u.g);
+  float div;
+  if (${isWall}) {
+    float rx = c.x == u_size.x - 1 ? 0.0 : m.r;
+    float lx = c.x == 0 ? 0.0 : texelFetch(u_vec, c + ivec2(-1, 0), 0).r;
+    float dy = c.y == u_size.y - 1 ? 0.0 : m.g;
+    float uy = c.y == 0 ? 0.0 : texelFetch(u_vec, c + ivec2(0, -1), 0).g;
+    div = (rx - lx) + (dy - uy);
+  } else {
+    vec4 l = efReadCellB(u_vec, c + ivec2(-1, 0), u_size, ${boundaryMode});
+    vec4 u = efReadCellB(u_vec, c + ivec2(0, -1), u_size, ${boundaryMode});
+    div = (m.r - l.r) + (m.g - u.g);
+  }
   outColor = vec4(div, 0.0, 0.0, 1.0);
 }
 `;
@@ -260,12 +278,25 @@ uniform ivec2 u_size;
 out vec4 outColor;
 void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
-  float l = efReadCellB(u_p, c + ivec2(-1, 0), u_size, ${boundaryMode}).r;
-  float r = efReadCellB(u_p, c + ivec2(1, 0), u_size, ${boundaryMode}).r;
-  float u = efReadCellB(u_p, c + ivec2(0, -1), u_size, ${boundaryMode}).r;
-  float d = efReadCellB(u_p, c + ivec2(0, 1), u_size, ${boundaryMode}).r;
   float div = texelFetch(u_div, c, 0).r;
-  outColor = vec4((l + r + u + d - div) / 4.0, 0.0, 0.0, 1.0);
+  if (${isWall}) {
+    float acc = 0.0, n = 0.0;
+    if (c.x > 0) { acc += texelFetch(u_p, c + ivec2(-1, 0), 0).r; n += 1.0; }
+    if (c.x < u_size.x - 1) { acc += texelFetch(u_p, c + ivec2(1, 0), 0).r; n += 1.0; }
+    if (c.y > 0) { acc += texelFetch(u_p, c + ivec2(0, -1), 0).r; n += 1.0; }
+    if (c.y < u_size.y - 1) { acc += texelFetch(u_p, c + ivec2(0, 1), 0).r; n += 1.0; }
+    // Weighted Jacobi (omega 0.8). With exact Neumann rows the checkerboard
+    // mode has Jacobi eigenvalue exactly -1 and never damps; weighting maps
+    // it to 1 - 2*omega = -0.6. Same fixed point as cpu.js's Gauss-Seidel.
+    float pc = texelFetch(u_p, c, 0).r;
+    outColor = vec4(0.2 * pc + 0.8 * (acc - div) / n, 0.0, 0.0, 1.0);
+  } else {
+    float l = efReadCellB(u_p, c + ivec2(-1, 0), u_size, ${boundaryMode}).r;
+    float r = efReadCellB(u_p, c + ivec2(1, 0), u_size, ${boundaryMode}).r;
+    float u = efReadCellB(u_p, c + ivec2(0, -1), u_size, ${boundaryMode}).r;
+    float d = efReadCellB(u_p, c + ivec2(0, 1), u_size, ${boundaryMode}).r;
+    outColor = vec4((l + r + u + d - div) / 4.0, 0.0, 0.0, 1.0);
+  }
 }
 `;
   const correctFS = `#version 300 es
@@ -280,7 +311,12 @@ void main() {
   float p = texelFetch(u_p, c, 0).r;
   float rt = efReadCellB(u_p, c + ivec2(1, 0), u_size, ${boundaryMode}).r;
   float d = efReadCellB(u_p, c + ivec2(0, 1), u_size, ${boundaryMode}).r;
-  outColor = vec4(v.r - (rt - p), v.g - (d - p), 0.0, 1.0);
+  float vx = v.r - (rt - p), vy = v.g - (d - p);
+  if (${isWall}) {
+    if (c.x == u_size.x - 1) vx = 0.0;
+    if (c.y == u_size.y - 1) vy = 0.0;
+  }
+  outColor = vec4(vx, vy, 0.0, 1.0);
 }
 `;
   return {
@@ -695,8 +731,8 @@ void main() {
   float b = texelFetch(u_bacteria, ivec2(gl_FragCoord.xy), 0).r;
   float m = texelFetch(u_mask, ivec2(gl_FragCoord.xy), 0).r;
   float mu = u_growthRate * s / (s + u_halfSaturation + 1e-12);
-  float uptake = mu * b * m;
-  outColor = vec4(max(0.0, s - uptake), 0.0, 0.0, 1.0);
+  float uptake = min(s, mu * b * m);
+  outColor = vec4(s - uptake, 0.0, 0.0, 1.0);
 }
 `);
     programs.nitrifyProduct = linkProgram(gl, FULLSCREEN_VS, head + `
@@ -706,7 +742,10 @@ void main() {
   float m = texelFetch(u_mask, ivec2(gl_FragCoord.xy), 0).r;
   float p = texelFetch(u_product, ivec2(gl_FragCoord.xy), 0).r;
   float mu = u_growthRate * s / (s + u_halfSaturation + 1e-12);
-  float uptake = mu * b * m;
+  // Same clamp as nitrifySubstrate and cpu.js: the product gains exactly
+  // what the substrate lost (before 2026-09-24 it gained the unclamped
+  // uptake, which created nitrogen).
+  float uptake = min(s, mu * b * m);
   outColor = vec4(p + uptake * u_yieldFactor, 0.0, 0.0, 1.0);
 }
 `);

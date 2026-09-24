@@ -3,7 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AST Topological Convolution Kernel</title>
+    <title>Heat on a code map</title>
+<script type="application/cogdoc+yaml">
+id: app-heat-on-a-code-map
+type: artifact
+title: "Heat on a code map"
+description: >
+  A toy map of seven code files. Arrows show which file uses (imports) which.
+  Click a file to add "heat", a stand-in for a recent change. Each Step moves
+  a share of every file's heat along its import links, at different rates in
+  each direction, and keeps a fraction T of the total. This is thresholded,
+  asymmetric mass transfer on a hand-built graph, not an abstract syntax tree
+  (AST) and not a convolution kernel; "heat" is a metaphor.
+sector: research
+status: active
+created: 2026-08-11
+updated: 2026-09-24
+authors: [chaz, cog]
+tags: [graph, import-graph, mass-transfer, decay, toy]
+claim: >
+  Asymmetric, thresholded mass transfer with decay on a hand-built 7-file
+  import graph. Total heat after a Step is exactly T times total heat
+  before, for every slider setting (guaranteed by the outflow cap of
+  issue #37; checked on the page over the whole slider grid).
+method:
+  - name: alpha
+    label: heat sent against the arrows
+    range: [0, 1]
+    default: 0.6
+    meaning: >
+      Share of a file's heat sent to the files that import it, split evenly
+      over them (divided by the file's in-degree).
+  - name: beta
+    label: heat sent along the arrows
+    range: [0, 1]
+    default: 0.1
+    meaning: >
+      Share of a file's heat sent to the files it imports, split evenly over
+      them (divided by the file's out-degree).
+  - name: T
+    label: heat kept per step
+    range: [0.5, 1]
+    default: 0.9
+    meaning: >
+      Every file's heat is multiplied by T each Step. This is the only way
+      heat leaves.
+  - name: threshold
+    value: 0.05
+    fixed: true
+    meaning: A file with heat at or below 0.05 sends nothing that Step.
+  - name: outScale
+    value: "T / (alpha[if the file is imported] + beta[if it imports]) when that sum exceeds T, else 1"
+    fixed: true
+    meaning: >
+      Caps what a file sends at the heat it keeps, so no file goes negative.
+      Conservation condition: each flow is subtracted from its sender and
+      added to its receiver, and no sender is overdrawn, so the flows move
+      heat without creating or destroying it and the total changes only by
+      the factor T.
+observables:
+  total_heat: shown on the page after every Step
+  harness: "window.__ast: nodes, params, step(), total(), deposit(id, amount), clear()"
+findings:
+  - >
+    Over the whole slider grid (alpha, beta in 0..1 by 0.05, T in 0.5..1 by
+    0.05; 5 heat on each file in turn, 6 steps) the ratio of total heat
+    after a Step to before equals T to float rounding.
+  - >
+    Heat is moved in proportion to the sender's own heat, not to a
+    difference between neighbours, so this is not diffusion in the
+    heat-equation sense. At T = 1 heat piles up on the files nothing
+    imports (app.ts, server.ts) when alpha exceeds beta.
+limitations:
+  - "Seven hand-picked files; the graph is not read from real code."
+  - "The node colour saturates at 5 heat; read the number, not the colour, for larger values."
+refs: []
+</script>
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="stylesheet" href="../../src/panel/tokens.css">
     <script src="vendor/d3.v7.min.js"></script>
@@ -30,28 +105,34 @@
 <body>
 
 <div id="sidebar">
-    <h2>Topological AST Diffusion</h2>
-    <p class="desc">A Directed Acyclic Graph representing code. Click a node to inject heat (a Git merge). Click "Step" to see how the convolution kernel diffuses heat asymmetrically.</p>
+    <h2>Heat on a code map</h2>
+    <p class="desc">A toy map of seven code files. Arrows show which file uses which. Click a file to add "heat", a stand-in for a recent change. Press Step to move heat along the arrows, at different rates in each direction.</p>
     
     <div class="control-group">
-        <label>Upstream Cascade (α) <span id="val-alpha">0.6</span></label>
+        <label>Heat sent against the arrows (α) <span id="val-alpha">0.6</span></label>
         <input type="range" id="ctrl-alpha" min="0" max="1" step="0.05" value="0.6">
-        <span style="font-size: 11px; color:var(--faint);">Flows AGAINST import arrows (fixing breaks).</span>
+        <span style="font-size: 11px; color:var(--faint);">Toward files that use this one. The idea: they may break.</span>
     </div>
 
     <div class="control-group">
-        <label>Downstream Cascade (β) <span id="val-beta">0.1</span></label>
+        <label>Heat sent along the arrows (β) <span id="val-beta">0.1</span></label>
         <input type="range" id="ctrl-beta" min="0" max="1" step="0.05" value="0.1">
-        <span style="font-size: 11px; color:var(--faint);">Flows WITH import arrows (priming context).</span>
+        <span style="font-size: 11px; color:var(--faint);">Toward files this one uses. The idea: they give context.</span>
     </div>
 
     <div class="control-group">
-        <label>Decay / Evaporation (T) <span id="val-decay">0.9</span></label>
+        <label>Heat kept per step (T) <span id="val-decay">0.9</span></label>
         <input type="range" id="ctrl-decay" min="0.5" max="1" step="0.05" value="0.9">
+        <span style="font-size: 11px; color:var(--faint);">If the two "heat sent" sliders add up to more than "heat kept", each file's sends are scaled down so it never sends more than it keeps. Total heat always ends a step at exactly T times what it was.</span>
     </div>
 
-    <button id="btn-step" style="margin-top:10px;">Step Convolution (t+1)</button>
-    <button id="btn-reset">Clear All Heat</button>
+    <div class="control-group">
+        <label>Total heat <span id="val-total">0</span></label>
+        <span id="val-total-note" style="font-size: 11px; color:var(--faint);">Sum over all files. Each click adds 5.</span>
+    </div>
+
+    <button id="btn-step" style="margin-top:10px;">Step</button>
+    <button id="btn-reset">Clear heat</button>
 </div>
 
 <div id="canvas-container"></div>
@@ -127,7 +208,9 @@
     // domain, which nearly vanishes into the kit's near-black ground (--bg
     // #050505); this anchors the same warm-hue "heat" ramp between a pale straw
     // and a bright orange-red so every value in [0, 5] stays legible on dark.
-    const colorScale = d3.scaleSequential(d3.interpolateHcl('#fff3b0', '#ff5a36')).domain([0, 5]);
+    // clamp(true): above 5 the colour stays at the hot end. Unclamped, the HCL
+    // interpolator extrapolated past orange-red and the hottest files rendered blue.
+    const colorScale = d3.scaleSequential(d3.interpolateHcl('#fff3b0', '#ff5a36')).domain([0, 5]).clamp(true);
 
     const nodeCircle = nodeGroup.append("circle")
         .attr("class", "node-circle")
@@ -155,14 +238,22 @@
         nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
     });
 
+    function totalHeat() {
+        return nodes.reduce((s, n) => s + n.heat, 0);
+    }
+
     function updateVisuals() {
         nodeCircle
             .attr("fill", d => colorScale(d.heat))
             .attr("r", d => 15 + Math.min(15, d.heat * 3));
+        nodeGroup.select("title").remove();
+        nodeGroup.append("title").text(d => `${d.id}: heat ${d.heat.toFixed(3)}`);
+        document.getElementById('val-total').textContent = totalHeat().toFixed(3);
     }
 
-    // Mathematical Convolution Step
-    document.getElementById('btn-step').addEventListener('click', () => {
+    // One Step: decay, then move heat along the import links (thresholded,
+    // asymmetric mass transfer; not a convolution).
+    function step() {
         let nextHeat = {};
         
         // 1. Decay current heat
@@ -177,7 +268,7 @@
             outScale[n.id] = out > params.decay ? params.decay / out : 1;
         });
 
-        // 2. Convolution (Message Passing)
+        // 2. Move heat along the links (message passing)
         links.forEach(l => {
             const source = typeof l.source === 'string' ? nodes.find(n=>n.id===l.source) : l.source;
             const target = typeof l.target === 'string' ? nodes.find(n=>n.id===l.target) : l.target;
@@ -208,12 +299,20 @@
         });
         
         updateVisuals();
-    });
+    }
+    document.getElementById('btn-step').addEventListener('click', step);
 
-    document.getElementById('btn-reset').addEventListener('click', () => {
+    function clearHeat() {
         nodes.forEach(n => n.heat = 0);
         updateVisuals();
-    });
+    }
+    document.getElementById('btn-reset').addEventListener('click', clearHeat);
+
+    // Test port (headless checks): same code path as the buttons.
+    window.__ast = {
+        nodes, params, step, clear: clearHeat, total: totalHeat,
+        deposit: (id, amount) => { nodes.find(n => n.id === id).heat += amount; updateVisuals(); }
+    };
 
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('sw.js').catch(() => {});
