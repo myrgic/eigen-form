@@ -210,7 +210,16 @@ limitations:
     wrap-on-both-axes semantics have no honest image under the envelope
     fold or a walled square. Möbius is the one surface where the sim is
     clipped (the strip's free edges are walls; agents bounce, the field
-    stops).
+    stops): since v2.11.8 an agent reflects off a wall (y and heading
+    mirrored), trail and momentum diffuse with no-flux edges, and a sensor
+    past an edge reads the edge row. Before v2.11.8 agents were clamped to
+    the edge and the field diffused and was read periodically across y, so
+    the field lived on a Klein bottle.
+    Side effect of the edge-row convention (measured, 150 s soaks, seeds
+    11/22/33): trail accumulates near the walls to 5-10x the mean row mass.
+    A mirrored-read ablation (a read past a wall reflects back inside) removes
+    most of it through 5400 steps (single seed), so the accumulation comes
+    mainly from the sensor convention, not from the no-flux wall itself.
   - >
     β₁ on a twisted quotient is measured on the SQUARE (fundamental
     polygon) mask — the honest computation on the glued manifold itself
@@ -450,7 +459,7 @@ limitations:
     <button id="tabSim" class="on">sim</button>
     <button id="tab3d">3D</button>
   </div>
-  <div id="sq"><div id="sqbox"><canvas id="sim"></canvas><canvas id="over"></canvas><div id="verBadge">v2.11.7</div></div></div>
+  <div id="sq"><div id="sqbox"><canvas id="sim"></canvas><canvas id="over"></canvas><div id="verBadge">v2.11.8</div></div></div>
   <div id="v3"><canvas id="c3"></canvas><div id="hint3d">drag to orbit · wheel to zoom</div></div>
 </div>
 <div id="toast"></div>
@@ -473,7 +482,7 @@ const TOPOLOGIES = [
   { id:'projective', name:'Projective plane', word:'a b a b', orientable:false,
     x:{wrap:true, flip:'y'}, y:{wrap:true, flip:'x'},
     note:'Both pairs mirrored: every crossing is a 180° turn of the world. The densest gluing here; loops close on themselves fastest.' },
-  { id:'mobius', name:'Möbius strip', word:'a b a⁻¹ c', orientable:false,
+  { id:'mobius', name:'Möbius strip', word:'a b a c', orientable:false,
     x:{wrap:true, flip:'y'}, y:{wrap:false, flip:null},
     note:'One mirrored weld, one pair of walls — the only clipped surface. The field stops at the strip\'s edges; agents bounce off them.' },
 ];
@@ -542,8 +551,14 @@ function wrapPos(p) {                     // p has {x, y, a}
     let k = Math.floor(p.y / H);
     if (k !== 0) { p.y -= k * H; if (topo.y.flip) for (let j = 0; j < Math.abs(k); j++) flipP(p, topo.y.flip); }
   } else {
-    if (p.y < 0) { p.y = 0; }
-    if (p.y >= H) { p.y = H - 1e-4; }
+    /* v2.11.8 (#39): a wall REFLECTS — position mirrored back inside and
+       heading reflected (a -> -a). The old clamp pinned the agent on the
+       edge row with its heading still into the wall, so it re-hit the
+       wall every step (52-88% of the Möbius population sat on the two
+       wall rows after 2500 steps, against 0.7% for a uniform spread). */
+    if (p.y < 0) { p.y = -p.y; p.a = -p.a; }
+    if (p.y >= H) { p.y = 2*H - p.y; p.a = -p.a; }
+    if (p.y < 0 || p.y >= H) p.y = Math.min(H - 1e-4, Math.max(0, p.y));
   }
 }
 /* fold a square sample point for field reads: mirrored cells read the
@@ -559,6 +574,9 @@ function wrapPos(p) {                     // p has {x, y, a}
 let seamFold='named';
 function foldRead(x, y) {
   let fx = ((x % W) + W) % W, fy = ((y % H) + H) % H;
+  /* v2.11.8 (#39): across a WALL (Möbius y) there is no other side — a
+     read past the edge sees the edge row, never the opposite edge. */
+  if (!topo.y.wrap) fy = Math.min(H - 1, Math.max(0, y));   /* H-1 keeps an x-seam mirror (H-1-fy) >= 0 */
   /* v2.11.5 (review H3): negative coords missed the mirror — use the
      momRead/crossed() double-mod form so x=-0.5 folds to the mirrored
      image like every other read path. */
@@ -586,7 +604,10 @@ function momRead(x, y, out) {
   let i0=Math.floor(fxp), j0=Math.floor(fyp);
   const tx=fxp-i0, ty=fyp-j0;
   i0=((i0%mW)+mW)%mW; j0=((j0%mH)+mH)%mH;
-  const i1=(i0+1)%mW, j1=(j0+1)%mH;
+  const i1=(i0+1)%mW;
+  let j1=(j0+1)%mH;
+  /* v2.11.8 (#39): walled y — the bilinear stencil stops at the edge rows */
+  if (!topo.y.wrap) { if (fyp < 0) { j0 = 0; j1 = 0; } else if (j0 >= mH - 1) { j0 = mH - 1; j1 = mH - 1; } }
   const a=j0*mW, b=j1*mW;
   const w00=(1-tx)*(1-ty), w10=tx*(1-ty), w01=(1-tx)*ty, w11=tx*ty;
   let vx = momX[a+i0]*w00+momX[a+i1]*w10+momX[b+i0]*w01+momX[b+i1]*w11;
@@ -645,6 +666,8 @@ const Noise = {
    got pumped into the two seam rows over ~a minute. */
 function nb(x, y){
   let fx = ((x % W) + W) % W, fy = ((y % H) + H) % H;
+  /* v2.11.8 (#39): a wall is no-flux — the neighbour past it is the cell itself */
+  if (!topo.y.wrap && (y < 0 || y >= H)) fy = y < 0 ? 0 : H - 1;
   if (topo.x.flip && (x < 0 || x >= W)) fx = W - 1 - fx;
   if (topo.y.flip && (y < 0 || y >= H)) fx = W - 1 - fx;
   if (topo.x.flip === 'y' && (x < 0 || x >= W)) fy = H - 1 - fy;
@@ -662,6 +685,7 @@ function diffuseDecay(){
   const d=P.dec;
   const nbT = (x, y) => {
     let fx = ((x % W) + W) % W, fy = ((y % H) + H) % H;
+    if (!topo.y.wrap && (y < 0 || y >= H)) fy = y < 0 ? 0 : H - 1;   /* v2.11.8 (#39): no-flux wall */
     if (topo.x.flip && (x < 0 || x >= W)) fx = W - 1 - fx;
     if (topo.y.flip && (y < 0 || y >= H)) fx = W - 1 - fx;
     if (topo.x.flip === 'y' && (x < 0 || x >= W)) fy = H - 1 - fy;
@@ -683,6 +707,7 @@ function diffuseDecayMom(){
   const mnb = (F, x, y, cx) => {
     let fx = ((x % mW) + mW) % mW, fy = ((y % mH) + mH) % mH;
     let s = 1;
+    if (!topo.y.wrap && (y < 0 || y >= mH)) fy = y < 0 ? 0 : mH - 1;   /* v2.11.8 (#39): no-flux wall */
     if (topo.x.flip && (x < 0 || x >= mW)) { if (cx === 'x') s = -s; fx = mW - 1 - fx; }
     if (topo.y.flip && (y < 0 || y >= mH)) { if (cx === 'x') s = -s; fx = mW - 1 - fx; }
     if (topo.x.flip === 'y' && (x < 0 || x >= mW)) { if (cx === 'y') s = -s; fy = mH - 1 - fy; }
@@ -721,8 +746,8 @@ const _f=[0,0,0];
    drift ν. Three modes: closed (v2.10.1 behavior, byte-identical),
    field-on (open system, P_in billed), field-decaying (shutoff protocol
    for measuring τ_sim from a single run). Energy ledger: P_in (injected),
-   P_loss (dissipation: leakage + trail evaporation), W_stored (coherent
-   trail mass + momentum coherence), τ_sim = W_stored / P_in. */
+   P_loss (dissipation: leakage + trail evaporation), W_stored (trail
+   contrast + momentum alignment), τ_sim = W_stored / P_loss (v2.11.8). */
 const CF = { mode:'closed', q:1.0, kappa:0.0, drift:0.0, shutdecay:0.97, arrows:false };
 /* per-step ledger + field-decay envelope for the τ_sim protocol */
 const CLEDGER = { P_in:0, P_loss:0, W_stored:0, tauSim:0, crossField:0, history:[] };
@@ -757,9 +782,6 @@ function confLedgerStep(){
   for(let i=0;i<grid.length;i++) mass += grid[i];
   const mean = mass / grid.length;
   const P_evap = (1 - dec) * mass;
-  /* coherent (stored) trail: cells above threshold thr */
-  let coherent = 0;
-  for(let i=0;i<grid.length;i++) if(grid[i] > P.thr*50) coherent += grid[i];
   /* v2.11.3 structure contrast: excess mass above uniform baseline */
   let contrast = 0;
   for(let i=0;i<grid.length;i++){ const ex = grid[i] - mean; if(ex > 0) contrast += ex; }
@@ -817,9 +839,12 @@ function confLedgerStep(){
   else { CLEDGER.P_in = CLEDGER.P_in * CF.shutdecay; if(!CLEDGER.P_in0) CLEDGER.P_in0 = CLEDGER.P_in || 1e-9; }
   CLEDGER.P_loss = P_evap * 0.01 + P_leak;
   CLEDGER.W_stored = contrast * 0.01 + coh * 100;   /* v2.11.3: structure contrast, not mass */
-  /* v2.11.3 (Opus): tau = W/P_in only at constant P_in (field-on);
-     in decaying mode the denominator vanishes -> ramp then snap. */
-  CLEDGER.tauSim = (CF.mode === 'field-on' && CLEDGER.P_in > 1e-9) ? CLEDGER.W_stored / CLEDGER.P_in : 0;
+  /* v2.11.3 (Opus): tau only at constant P_in (field-on).
+     v2.11.8 (#39): tau_E = W / P_loss, the power actually dissipated —
+     W / P_in divided by the dial constant 40κ/q, so it was W rescaled by
+     q/(40κ), and P_loss runs ~100-400× P_in here (the books never
+     balance), so the two are not interchangeable. */
+  CLEDGER.tauSim = (CF.mode === 'field-on' && CLEDGER.P_loss > 1e-9) ? CLEDGER.W_stored / CLEDGER.P_loss : 0;
   CLEDGER.history.push(CLEDGER.W_stored);
   if(CLEDGER.history.length > 600) CLEDGER.history.shift();
   CLEDGER.crossField = +crossField.toFixed(3);
@@ -982,7 +1007,10 @@ function stepAgents(){
     const [gx, gy] = foldRead(p.x, p.y);
     grid[(Math.floor(gy)%H)*W + (Math.floor(gx)%W)] += dep;
     if (P.mass>0){
-      const mi = ((Math.floor(gy/MS)%mH)+mH)%mH*mW + (((Math.floor(gx/MS)%mW)+mW)%mW);
+      /* v2.11.8 (#39): on a walled y the last partial block (gy >= mH*MS)
+         belongs to the bottom row, not (mod mH) to the top one */
+      const mj = topo.y.wrap ? ((Math.floor(gy/MS)%mH)+mH)%mH : Math.min(mH - 1, Math.floor(gy/MS));
+      const mi = mj*mW + (((Math.floor(gx/MS)%mW)+mW)%mW);
       momX[mi]+=Math.cos(p.a); momY[mi]+=Math.sin(p.a);
     }
   }
@@ -1380,8 +1408,8 @@ function drawContours(max){
       const nearT=s[1]<CS||s[3]<CS, nearB=s[1]>H-CS||s[3]>H-CS;
       if(nearL){ pathW.moveTo(s[0]+W,s[1]); pathW.lineTo(s[2]+W,s[3]); }
       if(nearR){ pathW.moveTo(s[0]-W,s[1]); pathW.lineTo(s[2]-W,s[3]); }
-      if(nearT){ pathW.moveTo(s[0],s[1]+H); pathW.lineTo(s[2],s[3]+H); }
-      if(nearB){ pathW.moveTo(s[0],s[1]-H); pathW.lineTo(s[2],s[3]-H); }
+      if(nearT && topo.y.wrap){ pathW.moveTo(s[0],s[1]+H); pathW.lineTo(s[2],s[3]+H); }
+      if(nearB && topo.y.wrap){ pathW.moveTo(s[0],s[1]-H); pathW.lineTo(s[2],s[3]-H); }
     }
     contourSegs.push({level:p, segs:segStore.slice()});
     octx.strokeStyle=`rgba(${col},${(0.06+0.13*p).toFixed(3)})`; octx.lineWidth=(3.2-1.5*p)/sx;

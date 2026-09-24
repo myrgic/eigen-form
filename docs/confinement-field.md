@@ -92,7 +92,11 @@ built for measurement):
   parameter in [0,1]. The v2.11.0–11.2 version (mean magnitude / deposit
   size) was a density proxy that latched at 1 in any non-trivial swarm.
 
-**τ_sim = W_stored / P_in is only defined at constant P_in (field-on)** —
+**τ_sim = W_stored / P_loss** (v2.11.8, #39 — it was W_stored / P_in, but
+P_in is the dial constant 40κ/q, so that ratio was W rescaled by q/(40κ);
+τ_E divides by the power actually dissipated, and P_loss here runs far above
+P_in, so the two are not interchangeable). **It is only defined at constant
+P_in (field-on)** —
 in decaying mode the denominator vanishes exponentially and the ratio ramps
 to ~10¹⁰ then snaps to 0 (refuted convention). A decaying-mode confinement
 time must come from fitting a STRUCTURE indicator's decay
@@ -111,7 +115,7 @@ denominator engineered to vanish.
 
 | Claim | Protocol | Result | Verdict |
 |---|---|---|---|
-| τ_sim vs κ | sweep κ 0.2–0.95, q=2 | W rises with κ; τ falls sub-linearly (P_in ∝ κ) | **banked** (old metric; shape held) |
+| τ_sim vs κ | sweep κ 0.2–0.95, q=2 | W rises with κ; τ falls sub-linearly (P_in ∝ κ) | **banked under the retired τ = W/P_in**; not re-run with τ = W/P_loss (v2.11.8) |
 | τ_sim vs ν | sweep ν 0–0.2 | flat — drift was billed as the dial value, ~2 orders under real transport | **instrument defect → fixed v2.11.2/3** |
 | Rational locking | q-hist peak vs driving q | v2.11.0 instrument decayed onto a fixed attractor (~1.8) regardless of q — the "lock at 2.02" was the bug confirming itself | **refuted → fixed v2.11.1** |
 | Rational tracking (fixed instrument) | q = 1→3: peak 1.02→2.48, monotone | tracks the field; residual ~0.83× = real cross-field advection ("effective q") | **banked** |
@@ -187,7 +191,7 @@ the effective window varies with agent speed; queued for the next pass.
   pressure-gradient-driven instabilities. The field lines are kinematic
   scaffolding, not force-carrying objects with their own dynamics.
 - Not energy-conserving: the ledger accounts flows but the sim's internal
-  units are not joules (and at field-on equilibrium P_loss ≈ 20× P_in — the
+  units are not joules (and at field-on equilibrium P_loss runs 100–400× P_in — the
   books don't balance; τ_sim is comparable only within the sim, and only in
   field-on mode).
 - Not a claim that physarum-agents are plasma: the mapping is structural
