@@ -3,7 +3,86 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boid Drafting Simulation</title>
+    <title>Boids in their own wake</title>
+<script type="application/cogdoc+yaml">
+id: paper-boid-wake-grid
+type: paper
+title: "Boids with a shared, fading velocity grid"
+description: >
+  100 flocking agents ("boids": stay close, keep apart, match heading) each write
+  a fifth of their velocity into a coarse grid that spreads out and fades. Every
+  boid is also pushed by what the other boids have written into its cell. The
+  world wraps around at the edges.
+sector: reference
+status: draft
+created: 2026-09-24
+updated: 2026-09-24
+authors:
+  - chazmaniandinkle
+tags: [boids, stigmergy, flocking, eigen-form]
+claim: >
+  Boids can be coupled through a shared, decaying velocity grid as well as
+  through their neighbour rules. Measured, the grid does not make the flock
+  line up more: at the defaults, heading agreement after 1500 steps averaged
+  about 0.85 with the wake push off and 0.77 with it on (seeds 1-9, wide
+  spread between seeds). The V-shapes you may see are not caused by the wakes.
+method:
+  - param: diss
+    label: wake fade per step
+    range: [0.01, 0.2]
+    default: 0.05
+    meaning: fraction of the grid lost per step, after a 3x3 mean spread
+  - param: draft
+    label: wake push strength
+    range: [0, 3]
+    default: 1.5
+    meaning: gain on the push from other boids' part of the grid in the current cell
+  - param: coh
+    label: stay close
+    range: [0, 2]
+    default: 0.5
+    meaning: gain on steering toward the neighbours' centre (radius 60 px)
+  - param: sep
+    label: keep apart
+    range: [0, 3]
+    default: 1.5
+    meaning: gain on steering away from neighbours closer than 25 px
+  - param: align
+    default: 0.5
+    fixed: true
+    meaning: gain on matching the neighbours' mean velocity
+observables:
+  grid: "15 px cells; total velocity per cell (clamped to +-2 per component) plus each boid's own share"
+  boundary: "positions wrap; neighbour offsets use the shortest way across the edges"
+  heading_agreement: "|mean of unit headings| (0 = random, 1 = all the same way); measured from outside the page"
+findings:
+  - >
+    Own-wake leak fixed (v1.1): a boid used to read its own cell before writing
+    to it, so it was pushed by its own earlier deposits. A lone boid started at
+    speed 0.5 reached the 3.5 cap within 200 steps at wake push 1.5 or 3 (seeds
+    1-3). Each boid's own share of the grid is now tracked and subtracted: the
+    lone boid stays at 0.5 at wake push 0, 1.5 and 3 (seeds 1-3). A boid 100 px
+    behind a leader moving at 3 still gains speed from the leader's wake (0.50
+    -> 0.53 in 40 steps, seed 1).
+  - >
+    With the leak removed, the wake push does not raise heading agreement at
+    the defaults (seeds 1-9: push 0 mean about 0.85, push 1.5 about 0.77).
+    Earlier gallery text said the wakes raise agreement; that measurement
+    included the leak and is not supported for this version.
+limitations:
+  - >
+    Not drafting: there is no drag model and no sideways upwash. The "wake" is
+    velocity copied into a grid and added as a push.
+  - Formation shape (echelons, V-shapes) is not measured on the page and did not change with the wake off in the review.
+  - The grid spread stops at the edges (the grid does not wrap) while positions wrap.
+refs:
+  - uri: https://doi.org/10.1145/37402.37406
+    rel: implements-modified
+    desc: >
+      Reynolds, C. W. (1987). Flocks, herds and schools: a distributed
+      behavioral model. SIGGRAPH '87. Three rules as an unweighted sum, no
+      prioritised acceleration budget.
+</script>
     <style>
         body { margin: 0; padding: 0; background: #0f172a; color: #f8fafc; font-family: sans-serif; overflow: hidden; display: flex; height: 100vh; }
         #sidebar { width: 320px; background: #1e293b; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #334155; overflow-y: auto; }
@@ -19,23 +98,23 @@
 <body>
 
 <div id="sidebar">
-    <h2>Bidirectional Wake Drafting</h2>
-    <p class="desc">Boids interact with a reactive fluid grid. They inject momentum to create wakes. The grid diffuses and dissipates this energy. Trailing boids seek these wakes to draft, forming echelon and V-formations naturally.</p>
+    <h2>Birds that leave a push behind them</h2>
+    <p class="desc">Each simulated bird (a "boid") keeps near its neighbours, keeps apart from very close ones and matches their heading. It also writes its speed and direction into a grid, which spreads out and fades. Each bird is pushed by what the other birds wrote where it is. The V-shapes you may see are not caused by these wakes.</p>
     
     <div class="control-group">
-        <label>Grid Dissipation (Fade) <span id="val-diss">0.05</span></label>
+        <label>Wake fade per step <span id="val-diss">0.05</span></label>
         <input type="range" id="ctrl-diss" min="0.01" max="0.2" step="0.01" value="0.05">
     </div>
     <div class="control-group">
-        <label>Drafting Weight <span id="val-draft">1.5</span></label>
+        <label>Wake push strength <span id="val-draft">1.5</span></label>
         <input type="range" id="ctrl-draft" min="0" max="3" step="0.1" value="1.5">
     </div>
     <div class="control-group">
-        <label>Cohesion <span id="val-coh">0.5</span></label>
+        <label>Stay close <span id="val-coh">0.5</span></label>
         <input type="range" id="ctrl-coh" min="0" max="2" step="0.1" value="0.5">
     </div>
     <div class="control-group">
-        <label>Separation <span id="val-sep">1.5</span></label>
+        <label>Keep apart <span id="val-sep">1.5</span></label>
         <input type="range" id="ctrl-sep" min="0" max="3" step="0.1" value="1.5">
     </div>
 </div>
@@ -48,9 +127,14 @@
     const canvas = document.getElementById('sim-canvas');
     const ctx = canvas.getContext('2d');
     let width, height;
-    const gridRes = 15; // Size of fluid cells
-    let cols, rows;
-    let fluid = [];
+    const gridRes = 15; // Size of grid cells
+    let cols, rows, cells;
+    // Shared velocity grid, stored flat (index x*rows + y). fluidVx/fluidVy is the total
+    // that is drawn. ownVx/ownVy hold, for each boid, the part of that total that the boid
+    // itself wrote (spread and faded the same way). A boid is pushed by total minus its own
+    // part, so it cannot push itself along its own wake. (Before v1.1 a lone boid sped up
+    // from 0.5 to the 3.5 cap on its own trail.)
+    let fluidVx, fluidVy, ownVx, ownVy, tmp;
 
     const params = { diss: 0.05, draft: 1.5, coh: 0.5, sep: 1.5 };
     
@@ -69,8 +153,10 @@
         canvas.width = width; canvas.height = height;
         cols = Math.ceil(width / gridRes);
         rows = Math.ceil(height / gridRes);
-        // Init fluid grid
-        fluid = Array(cols).fill().map(() => Array(rows).fill().map(() => ({ vx: 0, vy: 0 })));
+        cells = cols * rows;
+        fluidVx = new Float32Array(cells); fluidVy = new Float32Array(cells);
+        ownVx = new Float32Array(cells * numBoids); ownVy = new Float32Array(cells * numBoids);
+        tmp = new Float32Array(cells);
     }
     window.addEventListener('resize', resize);
     resize();
@@ -82,38 +168,43 @@
         });
     }
 
+    // 3x3 mean over the in-grid neighbours (same rule as before: divide by the number of
+    // neighbours inside the grid), then multiply by (1 - diss). Done in place on
+    // arr[off .. off+cells) as two 1-D passes, which gives the same result as the 3x3 box.
+    function blur(arr, off, keep) {
+        for (let x = 0; x < cols; x++) {
+            for (let y = 0; y < rows; y++) {
+                const i = off + x * rows + y;
+                let s = arr[i], c = 1;
+                if (y > 0) { s += arr[i - 1]; c++; }
+                if (y < rows - 1) { s += arr[i + 1]; c++; }
+                tmp[x * rows + y] = s / c;
+            }
+        }
+        for (let x = 0; x < cols; x++) {
+            for (let y = 0; y < rows; y++) {
+                const j = x * rows + y;
+                let s = tmp[j], c = 1;
+                if (x > 0) { s += tmp[j - rows]; c++; }
+                if (x < cols - 1) { s += tmp[j + rows]; c++; }
+                arr[off + j] = (s / c) * keep;
+            }
+        }
+    }
+
     function animate() {
         ctx.fillStyle = '#0f172a';
         ctx.fillRect(0, 0, width, height);
 
-        // 1. Fluid Update (Diffusion & Dissipation)
-        let nextFluid = Array(cols).fill().map(() => Array(rows).fill().map(() => ({ vx: 0, vy: 0 })));
-        for (let x = 0; x < cols; x++) {
-            for (let y = 0; y < rows; y++) {
-                let cell = fluid[x][y];
-                // Simple 3x3 box blur for diffusion
-                let sumVx = 0, sumVy = 0, count = 0;
-                for(let i = -1; i <= 1; i++) {
-                    for(let j = -1; j <= 1; j++) {
-                        let nx = x + i, ny = y + j;
-                        if(nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
-                            sumVx += fluid[nx][ny].vx;
-                            sumVy += fluid[nx][ny].vy;
-                            count++;
-                        }
-                    }
-                }
-                // Apply diffusion, then dissipation (decay toward 0)
-                nextFluid[x][y].vx = (sumVx / count) * (1 - params.diss);
-                nextFluid[x][y].vy = (sumVy / count) * (1 - params.diss);
-            }
-        }
-        fluid = nextFluid;
+        // 1. Grid update: spread (3x3 mean) and fade, for the total and for each boid's own part
+        const keep = 1 - params.diss;
+        blur(fluidVx, 0, keep); blur(fluidVy, 0, keep);
+        for (let k = 0; k < boids.length; k++) { blur(ownVx, k * cells, keep); blur(ownVy, k * cells, keep); }
 
-        // Render Fluid Grid
+        // Render grid
         for (let x = 0; x < cols; x++) {
             for (let y = 0; y < rows; y++) {
-                let mag = Math.hypot(fluid[x][y].vx, fluid[x][y].vy);
+                let mag = Math.hypot(fluidVx[x * rows + y], fluidVy[x * rows + y]);
                 if (mag > 0.05) {
                     ctx.fillStyle = `rgba(56, 189, 248, ${Math.min(mag * 0.5, 0.5)})`;
                     ctx.fillRect(x * gridRes, y * gridRes, gridRes, gridRes);
@@ -125,16 +216,20 @@
         const maxForce = 0.15;
 
         // 2. Boid Update
-        for (let b of boids) {
+        for (let k = 0; k < boids.length; k++) {
+            const b = boids[k];
             let steerC = { x: 0, y: 0 }, steerS = { x: 0, y: 0 }, steerA = { x: 0, y: 0 }, count = 0;
 
             for (let other of boids) {
                 if (b === other) continue;
+                // Minimum image: the world wraps, so use the shortest offset across the edges.
                 let dx = other.x - b.x, dy = other.y - b.y;
+                if (dx > width / 2) dx -= width; else if (dx < -width / 2) dx += width;
+                if (dy > height / 2) dy -= height; else if (dy < -height / 2) dy += height;
                 let dSq = dx*dx + dy*dy;
                 if (dSq < 3600) { // Radius 60
                     let d = Math.sqrt(dSq);
-                    steerC.x += other.x; steerC.y += other.y;
+                    steerC.x += dx; steerC.y += dy;
                     steerA.x += other.vx; steerA.y += other.vy;
                     if (d < 25 && d > 1e-6) { steerS.x -= dx/d; steerS.y -= dy/d; }
                     count++;
@@ -142,25 +237,28 @@
             }
 
             if (count > 0) {
-                steerC.x = (steerC.x / count) - b.x; steerC.y = (steerC.y / count) - b.y;
+                steerC.x = steerC.x / count; steerC.y = steerC.y / count;
                 steerA.x = (steerA.x / count) - b.vx; steerA.y = (steerA.y / count) - b.vy;
             }
 
-            // Interact with fluid
+            // Interact with the grid
             let gx = Math.floor(b.x / gridRes), gy = Math.floor(b.y / gridRes);
-            let draftX = 0, draftY = 0;
+            let wakeX = 0, wakeY = 0;
             if (gx >= 0 && gx < cols && gy >= 0 && gy < rows) {
-                // Draft (seek flow)
-                draftX = fluid[gx][gy].vx; draftY = fluid[gx][gy].vy;
-                
-                // Deposit (inject momentum into fluid)
-                // CLAMP injection to prevent infinite explosion
-                fluid[gx][gy].vx = Math.max(-2, Math.min(2, fluid[gx][gy].vx + b.vx * 0.2));
-                fluid[gx][gy].vy = Math.max(-2, Math.min(2, fluid[gx][gy].vy + b.vy * 0.2));
+                const c = gx * rows + gy, o = k * cells + c;
+                // Push from the grid: everything in this cell except what this boid wrote itself
+                wakeX = fluidVx[c] - ownVx[o]; wakeY = fluidVy[c] - ownVy[o];
+
+                // Write this boid's velocity into the grid (total clamped to +-2 as before)
+                // and record exactly what was added as this boid's own part.
+                const nx = Math.max(-2, Math.min(2, fluidVx[c] + b.vx * 0.2));
+                const ny = Math.max(-2, Math.min(2, fluidVy[c] + b.vy * 0.2));
+                ownVx[o] += nx - fluidVx[c]; ownVy[o] += ny - fluidVy[c];
+                fluidVx[c] = nx; fluidVy[c] = ny;
             }
 
-            b.vx += steerC.x * maxForce * params.coh + steerS.x * maxForce * params.sep + steerA.x * maxForce * 0.5 + draftX * maxForce * params.draft;
-            b.vy += steerC.y * maxForce * params.coh + steerS.y * maxForce * params.sep + steerA.y * maxForce * 0.5 + draftY * maxForce * params.draft;
+            b.vx += steerC.x * maxForce * params.coh + steerS.x * maxForce * params.sep + steerA.x * maxForce * 0.5 + wakeX * maxForce * params.draft;
+            b.vy += steerC.y * maxForce * params.coh + steerS.y * maxForce * params.sep + steerA.y * maxForce * 0.5 + wakeY * maxForce * params.draft;
 
             let speed = Math.hypot(b.vx, b.vy);
             if (speed > maxSpeed) { b.vx = (b.vx / speed) * maxSpeed; b.vy = (b.vy / speed) * maxSpeed; }
