@@ -92,7 +92,11 @@ built for measurement):
   parameter in [0,1]. The v2.11.0–11.2 version (mean magnitude / deposit
   size) was a density proxy that latched at 1 in any non-trivial swarm.
 
-**τ_sim = W_stored / P_in is only defined at constant P_in (field-on)** —
+**τ_sim = W_stored / P_loss** (v2.11.8, #39 — it was W_stored / P_in, but
+P_in is the dial constant 40κ/q, so that ratio was W rescaled by q/(40κ);
+τ_E divides by the power actually dissipated, and P_loss here runs far above
+P_in, so the two are not interchangeable). **It is only defined at constant
+P_in (field-on)** —
 in decaying mode the denominator vanishes exponentially and the ratio ramps
 to ~10¹⁰ then snaps to 0 (refuted convention). A decaying-mode confinement
 time must come from fitting a STRUCTURE indicator's decay
