@@ -157,9 +157,11 @@ method:
 observables:
   port: window.__sim
   betti: >
-    __sim.betti() -> {b0, b1, coverage}. b0 = connected components of the mask
-    (union-find), b1 = b0 - euler() (voids/loops), coverage = percent of cells in
-    the mask, which should track the `thr` slider by construction.
+    __sim.betti() -> {b0, b1, coverage}. b0 = 8-connected components of the mask
+    on the torus (flood fill, periodic in x and y), b1 = b0 + b2 - euler() with
+    euler() the periodic bit-quad Euler characteristic and b2 = 1 only when the
+    mask covers every cell (independent loops on the torus), coverage = percent
+    of cells in the mask, which should track the `thr` slider by construction.
   refs: >
     __sim.refs() -> {ref, cut, max}. ref = 99.5th percentile of the trail field
     (render + contour scale); cut = the level placing exactly `thr` of cells in
@@ -204,9 +206,13 @@ findings:
     was permanently dead on that load. See refs[] rel:corrects.
 limitations:
   - >
-    b1 is computed as b0 - euler() on a binary mask, which is exact for the
-    Euler characteristic of the pixel complex but says nothing about feature
-    scale: one large void and one pixel-sized hole count the same.
+    b1 is computed as b0 + b2 - euler() on a binary mask read periodically, as
+    the dynamics are (chi = b0 - b1 + b2 on the torus). That is exact for the
+    pixel complex but says nothing about feature scale: one large void and one
+    pixel-sized hole count the same, and a band that wraps the torus counts as
+    a loop just like an enclosed hole. Before issue #38 the census read the
+    square with zero padding (not the torus), so structures crossing the seam
+    were split and wrapping loops were missed.
   - >
     Coverage invariance is invariance under a LEVEL nuisance only. Changing
     `thr` itself still changes the topology, and correctly so — it is a
@@ -358,7 +364,7 @@ refs:
       <span class="k">coverage</span><span class="v" id="r-cov">–</span>
     </div>
     <canvas id="spark"></canvas>
-    <p class="note">β₁ = β₀ − χ, Euler χ by bit-quads on the thresholded field. Verified against known shapes.</p>
+    <p class="note">β₁ = β₀ + β₂ − χ on the torus, Euler χ by periodic bit-quads on the thresholded field. Verified against known shapes.</p>
   </div>
 
   <div class="grp">
@@ -691,11 +697,14 @@ function stepAgents(){
   }
 }
 
-/* ---- topology: b1 = b0 - chi ---- */
+/* ---- topology on the torus: chi = b0 - b1 + b2, so b1 = b0 + b2 - chi ----
+   The agents and every field wrap, so the census wraps too: bit-quads and
+   the 8-neighbour flood fill both read indices mod W, H. b2 = 1 only when
+   the mask covers the whole torus (issue #38). */
 function euler(){
   let C1=0,C3=0,Cd=0;
-  const at=(x,y)=>(x<0||y<0||x>=W||y>=H)?0:mask[y*W+x];
-  for(let y=-1;y<H;y++) for(let x=-1;x<W;x++){
+  const at=(x,y)=>mask[(y%H)*W+(x%W)];
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
     const a=at(x,y),b=at(x+1,y),c=at(x,y+1),d=at(x+1,y+1), n=a+b+c+d;
     if(n===1) C1++;
     else if(n===3) C3++;
@@ -714,8 +723,7 @@ function components(){
     while(st.length){
       const q=st.pop(), qx=q%W, qy=(q-qx)/W;
       for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-        const nx=qx+dx, ny=qy+dy;
-        if(nx<0||ny<0||nx>=W||ny>=H) continue;
+        const nx=(qx+dx+W)%W, ny=(qy+dy+H)%H;
         const k=ny*W+nx;
         if(mask[k]&&!s[k]){ s[k]=1; st.push(k); }
       }
@@ -726,7 +734,7 @@ function components(){
 function measure(t){
   let on=0;
   for(let i=0;i<grid.length;i++){ const m = grid[i]>t ? 1:0; mask[i]=m; on+=m; }
-  const b0=components(), b1=b0-euler();
+  const b0=components(), b1=b0+(on===grid.length?1:0)-euler();
   hist.push(b1); if(hist.length>240) hist.shift();
   document.getElementById('r-b1').textContent = b1;
   document.getElementById('r-b0').textContent = b0;
@@ -933,7 +941,7 @@ window.__sim = { get grid(){return grid}, get mask(){return mask}, get parts(){r
                           let on=0;
                           for(let i=0;i<grid.length;i++){const m=grid[i]>cut?1:0; mask[i]=m; on+=m;}
                           const b0=components();
-                          return {b0, b1:b0-euler(), coverage:+(100*on/grid.length).toFixed(2)}; } };
+                          return {b0, b1:b0+(on===grid.length?1:0)-euler(), coverage:+(100*on/grid.length).toFixed(2)}; } };
 </script>
 </body>
 </html>
