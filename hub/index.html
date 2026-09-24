@@ -111,7 +111,8 @@
 <body>
 <header>
   <h1>the eigen-form lab</h1>
-  <p>Registry-driven gallery of frozen apps. Each entry loads by URL into a sandboxed iframe, no embedded source.</p>
+  <p>Registry-driven gallery of frozen apps. Each entry loads by URL into a sandboxed iframe, no embedded source.
+    <a class="papers-link" href="../#index">Equations, sources &amp; essays &rarr;</a></p>
 </header>
 <div id="tabs"></div>
 <div id="stage">
@@ -225,7 +226,7 @@
       '<br><br>native to the library, no frozen original to derive from';
   }
 
-  function renderDetail(app) {
+  let renderDetail = function (app) {
     detailEl.style.removeProperty('--detail-accent');
     if (app.display && app.display.accent) {
       detailEl.style.setProperty('--detail-accent', app.display.accent);
@@ -288,10 +289,31 @@
     tab.dataset.id = app.id;
     if (app.display && app.display.accent) tab.dataset.accent = app.display.accent;
     tab.textContent = app.title;
-    tab.addEventListener('click', () => selectApp(app.id));
+    tab.addEventListener('click', () => { selectApp(app.id); history.replaceState(null, '', '#app=' + app.id); });
     tabsEl.appendChild(tab);
-    if (i === 0) selectApp(app.id);
   });
+
+  // Detail panel: a per-app link to that app's page in the research
+  // gallery (equations, source papers, essay). Installed BEFORE the first
+  // selectApp below, or the initially-selected app renders without it.
+  const _renderDetail = renderDetail;
+  renderDetail = function (app) {
+    _renderDetail(app);
+    const a = document.createElement('a');
+    a.className = 'popout'; a.href = '../#sim=' + app.id;
+    a.innerHTML = 'Equations &amp; source papers &rarr;';
+    detailEl.appendChild(a);
+  };
+
+  // Deep link: #app=<id> selects that app (the research gallery at ../
+  // links here per simulation). Unknown or absent id falls back to the
+  // first app, which was the only behavior before deep links existed.
+  function appFromHash() {
+    const m = /^#app=([\w-]+)$/.exec(location.hash);
+    return m && apps.some((a) => a.id === m[1]) ? m[1] : null;
+  }
+  selectApp(appFromHash() || (apps[0] && apps[0].id));
+  window.addEventListener('hashchange', () => { const id = appFromHash(); if (id && id !== currentAppId) selectApp(id); });
 
   // Re-render the detail panel's disclosure state when the viewport
   // crosses the mobile breakpoint, so resizing (or rotating) doesn't
