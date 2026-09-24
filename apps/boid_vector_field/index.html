@@ -3,7 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Boid Vector Field Simulator</title>
+    <title>Boids in a current</title>
+<script type="application/cogdoc+yaml">
+id: paper-boids-in-a-current
+type: paper
+title: "Boids in a current: flocking agents pushed along a drifting direction field"
+description: >
+  150 flocking agents ("boids") follow three Reynolds rules (stay close, keep
+  apart, match heading) and are pushed downstream by a slowly drifting direction
+  field made from smooth random noise. The world wraps around at the edges.
+sector: reference
+status: draft
+created: 2026-09-24
+updated: 2026-09-24
+authors:
+  - chazmaniandinkle
+tags: [boids, flocking, noise-field, eigen-form]
+claim: >
+  Flocking agents pushed by a drifting direction field end up heading
+  downstream on average: mean cos(heading, field) was +0.09 to +0.54 at the
+  defaults (seeds 1-6, 1500 steps) and -0.49 to -0.02 with the push off (seeds
+  1-3). They follow the arrows; they do not swim against them.
+method:
+  - param: flowStrength
+    label: current strength
+    range: [0, 3]
+    default: 1.0
+    meaning: size of the push along the field arrow under the boid, as a multiple of maxForce (0.1 px per step squared)
+  - param: noiseScale
+    label: swirl size
+    range: [0.001, 0.02]
+    default: 0.005
+    meaning: spatial frequency of the noise that sets the arrow angle; smaller means larger swirls
+  - param: coh
+    label: stay close
+    range: [0, 2]
+    default: 0.5
+    meaning: weight on steering toward the neighbours' centre (radius 50 px)
+  - param: sep
+    label: keep apart
+    range: [0, 3]
+    default: 1.5
+    meaning: weight on steering away from neighbours closer than 20 px
+  - param: ali
+    label: match heading
+    range: [0, 3]
+    default: 1.0
+    meaning: weight on steering toward the neighbours' mean velocity (added in v1.1)
+  - param: maxForce
+    default: 0.1
+    fixed: true
+    meaning: >
+      each rule's steering request (desired velocity at maxSpeed minus current
+      velocity) is clamped to this length before its weight is applied
+  - param: maxSpeed
+    default: 3
+    fixed: true
+    meaning: speed cap in px per step
+observables:
+  heading_agreement: "|mean of unit headings|, 0 = random, 1 = all the same way"
+  downstream: "mean cos(angle between velocity and the field arrow under the boid); 0 for no relation"
+  spacing: "mean distance to the nearest neighbour, across the wrap"
+findings:
+  - >
+    v1.1 changes, measured at the defaults (1500 steps, seeds 1-3), main ->
+    fix. Nearest-neighbour spacing 4.1 / 4.1 / 4.7 px -> 18.2 / 21.9 / 19.6 px:
+    before, the unclamped stay-close pull squeezed the flock below the 20 px
+    keep-apart radius. Whole-population heading agreement 0.85 / 0.63 / 0.73 ->
+    0.38 / 0.47 / 0.30: the flock no longer collapses into one clump but
+    splits into several groups going different ways. Agreement among
+    neighbours within 50 px is high in both (0.99 / 0.88 / 0.97 ->
+    0.94 / 0.99 / 0.96).
+  - >
+    The heading-matching rule works: with it off, neighbour agreement is
+    0.84 / 0.86 / 0.81, and 0.94 / 0.99 / 0.96 with it on (seeds 1-3). With the
+    current also off, whole-population agreement is 0.13-0.33 without the
+    rule and 0.84-0.99 with it.
+  - >
+    Pushing on the flock: with the current off, downstream mean cos is -0.49 to
+    -0.02 (seeds 1-3); at the default current it is +0.09 to +0.54 (seeds
+    1-6); with heading matching off it is +0.57 to +0.71. The flock rules
+    compete with the current.
+limitations:
+  - >
+    The current is not a fluid flow. The noise field gives a direction only (a
+    unit arrow), it is not divergence-free, and boids are not carried by it
+    (that would be x' = u); they get a fixed-size push along it. No upstream
+    turning (swimming against the current) is modelled.
+  - Neighbours are weighted equally, and the three rules are a weighted sum of clamped requests, not Reynolds' prioritised acceleration budget.
+  - The pseudo-noise is a sin-hash value noise, seeded from Math.random.
+refs:
+  - uri: https://doi.org/10.1145/37402.37406
+    rel: implements-modified
+    desc: >
+      Reynolds, C. W. (1987). Flocks, herds and schools: a distributed
+      behavioral model. SIGGRAPH '87. Separation, alignment and cohesion with a
+      per-rule force clamp; see limitations.
+</script>
     <style>
         body { margin: 0; padding: 0; background: #111; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; height: 100vh; }
         #sidebar { width: 300px; background: #222; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; gap: 15px; border-right: 1px solid #444; overflow-y: auto; }
@@ -19,30 +115,34 @@
 <body>
 
 <div id="sidebar">
-    <h2>Vector Field Boids</h2>
-    <p class="desc">Agents (boids) navigate a dynamic underlying flow field generated via continuous noise. They experience advection (being pushed) and rheotaxis (sensing flow).</p>
+    <h2>Birds in a current</h2>
+    <p class="desc">Simulated birds ("boids") stay close, keep apart and match their neighbours' heading. A slowly changing pattern of arrows, made from smooth random noise, pushes each bird along the arrow under it. They follow the arrows downstream; they do not swim against them.</p>
     
     <div class="control-group">
-        <label>Flow Strength <span id="val-flow">1.0</span></label>
+        <label title="size of the push along the arrows">Current strength <span id="val-flow">1.0</span></label>
         <input type="range" id="ctrl-flow" min="0" max="3" step="0.1" value="1.0">
     </div>
     <div class="control-group">
-        <label>Noise Scale (Eddy Size) <span id="val-scale">0.005</span></label>
+        <label title="smaller = larger swirls">Swirl size <span id="val-scale">0.005</span></label>
         <input type="range" id="ctrl-scale" min="0.001" max="0.02" step="0.001" value="0.005">
     </div>
     <div class="control-group">
-        <label>Show Flow Field <input type="checkbox" id="ctrl-show" checked></label>
+        <label>Show current <input type="checkbox" id="ctrl-show" checked></label>
     </div>
     
     <hr style="border:0; border-top:1px solid #444; margin: 10px 0;">
     
     <div class="control-group">
-        <label>Cohesion <span id="val-coh">0.5</span></label>
+        <label>Stay close <span id="val-coh">0.5</span></label>
         <input type="range" id="ctrl-coh" min="0" max="2" step="0.1" value="0.5">
     </div>
     <div class="control-group">
-        <label>Separation <span id="val-sep">1.5</span></label>
+        <label>Keep apart <span id="val-sep">1.5</span></label>
         <input type="range" id="ctrl-sep" min="0" max="3" step="0.1" value="1.5">
+    </div>
+    <div class="control-group">
+        <label>Match heading <span id="val-ali">1.0</span></label>
+        <input type="range" id="ctrl-ali" min="0" max="3" step="0.1" value="1.0">
     </div>
 </div>
 
@@ -81,11 +181,10 @@
     const ctx = canvas.getContext('2d');
     let width, height;
 
-    const params = { flowStrength: 1.0, noiseScale: 0.005, showField: true, coh: 0.5, sep: 1.5 };
+    const params = { flowStrength: 1.0, noiseScale: 0.005, showField: true, coh: 0.5, sep: 1.5, ali: 1.0 };
     
     // Bind controls
-    ['flow', 'scale', 'coh', 'sep'].forEach(k => {
-        const id = k === 'scale' ? k : k.substring(0,3);
+    ['flow', 'scale', 'coh', 'sep', 'ali'].forEach(k => {
         const el = document.getElementById(`ctrl-${k}`);
         el.addEventListener('input', e => { 
             params[k === 'flow' ? 'flowStrength' : k === 'scale' ? 'noiseScale' : k] = parseFloat(e.target.value); 
@@ -143,36 +242,56 @@
         const maxSpeed = 3;
         const maxForce = 0.1;
 
+        // Reynolds-style steering: each rule asks for a velocity (at maxSpeed, in the rule's
+        // direction); the request is desired - current velocity, clamped to maxForce, then
+        // weighted by the slider. So maxForce really limits each rule's pull per step.
+        const steer = (dx, dy, vx, vy) => {
+            const m = Math.hypot(dx, dy);
+            if (m < 1e-9) return { x: 0, y: 0 };
+            let sx = dx / m * maxSpeed - vx, sy = dy / m * maxSpeed - vy;
+            const f = Math.hypot(sx, sy);
+            if (f > maxForce) { sx = sx / f * maxForce; sy = sy / f * maxForce; }
+            return { x: sx, y: sy };
+        };
+
         for (let b of boids) {
-            let steerC = { x: 0, y: 0 };
-            let steerS = { x: 0, y: 0 };
+            let sumC = { x: 0, y: 0 };
+            let sumS = { x: 0, y: 0 };
+            let sumA = { x: 0, y: 0 };
             let count = 0;
 
             // Flocking
             for (let other of boids) {
                 if (b === other) continue;
+                // Minimum image: the world wraps, so use the shortest offset across the edges.
                 let dx = other.x - b.x; let dy = other.y - b.y;
+                if (dx > width / 2) dx -= width; else if (dx < -width / 2) dx += width;
+                if (dy > height / 2) dy -= height; else if (dy < -height / 2) dy += height;
                 let dSq = dx*dx + dy*dy;
                 if (dSq < 2500) { // Radius 50
                     let d = Math.sqrt(dSq);
-                    steerC.x += other.x; steerC.y += other.y;
+                    sumC.x += dx; sumC.y += dy;
+                    sumA.x += other.vx; sumA.y += other.vy;
                     if (d < 20 && d > 1e-6) {
-                        steerS.x -= dx/d; steerS.y -= dy/d;
+                        sumS.x -= dx/d; sumS.y -= dy/d;
                     }
                     count++;
                 }
             }
 
+            let steerC = { x: 0, y: 0 }, steerS = { x: 0, y: 0 }, steerA = { x: 0, y: 0 };
             if (count > 0) {
-                steerC.x = (steerC.x / count) - b.x; steerC.y = (steerC.y / count) - b.y;
+                steerC = steer(sumC.x / count, sumC.y / count, b.vx, b.vy); // stay close
+                steerS = steer(sumS.x, sumS.y, b.vx, b.vy);                 // keep apart
+                steerA = steer(sumA.x / count, sumA.y / count, b.vx, b.vy); // match heading
             }
 
-            // Environmental Force (Advection & Rheotaxis)
+            // Push along the direction field under the boid (constant size, maxForce x strength)
             const field = getFieldVector(b.x, b.y);
             
             // Apply weighted steering
-            b.vx += steerC.x * maxForce * params.coh + steerS.x * maxForce * params.sep + field.vx * maxForce * params.flowStrength;
-            b.vy += steerC.y * maxForce * params.coh + steerS.y * maxForce * params.sep + field.vy * maxForce * params.flowStrength;
+            b.vx += steerC.x * params.coh + steerS.x * params.sep + steerA.x * params.ali + field.vx * maxForce * params.flowStrength;
+            b.vy += steerC.y * params.coh + steerS.y * params.sep + steerA.y * params.ali + field.vy * maxForce * params.flowStrength;
 
             // Speed Limit
             const speed = Math.hypot(b.vx, b.vy);
@@ -182,9 +301,10 @@
 
             b.x += b.vx; b.y += b.vy;
 
-            // Wrap
-            if (b.x < 0) b.x = width; if (b.x > width) b.x = 0;
-            if (b.y < 0) b.y = height; if (b.y > height) b.y = 0;
+            // Wrap by offset (keep the overshoot). The old snap to the edge line stacked
+            // boids that crossed together onto the same point.
+            if (b.x < 0) b.x += width; else if (b.x >= width) b.x -= width;
+            if (b.y < 0) b.y += height; else if (b.y >= height) b.y -= height;
 
             // Render
             ctx.fillStyle = '#fff';
