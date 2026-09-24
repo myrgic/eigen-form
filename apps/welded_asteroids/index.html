@@ -227,9 +227,10 @@ limitations:
     5/6/7, 1200 steps, every level, quotient census) showed structureless
     random walkers (no steering, no arrows, uniform start) reach b1 13-19
     on every surface while the physarum settles at b1 0-7, so the target
-    rewarded speckle. The gate is now "joined into at most 3 pieces": the
-    physarum ends at b0 1-2 on 18/18 runs, the walkers stay above 2000
-    pieces on 18/18. This is a check that a network formed, not a
+    rewarded speckle. The gate is now "joined into at most 3 pieces for 3
+    measures in a row": the physarum passes it on 18/18 runs (6 levels x
+    3 seeds; its end state is 1-3 pieces on 15/18 and 7-12 on 3/18), the
+    walkers pass it on 0/18 (they stay above 2000 pieces). This is a check that a network formed, not a
     topological target.
   - >
     Mirror map and seams (v2.12.0). Trail and momentum diffusion across the
@@ -1171,8 +1172,8 @@ function measure(t){
    arrows) reach β₁ 13-19 on every surface while the physarum settles at
    β₁ 0-7, so the walkers met the low targets and the physarum met none
    (levels I-VI x seeds 5/6/7, 1200 steps, quotient census). The piece
-   count separates them: physarum ends at β₀ 1-2 on 18/18 runs, walkers
-   at more than 2000 pieces on 18/18. β₁ is still shown, as a readout. */
+   count separates them: the physarum passes this gate on 18/18 runs,
+   the walkers on 0/18 (they stay above 2000 pieces). β₁ is still shown, as a readout. */
 const JOIN_MAX = 3;
 const LEVELS = [
   { name:'1. The donut', surface:'torus',
