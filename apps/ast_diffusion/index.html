@@ -166,8 +166,15 @@
         let nextHeat = {};
         
         // 1. Decay current heat
+        // outScale caps a node's total outflow at its decayed heat (issue #37): the
+        // alpha share leaves via in-links, the beta share via out-links, so when
+        // alpha + beta > decay the node would overdraw and the clamp below would
+        // create heat. The scale is exactly 1 whenever the node cannot overdraw.
+        const outScale = {};
         nodes.forEach(n => {
             nextHeat[n.id] = n.heat * params.decay;
+            const out = (inDegree[n.id] ? params.alpha : 0) + (outDegree[n.id] ? params.beta : 0);
+            outScale[n.id] = out > params.decay ? params.decay / out : 1;
         });
 
         // 2. Convolution (Message Passing)
@@ -182,14 +189,14 @@
             // is the field's only source of dissipation instead of being swamped by an
             // uncompensated cascade (see docs/lab-design.md changes[] entry on this app).
             if (target.heat > 0.05) {
-                const flow = (target.heat * params.alpha) / (inDegree[target.id] || 1);
+                const flow = (target.heat * params.alpha) / (inDegree[target.id] || 1) * outScale[target.id];
                 nextHeat[source.id] += flow;
                 nextHeat[target.id] -= flow;
             }
 
             // Beta: Downstream Cascade (Heat flows forwards with the import arrow)
             if (source.heat > 0.05) {
-                const flow = (source.heat * params.beta) / (outDegree[source.id] || 1);
+                const flow = (source.heat * params.beta) / (outDegree[source.id] || 1) * outScale[source.id];
                 nextHeat[target.id] += flow;
                 nextHeat[source.id] -= flow;
             }
