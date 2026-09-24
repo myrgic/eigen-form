@@ -136,7 +136,7 @@
                     let d = Math.sqrt(dSq);
                     steerC.x += other.x; steerC.y += other.y;
                     steerA.x += other.vx; steerA.y += other.vy;
-                    if (d < 25) { steerS.x -= dx/d; steerS.y -= dy/d; }
+                    if (d < 25 && d > 1e-6) { steerS.x -= dx/d; steerS.y -= dy/d; }
                     count++;
                 }
             }

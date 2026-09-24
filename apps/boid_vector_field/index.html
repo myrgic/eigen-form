@@ -156,7 +156,7 @@
                 if (dSq < 2500) { // Radius 50
                     let d = Math.sqrt(dSq);
                     steerC.x += other.x; steerC.y += other.y;
-                    if (d < 20) {
+                    if (d < 20 && d > 1e-6) {
                         steerS.x -= dx/d; steerS.y -= dy/d;
                     }
                     count++;
