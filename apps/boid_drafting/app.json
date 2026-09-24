@@ -7,7 +7,10 @@
   "entry": "index.html",
   "provenance": {
     "derivesFrom": "sha256:161f573c9f3749cbf1c9ebdb18a16b75ac62e514e41b7bd707dc9e5a6145f38b",
-    "changes": []
+    "changes": [
+      "separation divide-by-zero guard (issue #36): in the Boid Update loop the separation branch `if (d < 25) { steerS.x -= dx/d; steerS.y -= dy/d; }` divided by d with no d>0 check, so two boids at exactly the same position produced 0/0 = NaN and that boid left the flock permanently (reproduced on the real page by placing boids[1] on boids[0]: NaN after 1 frame). The condition is now `if (d < 25 && d > 1e-6)`: a pair closer than 1e-6 px (in practice, an exactly coincident pair) contributes no separation term, because the direction between them is undefined. That is the only changed line. The wrap already offsets by width/height here, so it is left untouched. Pairs with d > 1e-6 are unaffected, so any run that never hits a coincidence is bit-identical to before."
+    ],
+    "entryHash": "sha256:912da652dfb22069685b1de696bfb8685875c22b828312b4e2c46f023f566614"
   },
   "capabilities": { "emits": [], "accepts": [] },
   "pwa": { "installable": false }

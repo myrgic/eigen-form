@@ -88,7 +88,9 @@
       "kind": "frozen-golden",
       "provenance": {
         "derivesFrom": "sha256:161f573c9f3749cbf1c9ebdb18a16b75ac62e514e41b7bd707dc9e5a6145f38b",
-        "changes": []
+        "changes": [
+          "separation divide-by-zero guard (issue #36): in the Boid Update loop the separation branch `if (d < 25) { steerS.x -= dx/d; steerS.y -= dy/d; }` divided by d with no d>0 check, so two boids at exactly the same position produced 0/0 = NaN and that boid left the flock permanently (reproduced on the real page by placing boids[1] on boids[0]: NaN after 1 frame). The condition is now `if (d < 25 && d > 1e-6)`: a pair closer than 1e-6 px (in practice, an exactly coincident pair) contributes no separation term, because the direction between them is undefined. That is the only changed line. The wrap already offsets by width/height here, so it is left untouched. Pairs with d > 1e-6 are unaffected, so any run that never hits a coincidence is bit-identical to before."
+        ]
       },
       "pwa": {
         "installable": false
@@ -102,7 +104,9 @@
       "kind": "frozen-golden",
       "provenance": {
         "derivesFrom": "sha256:28d05e19e82cc52d28820320fde8bfd68f7fe7409a95225d0dc57b6cff60202b",
-        "changes": []
+        "changes": [
+          "separation divide-by-zero guard (issue #36): in the Flocking loop the separation branch `if (d < 20) { steerS.x -= dx/d; steerS.y -= dy/d; }` divided by d with no d>0 check, so two boids at exactly the same position (made likely by the wrap, which snaps a boid onto the opposite edge with `b.x = 0` / `b.x = width` rather than offsetting it) produced 0/0 = NaN, and that boid's position went NaN and silently left the flock for good (reproduced on the real page: seed 1, 2500 frames, flowStrength 0, 1 of 150 boids NaN). The condition is now `if (d < 20 && d > 1e-6)`: a pair closer than 1e-6 px (in practice, an exactly coincident pair) contributes no separation term, because the direction between them is undefined. That is the only changed line. The wrap is deliberately left as it was, since the guard alone removes the NaN and changing the wrap would alter every default trajectory. Pairs with d > 1e-6 are unaffected, so any run that never hits a coincidence is bit-identical to before."
+        ]
       },
       "pwa": {
         "installable": false
