@@ -4,25 +4,32 @@
    pure dynamics/palette modules with the canvas2d backend and the
    lifecycle layer below. The mark is what the substrate remembers of a
    constant-velocity wavefront processing through an (p,q) eigen-orbit.
-   The crossings' over/under is not stored in any buffer: each step is
-   composited by the sign of the knot's depth z = sin(radialPhase) —
-   z >= 0 paints over the trail, z < 0 paints beneath it. In this
-   projection the two passes through any crossing have equal r, hence
-   equal cos(radialPhase) and opposite-signed z, so the sign alone gives
-   the torus knot's own alternating diagram (OUOUOU for the (2,3)
-   trefoil). Paint order alone (newest on top) would give a descending
-   diagram, which is an unknot (GH #35).
+   Over/under at the crossings follows the knot's height z =
+   sin(radialPhase). In this projection the two passes through any
+   crossing have equal r, hence equal cos(radialPhase) and opposite-signed
+   z, so exactly one of them is above. A step with z < 0 near a crossing
+   is painted with a gap where the z > 0 strand runs (overStrandBands in
+   dynamics/torus-knot.js); every step is otherwise painted on top, so a
+   strand's newest lap still covers its own older laps and the colours
+   stay fresh. The result is the torus knot's own diagram: OUOUOU for the
+   (2,3) trefoil, and alternating only when p = 2 (p >= 3 gives the
+   OO..UU pattern). Paint order alone (newest on top) would give a
+   descending diagram, which is an unknot (GH #35). The first version of
+   this fix painted z < 0 steps beneath the whole trail
+   ('destination-over'), which also put them beneath their own stale
+   laps and greyed the lower half whenever hue parallax or precession
+   was on.
    Features:
    - Precession: the entire trefoil slowly rotates around the centroid.
      Successive revolutions land slightly offset, so the substrate
      accumulates a spirograph / rosette family from one primitive.
-   - Path thickening: the wavefront's stroke can be set independently
-     of the ball radius, so the trace can look brushy or hairline.
+   - Path thickening: strokeWidth sets the trail's width directly
+     (default 2*ballRadius), so the trace can look brushy or hairline.
    - Custom gradients: the rainbow hue-lock can be replaced with a
      two-tone gradient, sub-spectrum slice, monochrome luminance ramp,
      or sub-brand hue band. Locked to closure period either way.
-   - Hue parallax: the leading edge of the trail cycles forward, the
-     trailing edge cycles reverse — visual depth without 3D geometry.
+   - Hue parallax: the colour cycle is detuned from the orbit, so the
+     hue drifts slowly along the trail.
 
    USAGE
      <canvas data-myrgic-mark></canvas>                              // auto-init
@@ -32,16 +39,23 @@
      emergence:    bool   play full appear→settle→trail sequence
      period:       ms     orbital closure period (default 3000)
      scale:        px     trefoil scale (default 215, on logical 480)
-     ballRadius:   px     wavefront point radius (default 18)
+     ballRadius:   px     sets the default stroke width (2*ballRadius)
+                          and the jump threshold; no visible effect when
+                          strokeWidth is given (default 18)
      strokeWidth:  px     stroke width override (default 2*ballRadius)
-     decay:        ms     substrate memory half-life (default 6000)
+     decay:        ms     trail fade half-life (default 6000; holds for
+                          about two half-lives, then an 8-bit floor
+                          leaves a faint residue)
      p, q:         int    eigenmode (default 2, 3 = trefoil)
      precession:   ms     full centroid rotation period
                           (default 0 = disabled; positive = prograde,
                           negative = retrograde)
      gradient:     'spectrum'|object   color treatment, see GRADIENTS below
-     parallax:     0..1   strength of leading-fwd / trailing-rev hue
-                          offset (default 0; 1 = ±period over trail)
+     parallax:     >= 0   hue detune: the colour cycle runs at
+                          (1 + parallax) times the orbit rate, so the
+                          hue drifts along the knot (default 0 = hue
+                          locked to the orbit). Negative values are
+                          clamped to 0 (-1 would be a division by zero).
 
    GROUND
      The mark owns no background/reference color, by design, at any
@@ -80,9 +94,10 @@
      src/lifecycle/mount.js       DOM: auto-init, rAF, visibility, reduced-motion
      src/figure-spec.js           versioned params spec, export/import
      This file assembles those seams into the same createTrefoilMark
-     public API as v0.0.2 — the split changed nothing observable. See
-     tools/golden.js and goldens/ops-v0.0.2.json for the equivalence
-     proof.
+     public API as v0.0.2. The v0.1 split changed nothing observable; the
+     crossing fix (GH #35) intentionally changed the op stream, and the
+     goldens were regenerated for it. See tools/golden.js and
+     goldens/ops-v0.0.2.json.
    ===================================================================== */
 
 import * as torusKnot from './dynamics/torus-knot.js';
@@ -141,7 +156,7 @@ function createTrefoilMark(canvas, opts) {
     strokeWidth: finiteOr(opts.strokeWidth, null),
     decay:       finiteOr(opts.decay, 6000),
     precession:  finiteOr(opts.precession, 0),
-    parallax:    finiteOr(opts.parallax, 0),
+    parallax:    Math.max(0, finiteOr(opts.parallax, 0)),
     gradient:    resolveGradient(opts.gradient)
   };
   const showEmergence = !!opts.emergence;
@@ -209,11 +224,12 @@ function createTrefoilMark(canvas, opts) {
     }
 
     // Precession: rotate the entire orbit frame around centroid.
-    let precessionPhase = 0;
+    let precessionPhase = 0, precessionRate = 0;
     if (params.precession !== 0 && settleFactor > 0) {
       const sign = params.precession > 0 ? 1 : -1;
       const omega = (2 * Math.PI) / Math.abs(params.precession);
       precessionPhase = sign * omega * Math.max(0, t - T.settle[0]);
+      if (t > T.settle[0]) precessionRate = sign * omega;
     }
 
     const { R0, RHO } = torusKnot.torusKnotRadii(SCALE);
@@ -244,7 +260,12 @@ function createTrefoilMark(canvas, opts) {
 
         const c = colorFor(u, chromaRamp, params.gradient);
         const style = colorStyle(c);
-        canvas2d.paintStep(ctx, { x, y, prevX, prevY, jumped, style, lineWidth: strokeW, under: z < 0 });
+        const gaps = z < 0 ? torusKnot.overStrandBands({
+          p: params.p, orbitalRadius, radialAmp, angularPhase, radialPhase, precessionPhase,
+          angRate: angularOmega + precessionRate, radRate: radialOmega,
+          cx, cy, width: strokeW
+        }) : null;
+        canvas2d.paintStep(ctx, { x, y, prevX, prevY, jumped, style, lineWidth: strokeW, gaps, logical: LOGICAL });
       }
       prevX = x;
       prevY = y;
@@ -264,8 +285,8 @@ function createTrefoilMark(canvas, opts) {
   // Run the live deposit/dissipate loop synchronously up to targetMs, so
   // the mark reaches its living steady state the same way it sustains it:
   // by re-tracing a stable path against the fade. No stored depth — the
-  // crossings' over/under come from each step's z-sign compositing,
-  // exactly as they do in motion.
+  // crossings' over/under come from each step's z sign (gaps in the
+  // under-strand), exactly as they do in motion.
   function warmTo(targetMs) {
     const dtStep = 16;
     let vt = virtualTime, guard = 0;
@@ -335,6 +356,7 @@ function createTrefoilMark(canvas, opts) {
     params,
     setParam(k, v) {
       if (k === 'gradient') params.gradient = resolveGradient(v);
+      else if (k === 'parallax') params.parallax = Math.max(0, finiteOr(v, 0));
       else params[k] = v;
     },
     reset,

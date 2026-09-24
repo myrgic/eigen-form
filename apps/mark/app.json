@@ -1,8 +1,8 @@
 {
   "id": "mark",
   "title": "The Mark",
-  "description": "The (2,3) torus knot traced live against a fading substrate.",
-  "version": "1.2.0",
+  "description": "The (2,3) torus knot drawn live with a fading, hue-locked trail; at each crossing the strand that is higher on the torus passes over.",
+  "version": "1.3.0",
   "kind": "sdk-page",
   "entry": "index.html",
   "provenance": { "builtOn": "eigen-form@0.4.0 e9bb459" },

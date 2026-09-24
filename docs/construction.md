@@ -22,7 +22,7 @@ Where:
 - `p` — angular eigenmode (default 2)
 - `q` — radial eigenmode (default 3)
 
-At `p=2, q=3`, the curve closes after one full period and traces the trefoil knot — three crossings, each visited twice per closure. The crossing structure is purely topological; it emerges from the arithmetic relationship between p and q, not from any 3D embedding.
+At `p=2, q=3`, the curve closes after one full period and traces the trefoil knot — three crossings, each visited twice per closure. Where the curve crosses itself comes from the arithmetic relationship between p and q. Which strand passes over comes from the 3D torus knot: at each crossing the strand with height z = sin(radial phase) > 0 is drawn over, and the other strand leaves a gap where it runs (GH #35).
 
 ### Closure period
 
@@ -60,14 +60,9 @@ At `parallax=0`, hue is perfectly locked (same color at every re-visit). At `par
 
 The canvas is the substrate. Every frame, the trail decays toward the background color at a rate governed by `decay` (half-life in ms).
 
-The decay uses a two-pass compositing approach to avoid 8-bit channel rounding drift:
+The decay is one pass: **destination-out** erases the trail toward transparency by `fadeAlpha = 1 - exp(-ln2 · dt / halfLife)`, accumulated until the step is at least 3/255 so it registers in 8 bits. The host page's own background shows through.
 
-1. **Destination-out** — erase the trail toward transparency by `fadeAlpha = 1 - exp(-ln2 · dt / halfLife)`.
-2. **Destination-over** — fill the background beneath any transparent pixels.
-
-This converges to the exact substrate color without the systematic desaturation that occurs with a naive source-over fade (where asymmetric rounding in RGB channels accumulates a grey halo).
-
-An additional `snapToSubstrate` pass runs every 500ms and directly drains pixels within the 8-bit rounding floor (`residue ≤ ceil(0.5 / MIN_FADE_ALPHA) ≈ 42 channels`) that the compositing fade can never reach. This prevents the "ghost ring" artifact around a settled trail.
+Known limits (review, not yet fixed): there is no `snapToSubstrate` pass, so the 8-bit rounding floor leaves a faint residue (about 12–17% alpha) that never fades, and because the fade is applied in 8-bit steps the half-life holds only for about the first two half-lives and depends a little on frame rate.
 
 ## Precession
 
