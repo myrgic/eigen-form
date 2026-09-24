@@ -53,32 +53,32 @@ import { rand01 } from './engine/rng.js';
 
 export const SCHEMA = {
   // -- tank --------------------------------------------------------
-  gravelFraction:   { type: 'number', min: 0.75, max: 0.95, step: 0.01, default: 0.86, group: 'tank', label: 'gravel line' },
-  wallMargin:       { type: 'number', min: 2, max: 10, step: 1, default: 3, group: 'tank', label: 'wall margin (cells)' },
+  gravelFraction:   { type: 'number', min: 0.75, max: 0.95, step: 0.01, default: 0.86, group: 'tank', label: 'gravel height' },
+  wallMargin:       { type: 'number', min: 2, max: 10, step: 1, default: 3, group: 'tank', label: 'wall thickness (cells)' },
 
   // -- water (momentum + temperature substrate) ---------------------
-  momentumDiffuse:  { type: 'number', min: 0.02, max: 0.3, step: 0.01, default: 0.14, group: 'water', label: 'viscosity (diffuse)' },
-  momentumHalfLife: { type: 'number', min: 40, max: 800, step: 10, default: 220, group: 'water', label: 'drag half-life', unit: 'steps', scale: 'log' },
-  projectionIters:  { type: 'number', min: 10, max: 80, step: 2, default: 44, group: 'water', label: 'projection iterations' },
+  momentumDiffuse:  { type: 'number', min: 0.02, max: 0.3, step: 0.01, default: 0.14, group: 'water', label: 'water thickness' },
+  momentumHalfLife: { type: 'number', min: 40, max: 800, step: 10, default: 220, group: 'water', label: 'current fades to half', unit: 'steps', scale: 'log' },
+  projectionIters:  { type: 'number', min: 10, max: 80, step: 2, default: 44, group: 'water', label: 'water-squeeze fix passes' },
   roomTemp:         { type: 'number', min: 15, max: 26, step: 0.5, default: 20, group: 'water', label: 'room temperature' },
-  tempDiffuse:      { type: 'number', min: 0.02, max: 0.3, step: 0.01, default: 0.12, group: 'water', label: 'thermal diffuse' },
-  buoyancyBeta:     { type: 'number', min: 0, max: 0.05, step: 0.001, default: 0.012, group: 'water', label: 'buoyancy (Boussinesq beta)' },
+  tempDiffuse:      { type: 'number', min: 0.02, max: 0.3, step: 0.01, default: 0.12, group: 'water', label: 'heat spread' },
+  buoyancyBeta:     { type: 'number', min: 0, max: 0.05, step: 0.001, default: 0.012, group: 'water', label: 'warm-water lift' },
   coolingRate:      { type: 'number', min: 0, max: 0.05, step: 0.001, default: 0.01, group: 'water', label: 'surface cooling rate' },
 
   // -- filter (jet + intake momentum sources, filter media mask) ----
-  filterRate:       { type: 'number', min: 0, max: 1, step: 0.02, default: 0.5, group: 'filter', label: 'jet strength' },
-  intakeRate:       { type: 'number', min: 0, max: 1, step: 0.02, default: 0.35, group: 'filter', label: 'intake strength' },
-  filterMediaSize:  { type: 'number', min: 2, max: 8, step: 1, default: 4, group: 'filter', label: 'media box (cells)' },
+  filterRate:       { type: 'number', min: 0, max: 1, step: 0.02, default: 0.5, group: 'filter', label: 'filter outflow' },
+  intakeRate:       { type: 'number', min: 0, max: 1, step: 0.02, default: 0.35, group: 'filter', label: 'filter intake' },
+  filterMediaSize:  { type: 'number', min: 2, max: 8, step: 1, default: 4, group: 'filter', label: 'filter sponge size' },
 
   // -- heater --------------------------------------------------------
   heaterRate:       { type: 'number', min: 0, max: 0.2, step: 0.005, default: 0.06, group: 'heater', label: 'heat rate' },
 
   // -- light (caustics deposited into the light channel each frame) --
-  lightHalfLife:    { type: 'number', min: 1, max: 8, step: 0.5, default: 2.5, group: 'light', label: 'decay half-life', unit: 'steps' },
-  lightDiffuse:     { type: 'number', min: 0, max: 0.3, step: 0.01, default: 0.06, group: 'light', label: 'diffuse' },
-  causticRays:      { type: 'number', min: 6, max: 48, step: 1, default: 28, group: 'light', label: 'caustic ray count' },
-  causticIntensity: { type: 'number', min: 0.2, max: 3, step: 0.1, default: 1.1, group: 'light', label: 'caustic intensity' },
-  surfaceIOR:       { type: 'number', min: 1.2, max: 1.5, step: 0.01, prereg: 1.33, group: 'light', label: 'water refractive index (n)' },
+  lightHalfLife:    { type: 'number', min: 1, max: 8, step: 0.5, default: 2.5, group: 'light', label: 'light fades to half', unit: 'steps' },
+  lightDiffuse:     { type: 'number', min: 0, max: 0.3, step: 0.01, default: 0.06, group: 'light', label: 'light spread' },
+  causticRays:      { type: 'number', min: 6, max: 48, step: 1, default: 28, group: 'light', label: 'light ripples: count' },
+  causticIntensity: { type: 'number', min: 0.2, max: 3, step: 0.1, default: 1.1, group: 'light', label: 'light ripples: brightness' },
+  surfaceIOR:       { type: 'number', min: 1.2, max: 1.5, step: 0.01, prereg: 1.33, group: 'light', label: 'how much the surface bends light' },
 
   // -- bubbles ---------------------------------------------------------
   bubbleCount:      { type: 'number', min: 0, max: 80, step: 1, default: 26, group: 'bubbles', label: 'count' },
@@ -86,46 +86,46 @@ export const SCHEMA = {
   bubbleMaxRadius:  { type: 'number', min: 0.5, max: 3, step: 0.05, default: 1.6, group: 'bubbles', label: 'max radius' },
   bubbleWobble:     { type: 'number', min: 0, max: 0.4, step: 0.01, default: 0.12, group: 'bubbles', label: 'wobble' },
   bubbleAdvectGain: { type: 'number', min: 0, max: 1, step: 0.02, default: 0.35, group: 'bubbles', label: 'current drag' },
-  bubbleThrust:     { type: 'number', min: 0, max: 0.2, step: 0.005, default: 0.03, group: 'bubbles', label: 'momentum deposit' },
+  bubbleThrust:     { type: 'number', min: 0, max: 0.2, step: 0.005, default: 0.03, group: 'bubbles', label: 'pushes water' },
 
   // -- fish ------------------------------------------------------------
   fishCount:        { type: 'number', min: 2, max: 60, step: 1, default: 16, group: 'fish', label: 'count' },
   fishSpeed:        { type: 'number', min: 0.1, max: 1.5, step: 0.05, default: 0.55, group: 'fish', label: 'base speed' },
-  fishRheotaxis:    { type: 'number', min: -0.3, max: 0.3, step: 0.01, default: -0.05, group: 'fish', label: 'rheotaxis (negative = face current)' },
-  fishCurrentDrag:  { type: 'number', min: 0, max: 0.6, step: 0.02, default: 0.18, group: 'fish', label: 'current drag' },
+  fishRheotaxis:    { type: 'number', min: -0.3, max: 0.3, step: 0.01, default: -0.05, group: 'fish', label: 'face the current (negative = into it)' },
+  fishCurrentDrag:  { type: 'number', min: 0, max: 0.6, step: 0.02, default: 0.18, group: 'fish', label: 'pushed by current' },
   fishSensorDist:   { type: 'number', min: 1, max: 12, step: 0.5, default: 5, group: 'fish', label: 'sensor distance' },
   fishSensorAngle:  { type: 'angle', min: 5, max: 90, step: 1, default: 40, unit: 'deg', group: 'fish', label: 'sensor angle' },
-  fishFoodGain:     { type: 'number', min: 0, max: 1.5, step: 0.02, default: 0.55, group: 'fish', label: 'food-seeking gain' },
-  fishGrazeRate:    { type: 'number', min: 0, max: 0.1, step: 0.002, default: 0.03, group: 'fish', label: 'graze rate' },
-  fishSchoolGain:   { type: 'number', min: -0.5, max: 0.5, step: 0.01, default: 0.12, group: 'fish', label: 'school density gain' },
-  fishSchoolAlign:  { type: 'number', min: 0, max: 0.6, step: 0.01, default: 0.22, group: 'fish', label: 'school alignment' },
-  fishThrustGain:   { type: 'number', min: 0, max: 0.3, step: 0.005, default: 0.05, group: 'fish', label: 'wake thrust' },
+  fishFoodGain:     { type: 'number', min: 0, max: 1.5, step: 0.02, default: 0.55, group: 'fish', label: 'food seeking' },
+  fishGrazeRate:    { type: 'number', min: 0, max: 0.1, step: 0.002, default: 0.03, group: 'fish', label: 'eating rate' },
+  fishSchoolGain:   { type: 'number', min: -0.5, max: 0.5, step: 0.01, default: 0.12, group: 'fish', label: 'stay together' },
+  fishSchoolAlign:  { type: 'number', min: 0, max: 0.6, step: 0.01, default: 0.22, group: 'fish', label: 'swim the same way' },
+  fishThrustGain:   { type: 'number', min: 0, max: 0.3, step: 0.005, default: 0.05, group: 'fish', label: 'push on water' },
   fishWobble:       { type: 'number', min: 0, max: 0.3, step: 0.01, default: 0.06, group: 'fish', label: 'wobble' },
-  fishAmmoniaRate:  { type: 'number', min: 0, max: 0.05, step: 0.001, default: 0.012, group: 'fish', label: 'ammonia deposit' },
-  fishO2ConsumeRate:{ type: 'number', min: 0, max: 0.05, step: 0.001, default: 0.01, group: 'fish', label: 'oxygen consumption' },
+  fishAmmoniaRate:  { type: 'number', min: 0, max: 0.05, step: 0.001, default: 0.012, group: 'fish', label: 'waste per step' },
+  fishO2ConsumeRate:{ type: 'number', min: 0, max: 0.05, step: 0.001, default: 0.01, group: 'fish', label: 'oxygen used' },
 
   // -- plankton (physarum weld on nutrient; the field's own writers) ---
   planktonCount:    { type: 'number', min: 0, max: 1200, step: 20, default: 500, group: 'plankton', label: 'count' },
   planktonSpeed:    { type: 'number', min: 0.05, max: 0.8, step: 0.02, default: 0.28, group: 'plankton', label: 'base speed' },
   planktonSensorDist:{ type: 'number', min: 1, max: 8, step: 0.5, default: 3, group: 'plankton', label: 'sensor distance' },
   planktonSensorAngle:{ type: 'angle', min: 10, max: 90, step: 1, default: 35, unit: 'deg', group: 'plankton', label: 'sensor angle' },
-  planktonGain:     { type: 'number', min: 0, max: 0.8, step: 0.02, default: 0.32, group: 'plankton', label: 'steering gain' },
-  planktonGrowth:   { type: 'number', min: 0, max: 0.4, step: 0.01, default: 0.16, group: 'plankton', label: 'nutrient growth deposit' },
-  planktonLightGain:{ type: 'number', min: 0, max: 1, step: 0.02, default: 0.5, group: 'plankton', label: 'light-speed coupling' },
+  planktonGain:     { type: 'number', min: 0, max: 0.8, step: 0.02, default: 0.32, group: 'plankton', label: 'steering' },
+  planktonGrowth:   { type: 'number', min: 0, max: 0.4, step: 0.01, default: 0.16, group: 'plankton', label: 'food left behind' },
+  planktonLightGain:{ type: 'number', min: 0, max: 1, step: 0.02, default: 0.5, group: 'plankton', label: 'light speeds them up' },
 
   // -- plants (CPU-side Verlet chains, the one non-engine population) --
   plantCount:       { type: 'number', min: 0, max: 12, step: 1, default: 6, group: 'plants', label: 'count' },
   plantSegments:    { type: 'number', min: 3, max: 14, step: 1, default: 8, group: 'plants', label: 'segments' },
   plantSegLength:   { type: 'number', min: 0.5, max: 3, step: 0.1, default: 1.3, group: 'plants', label: 'segment length' },
   plantDrag:        { type: 'number', min: 0, max: 2, step: 0.05, default: 0.6, group: 'plants', label: 'current drag' },
-  plantStiffIters:  { type: 'number', min: 1, max: 8, step: 1, default: 4, group: 'plants', label: 'constraint iterations' },
-  plantOxygenRate:  { type: 'number', min: 0, max: 0.05, step: 0.001, default: 0.015, group: 'plants', label: 'oxygen deposit (per light unit)' },
-  plantNitrateRate: { type: 'number', min: 0, max: 0.03, step: 0.001, default: 0.008, group: 'plants', label: 'nitrate uptake' },
+  plantStiffIters:  { type: 'number', min: 1, max: 8, step: 1, default: 4, group: 'plants', label: 'stiffness passes' },
+  plantOxygenRate:  { type: 'number', min: 0, max: 0.05, step: 0.001, default: 0.015, group: 'plants', label: 'oxygen made (per light)' },
+  plantNitrateRate: { type: 'number', min: 0, max: 0.03, step: 0.001, default: 0.008, group: 'plants', label: 'nitrate eaten' },
 
   // -- chemistry (nitrogen cycle + O2 exchange time-scale) -------------
-  chemistrySpeed:   { type: 'number', min: 1, max: 20, step: 1, default: 8, group: 'chemistry', label: 'time-scale multiplier', scale: 'log' },
-  o2Saturation:      { type: 'number', min: 4, max: 12, step: 0.5, default: 8, group: 'chemistry', label: 'O2 saturation' },
-  o2ExchangeRate:    { type: 'number', min: 0, max: 0.1, step: 0.002, default: 0.02, group: 'chemistry', label: 'O2 exchange rate' },
+  chemistrySpeed:   { type: 'number', min: 1, max: 20, step: 1, default: 8, group: 'chemistry', label: 'chemistry speed-up', scale: 'log' },
+  o2Saturation:      { type: 'number', min: 4, max: 12, step: 0.5, default: 8, group: 'chemistry', label: 'max oxygen' },
+  o2ExchangeRate:    { type: 'number', min: 0, max: 0.1, step: 0.002, default: 0.02, group: 'chemistry', label: 'oxygen from air' },
   nitrifyGrowth:     { type: 'number', min: 0.05, max: 1, step: 0.01, default: 0.4, group: 'chemistry', label: 'bacteria growth rate' },
   // Rescaled 2026-09-11 (found empirically, real-time-driver run:
   // bacteriaA/bacteriaB -> 0 within ~60 steps at the old default of 1,
@@ -141,16 +141,16 @@ export const SCHEMA = {
   // (seedAquarium, 0.02) died faster than ammonia could ever arrive.
   // Rescaled to the concentration scale actually achieved, not the one
   // originally assumed.
-  nitrifyHalfSat:    { type: 'number', min: 0.0005, max: 0.05, step: 0.0005, default: 0.001, group: 'chemistry', label: 'Monod half-saturation' },
+  nitrifyHalfSat:    { type: 'number', min: 0.0005, max: 0.05, step: 0.0005, default: 0.001, group: 'chemistry', label: 'food level for half-speed growth' },
   nitrifyDeathRate:  { type: 'number', min: 0.001, max: 0.05, step: 0.001, default: 0.012, group: 'chemistry', label: 'bacteria death rate' },
 
   // -- time --------------------------------------------------------
   simSpeed:         { type: 'number', min: 0.25, max: 4, step: 0.25, default: 1, group: 'time', label: 'sim speed' },
 
   // -- view ----------------------------------------------------------
-  backend:          { type: 'select', options: ['webgl2', 'cpu'], default: 'webgl2', group: 'view', label: 'backend' },
+  backend:          { type: 'select', options: ['webgl2', 'cpu'], default: 'webgl2', group: 'view', label: 'engine' },
   overlay:          { type: 'select', options: ['none', 'velocity', 'vorticity', 'temperature', 'ammonia', 'oxygen', 'nutrient', 'light'], default: 'none', group: 'view', label: 'overlay' },
-  cpuGridScale:     { type: 'number', min: 0.25, max: 1, step: 0.05, default: 0.5, group: 'view', label: 'CPU grid scale' }
+  cpuGridScale:     { type: 'number', min: 0.25, max: 1, step: 0.05, default: 0.5, group: 'view', label: 'reference engine detail' }
 };
 
 /* ---- fixed geometry (not schema knobs: changing these mid-run would
@@ -437,4 +437,20 @@ export function seedAquarium(spec, state, meta, values) {
   }
 }
 
-export default { SCHEMA, BASE_WIDTH, BASE_HEIGHT, CHANNELS, buildAquariumSpec, seedAquarium, bubbleRadius };
+/** The page's initial condition, in the one order that works: the
+ *  engine's generic resetAgents FIRST (random positions/headings, the
+ *  population's declared speed, which is 0 for bubbles), THEN
+ *  seedAquarium, which writes the bubbles' radius-dependent rise speed,
+ *  their "up" heading and their spawn row near the gravel. Before
+ *  2026-09-24 index.html ran these in the opposite order, so resetAgents
+ *  wiped the bubble speed to 0 and the bubbles never rose, while
+ *  twin.html ran this order, so the twin check certified an initial
+ *  condition the page never used. index.html and twin.html both call
+ *  this function now. `engine` is the cpu.js module (passed in so this
+ *  file keeps no engine import). */
+export function setupState(spec, state, meta, values, engine) {
+  engine.resetAgents(spec, state);
+  seedAquarium(spec, state, meta, values);
+}
+
+export default { SCHEMA, BASE_WIDTH, BASE_HEIGHT, CHANNELS, buildAquariumSpec, seedAquarium, setupState, bubbleRadius };

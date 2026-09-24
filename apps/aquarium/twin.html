@@ -35,7 +35,8 @@
 import { defineSubstrate } from '../../apps/aquarium/engine/kernel.js';
 import { runTwin } from '../../apps/aquarium/engine/twin.js';
 import { defineParams } from '../../src/params/define.js';
-import { SCHEMA, buildAquariumSpec, seedAquarium } from '../../apps/aquarium/spec.js';
+import { SCHEMA, buildAquariumSpec, setupState } from '../../apps/aquarium/spec.js';
+import * as cpuEngine from '../../apps/aquarium/engine/cpu.js';
 
 // Same fixture specs as tests/aquarium-engine.js (physarumSpec/boidsSpec)
 // — deliberately identical, so a reader can trust the twin check is
@@ -135,7 +136,18 @@ function aquariumFixture() {
     ...store.values(),
     backend: 'cpu', cpuGridScale: 0.22,
     fishCount: 6, planktonCount: 30, bubbleCount: 6,
-    plantCount: 0 // plants are the declared non-engine population — nothing here to twin
+    plantCount: 0, // plants are the declared non-engine population — nothing here to twin
+    // 3000 projection passes (the page uses 44). Since 2026-09-24 both
+    // backends use no-penetration walls; the CPU solves the pressure with
+    // Gauss-Seidel and the GPU with weighted Jacobi, which reach the same
+    // answer when converged but different ones after 44 passes. Measured
+    // (fixture seeds 71-76): at 44 or 400 passes a fish's heading flips
+    // within 5 steps on about half the seeds; at 3000 passes the step-5
+    // momentum difference is about 1e-5 and fish positions agree to 3e-4
+    // on seeds 72/74/75. So this check tests that the two backends run
+    // the same operators, not that they agree at the page's unconverged
+    // 44 passes (they don't, pointwise).
+    projectionIters: 3000
   };
   const { spec: rawSpec, meta } = buildAquariumSpec(values, 71);
   // Override the tolerance buildAquariumSpec declares for live-page use
@@ -165,7 +177,10 @@ function aquariumFixture() {
       aggregate: [{ metric: 'variance', field: 'nutrient', maxRelDiff: 0.35, minValue: 0.01 }]
     }
   });
-  const seedFn = (cpuState) => seedAquarium(spec, cpuState, meta, values);
+  // The page's own initial condition (spec.js setupState: resetAgents,
+  // then seedAquarium), re-run here after runTwin's own resetAgents so
+  // the twin check starts from exactly what index.html starts from.
+  const seedFn = (cpuState) => setupState(spec, cpuState, meta, values, cpuEngine);
   return { spec, seedFn };
 }
 
@@ -197,8 +212,10 @@ async function main() {
     aquarium,
     pass: physarum.pass && boids.pass && aquarium.pass,
     notes: [
-      "aquarium: the same buildAquariumSpec() apps/aquarium/index.html " +
-      "uses, at a shrunk grid (25x16, cpuGridScale 0.22) and population " +
+      "aquarium: the same buildAquariumSpec() and the same setupState() " +
+      "(resetAgents, then seedAquarium) apps/aquarium/index.html uses, " +
+      "with 3000 projection passes instead of the page's 44 (see the " +
+      "fixture comment), at a shrunk grid (25x16, cpuGridScale 0.22) and population " +
       "counts (6 fish, 30 plankton, 6 bubbles, 0 plants — plants are the " +
       "declared non-engine population, nothing here to twin) so 100 " +
       "steps on both backends completes quickly. `aggregate` checks " +

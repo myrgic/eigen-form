@@ -1,8 +1,8 @@
 {
   "id": "aquarium",
-  "title": "Aquarium",
-  "description": "A live aquarium on the agent-substrate engine: fluid, heat, the nitrogen cycle, and three populations sharing one tank.",
-  "version": "1.0.0",
+  "title": "Aquarium (sketch)",
+  "description": "A fish-tank sketch on the agent-substrate engine: a projected flow in a closed tank (not self-advecting), buoyant heat, a nitrogen-conserving nitrification motif in the filter, and fish, plankton and bubbles. The page says what it does not model.",
+  "version": "1.1.0",
   "kind": "sdk-page",
   "entry": "index.html",
   "provenance": {
@@ -22,5 +22,24 @@
     "order": 2,
     "accent": "#4fb2d9"
   },
-  "vetted": false
+  "vetted": false,
+  "cogdoc": {
+    "type": "artifact",
+    "id": "app-aquarium",
+    "embedded": "script[type=\"application/cogdoc+yaml\"]",
+    "claim": "A layered visual analog of a tank: projected (non-self-advecting) flow in a closed box, buoyant heat and a nitrification motif that conserves nitrogen. Unvetted."
+  },
+  "changelog": [
+    {
+      "version": "1.1.0",
+      "date": "2026-09-24",
+      "changes": [
+        "nitrify uptake clamped to min(S, mu*B*mask) in cpu.js and both GPU shaders: total N / ammonia added 205-250x -> 0.93-1.01 (CPU engine, 3 seeds); real page 53x (cpu) and 189x (webgl2) -> 0.89 and 0.94",
+        "bubbles: page init is resetAgents then seedAquarium (spec.js setupState), shared by index.html and twin.html; bubbles rise (mean vy about -0.26 cells/step, 3 seeds; before 0)",
+        "no-penetration walls in the projection (CPU and GPU): a uniform flow projects to ~0 (rms 9e-6, was 1.0); half-grid tank mean vy -6.3 -> -0.006 after 1500 steps",
+        "verdict reads per-cell filter-sponge concentrations; app-level physics runs once per engine step; nitrogen ledger and filter readout in the panel; test port window.__aquarium",
+        "page text says what it does not model (self-advection, light column, refraction angle, bacteria step, grid rescaling); tests/aquarium.js added"
+      ]
+    }
+  ]
 }

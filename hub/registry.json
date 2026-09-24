@@ -23,8 +23,8 @@
     },
     {
       "id": "aquarium",
-      "title": "Aquarium",
-      "description": "A live aquarium on the agent-substrate engine: fluid, heat, the nitrogen cycle, and three populations sharing one tank.",
+      "title": "Aquarium (sketch)",
+      "description": "A fish-tank sketch on the agent-substrate engine: a projected flow in a closed tank (not self-advecting), buoyant heat, a nitrogen-conserving nitrification motif in the filter, and fish, plankton and bubbles. The page says what it does not model.",
       "path": "../apps/aquarium/index.html",
       "kind": "sdk-page",
       "provenance": {
