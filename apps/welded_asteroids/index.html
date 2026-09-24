@@ -41,7 +41,7 @@ method:
     label: quotient surface
     range: [torus, klein, projective, mobius]
     default: torus
-    meaning: which fundamental polygon the sim square is glued into. Agent positions, headings and BOTH field reads/writes transform by the same rule (flipX: x→W−x, vx→−vx, a→π−a; flipY: y→H−y, vy→−vy, a→−a), so structures genuinely live on the surface — a Klein trail carries a real half-twist
+    meaning: "which fundamental polygon the sim square is glued into. Agent positions, headings and BOTH field reads/writes transform by the same rule (flipX: x→W−x, vx→−vx, a→π−a; flipY: y→H−y, vy→−vy, a→−a), so structures genuinely live on the surface — a Klein trail carries a real half-twist"
   - param: b1Target
     label: level β₁ target
     range: [0, 120]
@@ -109,7 +109,7 @@ method:
     label: exclusion stiffness
     range: [0, 1]
     default: 0
-    meaning: 0-0.7 soft — steering force away from coincident-heading occupied cells (weighted by momentum-field heading dot, seam-aware); >= 0.75 hard — veto the chosen move if the target cell is occupied (fallback: second-choice sensor direction, stochastic); occupancy alone (no heading clause) in the hard limit.
+    meaning: "0-0.7 soft — steering force away from coincident-heading occupied cells (weighted by momentum-field heading dot, seam-aware); >= 0.75 hard — veto the chosen move if the target cell is occupied (fallback: second-choice sensor direction, stochastic); occupancy alone (no heading clause) in the hard limit."
   - param: mass
     label: self-field mass
     range: [0, 2]
@@ -221,7 +221,6 @@ limitations:
     The Easter egg is asserted but lightly verified: ship spawn, wind ride
     and hand-mirroring reuse v1's tested code paths, but the β₁ ≥ 42 gate
     was smoke-tested once, not given a dedicated test.
----
 </script>
 <style>
   :root {
