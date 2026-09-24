@@ -115,7 +115,7 @@ denominator engineered to vanish.
 
 | Claim | Protocol | Result | Verdict |
 |---|---|---|---|
-| τ_sim vs κ | sweep κ 0.2–0.95, q=2 | W rises with κ; τ falls sub-linearly (P_in ∝ κ) | **banked** (old metric; shape held) |
+| τ_sim vs κ | sweep κ 0.2–0.95, q=2 | W rises with κ; τ falls sub-linearly (P_in ∝ κ) | **banked under the retired τ = W/P_in**; not re-run with τ = W/P_loss (v2.11.8) |
 | τ_sim vs ν | sweep ν 0–0.2 | flat — drift was billed as the dial value, ~2 orders under real transport | **instrument defect → fixed v2.11.2/3** |
 | Rational locking | q-hist peak vs driving q | v2.11.0 instrument decayed onto a fixed attractor (~1.8) regardless of q — the "lock at 2.02" was the bug confirming itself | **refuted → fixed v2.11.1** |
 | Rational tracking (fixed instrument) | q = 1→3: peak 1.02→2.48, monotone | tracks the field; residual ~0.83× = real cross-field advection ("effective q") | **banked** |
@@ -191,7 +191,7 @@ the effective window varies with agent speed; queued for the next pass.
   pressure-gradient-driven instabilities. The field lines are kinematic
   scaffolding, not force-carrying objects with their own dynamics.
 - Not energy-conserving: the ledger accounts flows but the sim's internal
-  units are not joules (and at field-on equilibrium P_loss ≈ 20× P_in — the
+  units are not joules (and at field-on equilibrium P_loss runs 100–400× P_in — the
   books don't balance; τ_sim is comparable only within the sim, and only in
   field-on mode).
 - Not a claim that physarum-agents are plasma: the mapping is structural

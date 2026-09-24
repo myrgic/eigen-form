@@ -215,6 +215,11 @@ limitations:
     past an edge reads the edge row. Before v2.11.8 agents were clamped to
     the edge and the field diffused and was read periodically across y, so
     the field lived on a Klein bottle.
+    Side effect of the edge-row convention (measured, 150 s soaks, seeds
+    11/22/33): trail accumulates near the walls to 5-10x the mean row mass.
+    A mirrored-read ablation (a read past a wall reflects back inside) removes
+    most of it through 5400 steps (single seed), so the accumulation comes
+    mainly from the sensor convention, not from the no-flux wall itself.
   - >
     β₁ on a twisted quotient is measured on the SQUARE (fundamental
     polygon) mask — the honest computation on the glued manifold itself
