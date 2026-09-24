@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Welded Fields — Stigmergy + Advection</title>
+<title>Welded Fields: trails that steer themselves</title>
 <script type="application/cogdoc+yaml">
 id: paper-welded-fields
 type: paper
@@ -13,8 +13,9 @@ description: >
   one grid. Agents deposit into both and steer by both, so with the exogenous
   noise gain at zero the only transport field is agent-generated. Rendering,
   contours and the mask are normalized to the 99.5th percentile rather than the
-  raw maximum, and the mask fixes COVERAGE rather than level, which is what
-  makes the Betti-1 readout comparable across parameter changes. Executable
+  raw maximum, and the mask fixes COVERAGE rather than level (an exact
+  quantile), so the Betti readout does not move when the field is merely
+  rescaled. Executable
   paper — every slider is a declared parameter and window.__sim is the test port.
 sector: reference
 status: draft
@@ -25,13 +26,12 @@ authors:
   - chazmaniandinkle
 tags: [stigmergy, advection, momentum-field, rheotaxis, topology, betti, robust-normalization, closed-loop, eigen-form, executable-paper]
 claim: >
-  A stigmergic system can close its own loop: when the exogenous noise gain is
-  zero the transport field is entirely agent-deposited, and the governing
-  quantity becomes an internal ratio of timescales (momentum half-life / trail
-  half-life) rather than an external clock. Measuring that system's structure
-  requires normalization that is robust to single-cell deposit spikes, and a
-  threshold that fixes mask COVERAGE rather than field LEVEL — otherwise the
-  topology readout moves merely because the field got brighter.
+  With the outside noise gain at zero, the only steering field is one the
+  agents wrote themselves (their own heading, stored in a slower momentum
+  grid). The pieces-and-holes census is computed on the torus the agents
+  live on, and the mask threshold is an exact coverage quantile, so the
+  census does not change when the whole field is rescaled. Hypothesis, not
+  tested: the momentum/trail half-life ratio governs the patterns.
 method:
   - param: sa
     label: sensor angle
@@ -78,24 +78,28 @@ method:
     range: [0, 2]
     default: 1.00
     meaning: >
-      how strongly agents deposit their own velocity into the momentum field.
-      At 0 the momentum field is inert and the system reduces to plain
-      stigmergy; above 0 the transport field is agent-generated, which is what
-      "closed loop" means here.
+      read gain on the normalised momentum field (fieldAt multiplies the
+      momentum read by mass/momRef). It is NOT a deposit amount: every agent
+      deposits a unit heading vector whatever mass is. At 0 the momentum
+      field is switched off and the system is plain stigmergy. The field
+      weight saturates at 1 for >= 99.8% of agents at mass 0.5-2, so above
+      about 0.5 the slider is close to on/off.
   - param: mdec
     label: momentum decay
     range: [0.700, 0.995]
     default: 0.940
     meaning: >
       per-frame multiplier on the momentum field. Momentum half-life is
-      log(0.5)/log(mdec); the DISPLAYED governing quantity is the ratio
-      momentum-tau-half / trail-tau-half, a timescale the system owns.
+      log(0.5)/log(mdec). The panel displays the ratio momentum-tau-half /
+      trail-tau-half; that this ratio governs the patterns is a hypothesis
+      (a review found ratio-matched runs that did not behave alike).
   - param: ng
     label: noise gain (exogenous)
     range: [0, 2]
     default: 0.00
     meaning: >
-      gain on the external procedural (curl-noise) field. This is the ONLY
+      gain on the external value-noise angle field (a smooth random angle
+      from 3-D value noise; not a curl field, not divergence-free). This is the ONLY
       exogenous driver; at its default 0 nothing outside the simulation drives
       anything, and the noise/trail ratio readout goes dark by design.
   - param: ns
@@ -147,9 +151,10 @@ method:
     default: 8
     unit: percent
     meaning: >
-      TARGET COVERAGE, not a level. The threshold is solved per frame so exactly
-      this fraction of cells fall inside the mask. This is the invariance that
-      makes beta_1 comparable across parameter changes.
+      TARGET COVERAGE, not a level. The threshold is the exact quantile of the
+      trail values (log-spaced histogram to find the bin, then a sort inside
+      it), so this fraction of cells falls inside the mask up to ties. That
+      makes beta_1 invariant to a pure rescale of the field.
   - param: N
     default: 9000
     fixed: true
@@ -161,43 +166,47 @@ observables:
     on the torus (flood fill, periodic in x and y), b1 = b0 + b2 - euler() with
     euler() the periodic bit-quad Euler characteristic and b2 = 1 only when the
     mask covers every cell (independent loops on the torus), coverage = percent
-    of cells in the mask, which should track the `thr` slider by construction.
+    of cells in the mask; it equals `thr` except where cells tie at the cut
+    (in practice: when fewer than `thr` of cells hold any trail at all).
   refs: >
     __sim.refs() -> {ref, cut, max}. ref = 99.5th percentile of the trail field
     (render + contour scale); cut = the level placing exactly `thr` of cells in
-    the mask; max = raw maximum. ref << max whenever deposit spikes exist.
+    the mask; max = raw maximum. Both are exact quantiles (v1.3.0). Measured
+    max/ref is about 1.4-6 (median about 1.9), so max is not an extreme spike.
   fields: __sim.grid (Float32Array W*H trail), __sim.momX/momY (mW*mH momentum), __sim.horm (hormone), __sim.mask (Uint8Array)
   samplers: __sim.fieldAt(x,y,out), __sim.sampleMom(x,y,out), __sim.hormAt(x,y)
   params: __sim.P — live parameter object; mutate to drive the model from a test harness
   cost: >
-    betti() is O(W*H) union-find and reruns the histogram; it is a measurement
+    betti() is an O(W*H) flood fill plus refs() (a histogram and a sort of
+    one bin); it is a measurement
     call, not a per-frame path. The per-frame agent read stays 3 trail samples +
     1 momentum sample per agent, O(1) in field size.
 findings:
   - >
-    ROBUST NORMALIZATION IS LOAD-BEARING. The raw maximum of the trail field is a
-    single-cell deposit spike roughly two orders above the mean; normalizing to it
-    made the render dark, put every contour level above the whole field, and left
-    the mask nearly empty. Taking the 99.5th percentile from a 1024-bin histogram
-    instead fixes all three with one quantity.
+    Robust normalization. The render and contour scale use the 99.5th
+    percentile of the trail, not the raw maximum. Measured over 40 runs the
+    maximum is only about 1.4-6x the 99.5th percentile (median 1.9), so the
+    case for the percentile is robustness, not an order-of-magnitude spike.
+    (An earlier version's "every contour level above the whole field" cannot
+    be reproduced by this code, which never scales contours by max.)
   - >
-    FIXING COVERAGE RATHER THAN LEVEL BUYS MEASUREMENT INVARIANCE. The mask
-    threshold is solved each frame for a target coverage (`thr`), so beta_1 stops
-    moving merely because the field got brighter. A topology statistic taken at a
-    fixed absolute level is confounded with the nuisance parameter `deposit`;
-    taken at fixed coverage it is not.
+    Fixing coverage rather than level. The mask threshold is the exact
+    quantile for the target coverage, so the census does not move when the
+    whole field is rescaled (exact under a global rescale; checked on seeds
+    1-3 for 8-40% coverage in v1.3.0). Before v1.3.0 a linear histogram put
+    75-93% of cells in its bottom bin and asking for 20-40% could return 8%.
   - >
-    THE LOOP CLOSES. With noise gain at 0 no exogenous field drives anything: the
-    transport field is entirely agent-deposited momentum. The controlling quantity
-    becomes momentum tau-half / trail tau-half — computed as
-    log(0.5)/log(mdec) over log(0.5)/log(dec) and displayed as a ratio — a
-    timescale the system owns rather than an external clock it is entrained to.
+    The loop closes, architecturally. With noise gain at 0 the only vector
+    field is the agent-written momentum grid. At the shipped defaults (adv =
+    ali = 0.02) its effect on local heading order is too small to detect
+    against mass = 0; at adv 0.5 / ali 0.2 it is large. Hypothesis, not
+    tested: the momentum/trail half-life ratio governs the patterns.
   - >
-    RUNNING MEANS MAKE GAINS DIMENSIONLESS. momRef and hormRef track the mean
-    field magnitude with a 0.05 relaxation, and every read divides by them, so
-    `adv`, `ali` and the hormone couplings mean the same thing regardless of
-    agent count or deposit size. Without this, every gain would silently rescale
-    with N.
+    Running means scale the gains. momRef and hormRef track the mean field
+    magnitude with a 0.05 relaxation and every read divides by them. In
+    practice the field weight also saturates at 1 for almost every agent, so
+    the invariance to N comes mostly from that saturation; N is fixed, so
+    this is not tested.
   - >
     THE IMAGE BUFFER MUST BE REALLOCATED WITH THE GRID. Dimensions are floored at
     Math.max(64, ...) and the ImageData is created inside reset() alongside the
@@ -221,7 +230,13 @@ limitations:
     The hormone couplings (hsa/hra/hdc) default to 0 and are therefore
     demonstrated but not characterized; no finding here rests on them.
   - >
-    entryHash in app.json is machine-generated and currently pending rebuild.
+    `mass` is a read gain that saturates, not a deposit strength; the
+    momentum loop is present but weak at the default gains.
+  - >
+    Before v1.3.0 the momentum and hormone lattices had floor(W/8) blocks of
+    8 cells, so on a 605-cell-wide world they covered 600 columns and the
+    last 5 aliased onto block 0 (period 600, not 605). Since v1.3.0 the
+    lattice has round(W/8) blocks of W/mW cells and tiles the torus exactly.
 refs:
   - uri: app:physarum
     rel: corrects
@@ -244,8 +259,8 @@ refs:
     rel: demonstrates
     desc: >
       Declared observables as a decaying deposit medium. The momentum field is
-      that medium made vectorial, and the momentum/trail half-life ratio is the
-      endogenous timescale such a system is governed by.
+      that medium made vectorial; the momentum/trail half-life ratio is the
+      candidate endogenous timescale (untested hypothesis).
 </script>
 <style>
   :root{
@@ -291,96 +306,96 @@ refs:
 <body>
 
 <div id="panel">
-  <h1>Welded Fields<small>stigmergic trail × procedural advection, one grid</small></h1>
+  <h1>Welded Fields<small>slime-mould trails, plus arrows the dots write and follow</small></h1>
 
   <div class="grp">
-    <div class="hd">Agents</div>
+    <div class="hd">Dots</div>
     <!-- 60/20 (wide sensors, small turns) is the operator's regime: stable
          shapes that keep evolving, rather than the jitterier canonical 22.5/45 -->
-    <div class="ctl"><label>Sensor angle <b id="v-sa">60°</b></label>
+    <div class="ctl"><label>Sniff angle <b id="v-sa">60°</b></label>
       <input type="range" id="sa" min="5" max="90" step="1" value="60"></div>
-    <div class="ctl"><label>Rotation angle <b id="v-ra">18°</b></label>
+    <div class="ctl"><label>Turn angle <b id="v-ra">18°</b></label>
       <input type="range" id="ra" min="5" max="90" step="1" value="18"></div>
-    <div class="ctl"><label>Sensor distance <b id="v-so">5</b></label>
+    <div class="ctl"><label>Sniff distance (cells ahead) <b id="v-so">5</b></label>
       <input type="range" id="so" min="1" max="30" step="1" value="5"></div>
   </div>
 
   <div class="grp">
-    <div class="hd">Medium</div>
-    <div class="ctl"><label>Evaporation <b id="v-dec">0.990</b></label>
+    <div class="hd">Scent</div>
+    <div class="ctl"><label>Scent kept per step <b id="v-dec">0.990</b></label>
       <input type="range" id="dec" min="0.900" max="0.999" step="0.001" value="0.990"></div>
-    <div class="ctl"><label>Deposit <b id="v-dep">25</b></label>
+    <div class="ctl"><label>Scent per step <b id="v-dep">25</b></label>
       <input type="range" id="dep" min="1" max="60" step="1" value="25"></div>
   </div>
 
   <div class="grp">
-    <div class="hd">Field</div>
-    <div class="ctl"><label>Advection (transport) <b id="v-adv">0.02</b></label>
+    <div class="hd">Arrows</div>
+    <div class="ctl"><label>Carried by arrows <b id="v-adv">0.02</b></label>
       <input type="range" id="adv" min="0" max="2" step="0.02" value="0.02"></div>
-    <div class="ctl"><label>Alignment (rheotaxis) <b id="v-ali">0.02</b></label>
+    <div class="ctl"><label>Turn to follow arrows <b id="v-ali">0.02</b></label>
       <input type="range" id="ali" min="0" max="1" step="0.01" value="0.02"></div>
-    <div class="ctl"><label>Self-field · mass <b id="v-mass">1.00</b></label>
+    <div class="ctl" title="A read gain on the arrow field, not a deposit amount. Above about 1 it has almost no effect: the push is already at its cap for 99.8% of dots."><label>Arrow strength <b id="v-mass">1.00</b></label>
       <input type="range" id="mass" min="0" max="2" step="0.02" value="1"></div>
-    <div class="ctl"><label>Momentum decay <b id="v-mdec">0.940</b></label>
+    <div class="ctl"><label>Arrows kept per step <b id="v-mdec">0.940</b></label>
       <input type="range" id="mdec" min="0.700" max="0.995" step="0.005" value="0.940"></div>
-    <div class="ctl"><label>Noise gain · exogenous <b id="v-ng">0.00</b></label>
+    <div class="ctl"><label>Outside noise (0 = off) <b id="v-ng">0.00</b></label>
       <input type="range" id="ng" min="0" max="2" step="0.02" value="0"></div>
-    <div class="ctl"><label>Noise scale <b id="v-ns">0.0060</b></label>
+    <div class="ctl"><label>Noise swirl size <b id="v-ns">0.0060</b></label>
       <input type="range" id="ns" min="0.001" max="0.03" step="0.001" value="0.006"></div>
-    <div class="ctl"><label>Drift rate <b id="v-dr">0.0050</b></label>
+    <div class="ctl"><label>Noise drift speed <b id="v-dr">0.0050</b></label>
       <input type="range" id="dr" min="0" max="0.05" step="0.0005" value="0.005"></div>
   </div>
 
   <div class="grp">
-    <div class="hd">Hormone</div>
-    <div class="ctl"><label>Release <b id="v-hrel">0.00</b></label>
+    <div class="hd">Hormone (dots can change how fast scent fades)</div>
+    <div class="ctl"><label>Hormone per step <b id="v-hrel">0.00</b></label>
       <input type="range" id="hrel" min="0" max="2" step="0.02" value="0"></div>
-    <div class="ctl"><label>Hormone decay <b id="v-hdec">0.997</b></label>
+    <div class="ctl"><label>Hormone kept per step <b id="v-hdec">0.997</b></label>
       <input type="range" id="hdec" min="0.950" max="0.9995" step="0.0005" value="0.997"></div>
-    <div class="ctl"><label>→ sensor angle <b id="v-hsa">0.00</b></label>
+    <div class="ctl"><label>Hormone widens sniff angle <b id="v-hsa">0.00</b></label>
       <input type="range" id="hsa" min="-1" max="1" step="0.02" value="0"></div>
-    <div class="ctl"><label>→ rotation angle <b id="v-hra">0.00</b></label>
+    <div class="ctl"><label>Hormone widens turn angle <b id="v-hra">0.00</b></label>
       <input type="range" id="hra" min="-1" max="1" step="0.02" value="0"></div>
-    <div class="ctl"><label>→ trail τ (weather) <b id="v-hdc">0.00</b></label>
+    <div class="ctl"><label>Hormone changes scent fade <b id="v-hdc">0.00</b></label>
       <input type="range" id="hdc" min="-1" max="1" step="0.02" value="0"></div>
   </div>
 
   <div class="grp">
-    <div class="hd">View</div>
-    <div class="row"><label><input type="checkbox" id="showField" checked> field</label>
-      <label><input type="checkbox" id="showMask"> mask</label></div>
-    <div class="row"><label><input type="checkbox" id="showContour" checked> contours</label>
-      <label><input type="checkbox" id="dimTrail"> dim trail</label>
+    <div class="hd">Show</div>
+    <div class="row"><label><input type="checkbox" id="showField" checked> arrows</label>
+      <label><input type="checkbox" id="showMask"> bright part</label></div>
+    <div class="row"><label><input type="checkbox" id="showContour" checked> outline</label>
+      <label><input type="checkbox" id="dimTrail"> faded scent</label>
       <label><input type="checkbox" id="showHorm"> hormone</label></div>
-    <div class="ctl"><label>Mask coverage <b id="v-thr">8%</b></label>
+    <div class="ctl"><label>Bright part = top share of cells <b id="v-thr">8%</b></label>
       <input type="range" id="thr" min="1" max="40" step="1" value="8"></div>
   </div>
 
   <div class="grp">
-    <div class="hd">Topology</div>
+    <div class="hd">Shape count</div>
     <div class="read">
-      <span class="k">voids (β₁)</span><span class="v big" id="r-b1">–</span>
-      <span class="k">components (β₀)</span><span class="v" id="r-b0">–</span>
-      <span class="k">coverage</span><span class="v" id="r-cov">–</span>
+      <span class="k">holes (β₁)</span><span class="v big" id="r-b1">–</span>
+      <span class="k">pieces (β₀)</span><span class="v" id="r-b0">–</span>
+      <span class="k">bright share</span><span class="v" id="r-cov">–</span>
     </div>
     <canvas id="spark"></canvas>
-    <p class="note">β₁ = β₀ + β₂ − χ on the torus, Euler χ by periodic bit-quads on the thresholded field. Verified against known shapes.</p>
+    <p class="note">Counts pieces and holes in the bright part on the wrap-around sheet (a torus), so shapes that cross an edge are counted once. A band that wraps all the way round counts as a hole too. Checked against an independent calculation on 924 test masks.</p>
   </div>
 
   <div class="grp">
-    <div class="hd">Timescales</div>
+    <div class="hd">How long things last</div>
     <div class="read">
-      <span class="k">trail τ½</span><span class="v" id="r-th">–</span>
-      <span class="k">momentum τ½</span><span class="v" id="r-tm">–</span>
-      <span class="k">ratio mom/trail</span><span class="v" id="r-mratio">–</span>
-      <span class="k">noise τ (exogenous)</span><span class="v" id="r-tf">–</span>
-      <span class="k">ratio noise/trail</span><span class="v" id="r-ratio">–</span>
-      <span class="k">fps</span><span class="v" id="r-fps">–</span>
+      <span class="k">scent: frames to fade to half</span><span class="v" id="r-th">–</span>
+      <span class="k">arrows: frames to fade to half</span><span class="v" id="r-tm">–</span>
+      <span class="k">arrows ÷ scent lifetime</span><span class="v" id="r-mratio">–</span>
+      <span class="k">outside noise: frames per change</span><span class="v" id="r-tf">–</span>
+      <span class="k">noise ÷ scent lifetime</span><span class="v" id="r-ratio">–</span>
+      <span class="k">frames per second</span><span class="v" id="r-fps">–</span>
     </div>
-    <p class="note"><b>Closed loop:</b> with Noise gain at 0 nothing outside the simulation drives anything — the field is entirely agent-deposited momentum. The controlling ratio becomes <b>momentum τ½ / trail τ½</b>, a timescale the system owns, rather than an external clock.</p>
+    <p class="note"><b>Closed loop:</b> with outside noise at 0, the dots are pushed only by arrows they wrote themselves. The page guesses that "arrows ÷ scent lifetime" then controls the patterns. That guess hasn't been tested: in a review, runs with the same ratio did not behave alike. At the default arrow settings the effect on the dots' headings is too weak to detect.</p>
   </div>
 
-  <button id="reset">Reset particles</button>
+  <button id="reset">Start over</button>
 </div>
 
 <div id="stage"><canvas id="sim"></canvas><canvas id="over"></canvas></div>
@@ -435,7 +450,7 @@ let cW, cH, coarse;
    Coarser than the trail on purpose - a wake spreads over a larger scale than
    a pheromone track, and it keeps the extra two diffusion passes cheap. */
 const MS = 8;
-let mW, mH, momX, momY, mtX, mtY, momRef = 1;
+let mW, mH, mSX = MS, mSY = MS, momX, momY, mtX, mtY, momRef = 1;
 
 /* Hormone. Structurally different from the trail, not just another one:
    the trail is read as a GRADIENT and steers (a field over state space);
@@ -500,7 +515,13 @@ function reset(){
   mask = new Uint8Array(W*H);
   cW = Math.floor(W/CS); cH = Math.floor(H/CS);
   coarse = new Float32Array(cW*cH);
-  mW = Math.max(4,Math.floor(W/MS)); mH = Math.max(4,Math.floor(H/MS));
+  /* v1.3.0: the coarse lattice must tile the torus exactly. floor(W/MS)
+     blocks of MS cells covered 600 of 605 columns, so the momentum and
+     hormone grids had period 600 on a 605-cell world and the last 5
+     columns aliased onto block 0. Now the block size is W/mW (about MS,
+     not an integer), so the lattice period is W and H. */
+  mW = Math.max(4,Math.round(W/MS)); mH = Math.max(4,Math.round(H/MS));
+  mSX = W/mW; mSY = H/mH;
   momX = new Float32Array(mW*mH); momY = new Float32Array(mW*mH);
   mtX  = new Float32Array(mW*mH); mtY  = new Float32Array(mW*mH);
   horm = new Float32Array(mW*mH); htmp = new Float32Array(mW*mH);
@@ -573,12 +594,12 @@ function diffuseDecayHorm(){
 /* level in units of the field mean: 1.0 = typical, >1 = hot region */
 function hormAt(x,y){
   if(P.hrel<=0) return 1;
-  const i=((Math.floor(y/MS)%mH)+mH)%mH*mW + (((Math.floor(x/MS)%mW)+mW)%mW);
+  const i=((Math.floor(y/mSY)%mH)+mH)%mH*mW + (((Math.floor(x/mSX)%mW)+mW)%mW);
   return horm[i]/hormRef;
 }
 
 function sampleMom(x,y,out){                   // bilinear on the torus
-  const fx=x/MS-0.5, fy=y/MS-0.5;
+  const fx=x/mSX-0.5, fy=y/mSY-0.5;
   let i0=Math.floor(fx), j0=Math.floor(fy);
   const tx=fx-i0, ty=fy-j0;
   i0=((i0%mW)+mW)%mW; j0=((j0%mH)+mH)%mH;
@@ -626,9 +647,9 @@ function diffuseDecay(){
       /* per-cell decay: this is the tau(x) "weather" field, but released by
          the agents rather than imposed. Clamped below 1 so it can never
          become a source. */
-      const hr=((Math.floor(y/MS)%mH)+mH)%mH*mW;
+      const hr=((Math.floor(y/mSY)%mH)+mH)%mH*mW;
       for(let x=0;x<W;x++){
-        const h=horm[hr + (((Math.floor(x/MS)%mW)+mW)%mW)]/hormRef;
+        const h=horm[hr + (((Math.floor(x/mSX)%mW)+mW)%mW)]/hormRef;
         let dl = d * (1 + hdc*(h-1));
         if(dl>0.9995) dl=0.9995; else if(dl<0.5) dl=0.5;
         grid[r+x] = ((tmp[up+x]+tmp[r+x]+tmp[dn+x])/3)*dl;
@@ -690,7 +711,7 @@ function stepAgents(){
     /* the agent writes its own momentum back into the medium: mass x velocity,
        in the direction it is actually travelling */
     if(P.mass>0 || P.hrel>0){
-      const mi=((Math.floor(p.y/MS)%mH)+mH)%mH*mW + (((Math.floor(p.x/MS)%mW)+mW)%mW);
+      const mi=((Math.floor(p.y/mSY)%mH)+mH)%mH*mW + (((Math.floor(p.x/mSX)%mW)+mW)%mW);
       if(P.mass>0){ momX[mi]+=Math.cos(p.a); momY[mi]+=Math.sin(p.a); }
       if(P.hrel>0) horm[mi]+=P.hrel;      // released by presence, carries no direction
     }
@@ -839,7 +860,7 @@ function render(max){
     else { d[px]=v*40*g; d[px+1]=v*255*g; d[px+2]=v*140*g; }
     if(P.showHorm && P.hrel>0){                    // violet wash under the trail
       const x=i%W, y=(i-x)/W;
-      let h=horm[((y/MS|0)%mH)*mW + ((x/MS|0)%mW)]/hormRef - 1;
+      let h=horm[((y/mSY|0)%mH)*mW + ((x/mSX|0)%mW)]/hormRef - 1;
       h = h>1?1:(h<-1?-1:h);
       d[px]   += h>0 ? h*110 : 0;
       d[px+2] += h>0 ? h*150 : -h*70;
@@ -863,32 +884,45 @@ function render(max){
 }
 
 /* ---- loop ---- */
-/* Robust references from a histogram, not from max.
-   Raw max is a single-cell deposit spike (~100x the mean), so using it to
-   normalize made the render dark, the contour levels sit above everything,
-   and the mask nearly empty. Two quantities instead:
+/* Robust references from quantiles, not from max.
      ref  = 99.5th percentile  -> render + contour scale
      cut  = the level that puts exactly P.thr of cells inside the mask
-   Fixing coverage rather than level is also what makes beta_1 comparable
-   across parameter changes: the topology measurement stops moving just
-   because the field got brighter.                                        */
+   Fixing coverage rather than level makes beta_1 comparable across a pure
+   rescale of the field: the topology measurement does not move just
+   because the field got brighter.
+   v1.3.0: the quantiles are EXACT. The earlier version read them off a
+   1024-bin LINEAR histogram up to max; 75-93% of cells fell in bin 0, so
+   asking for 20-40% coverage could return 8%. Now: a log-spaced histogram
+   finds the bin holding the k-th largest value, then the values in that
+   bin are sorted and the k-th is taken. The mask is grid > cut, so it
+   holds exactly k cells unless several cells share the cut value (ties). */
 const NB=1024; const histo=new Int32Array(NB);
+const LOGSPAN=Math.log(1e7);                 // bins cover [max*1e-7, max]; lower values share bin 0
+let selBuf=new Float32Array(0);
+function binOf(v, lmax){ if(v<=0) return 0; const b=((Math.log(v)-lmax)/LOGSPAN+1)*(NB-1); return b<=0?0:(b>=NB-1?NB-1:b|0); }
+/* value of rank k (0 = largest) */
+function selectRank(k, lmax){
+  let acc=0, b=NB-1;
+  for(; b>0; b--){ if(acc+histo[b]>k) break; acc+=histo[b]; }
+  if(selBuf.length<histo[b]) selBuf=new Float32Array(histo[b]);
+  /* cheap value window around the bin; binOf() decides at the edges */
+  const lo = b===0 ? -Infinity : Math.exp(lmax+(b/(NB-1)-1)*LOGSPAN)*0.999;
+  const hi = Math.exp(lmax+((b+1)/(NB-1)-1)*LOGSPAN)*1.001;
+  let n=0;
+  for(let i=0;i<grid.length;i++){ const v=grid[i]; if(v>=lo && v<=hi && binOf(v,lmax)===b) selBuf[n++]=v; }
+  const sub=selBuf.subarray(0,n); sub.sort();       // ascending
+  return sub[n-1-(k-acc)];
+}
 function refs(){
   let max=0; for(let i=0;i<grid.length;i++) if(grid[i]>max) max=grid[i];
   if(max<=0) return {ref:1, cut:Infinity, max:0};
   histo.fill(0);
-  const s=(NB-1)/max;
-  for(let i=0;i<grid.length;i++) histo[(grid[i]*s)|0]++;
+  const lmax=Math.log(max);
+  for(let i=0;i<grid.length;i++) histo[binOf(grid[i],lmax)]++;
   const total=grid.length;
-  let acc=0, ref=max, cut=max;
-  const needRef=total*0.005, needCut=total*P.thr;
-  let gotRef=false, gotCut=false;
-  for(let b=NB-1;b>=0;b--){
-    acc+=histo[b];
-    if(!gotRef && acc>=needRef){ ref=(b+0.5)/s; gotRef=true; }
-    if(!gotCut && acc>=needCut){ cut=(b+0.5)/s; gotCut=true; }
-    if(gotRef&&gotCut) break;
-  }
+  const kRef=Math.min(total-1, Math.floor(total*0.005));
+  const kCut=Math.min(total-1, Math.max(0, Math.round(total*P.thr)));
+  const ref=selectRank(kRef, lmax), cut=selectRank(kCut, lmax);
   return {ref:Math.max(ref,1e-6), cut, max};
 }
 

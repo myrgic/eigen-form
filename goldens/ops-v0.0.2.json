@@ -4,28 +4,28 @@
   "precision": 6,
   "scenarios": {
     "default-settle": {
-      "opsHash": "df2cf06c9d337434130071f4a2ad95942c70e78c88b9a7331ff65222dbfb8fe1",
-      "opCount": 32922
+      "opsHash": "bc7b37b35ff06e6b1bde695453ca1e68ca176ac384f2ad342ead6dc479288dfb",
+      "opCount": 100570
     },
     "emergence-3000ms": {
-      "opsHash": "ea05f5ddc1dfcbcc894eca53b48e96b83c1393736172cb447fff1f6538dd62a0",
-      "opCount": 6678
+      "opsHash": "67f3a290f00c96da0e85b8bbd172e23560bb23acdb16994c93343bbbac25bd9e",
+      "opCount": 15134
     },
     "custom-gradient": {
-      "opsHash": "399806c90f4e4bcc84cb666e8884bae3debe4e00297998bec1d5508bc1c50404",
-      "opCount": 32922
+      "opsHash": "675ac179b97fe1fa0ef48eb416406d9e5e9f0ac1728fdb0354b1678a408f0c44",
+      "opCount": 100570
     },
     "precession": {
-      "opsHash": "c2577c8a726a3db2d9e01e05da2100a9bdd3382372c8a40bd7112f29a1302f4e",
-      "opCount": 32922
+      "opsHash": "42b59c49765084dfc71793047669839450fa2bc94e37ddf017d0b66d8701cf8f",
+      "opCount": 112218
     },
     "parallax": {
-      "opsHash": "6e7cfb319cdb39376fe67702b7881f1fd3ab6b57fb5241415fc7b75608dadc1e",
-      "opCount": 32922
+      "opsHash": "764af27e2d0e9d760c864eed13e84cfb3f2e689f712810683c1073504ad1ccad",
+      "opCount": 100570
     },
     "pq-3-2": {
-      "opsHash": "e69ab9a173ab8072048b8be6d07aedd43b639369e23132b53cc342a8cff03bb2",
-      "opCount": 32922
+      "opsHash": "e066ed738f5af75787273e4ab8fe68723cbcd0bc8122efa3ce5ded81775681c4",
+      "opCount": 171672
     }
   }
 }

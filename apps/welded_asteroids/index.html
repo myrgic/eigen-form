@@ -3,55 +3,48 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Welded Asteroids — the field on the quotient surfaces</title>
+<title>Welded Asteroids: trails on glued shapes</title>
 <script type="application/cogdoc+yaml">
 id: paper-welded-asteroids
 type: paper
-title: "Welded Asteroids: the closed-loop stigmergic field itself, living on the quotient surfaces of the topology game"
+title: "Welded Asteroids: slime-mould trails on squares with glued edges (torus, Klein bottle, projective plane, Möbius strip)"
 description: >
   welded_fields (Chaz Dinkle) re-homed onto the quotient surfaces of
   topo-asteroids (Chaz Dinkle). The simulation is the artifact: the physarum
   agents, their trail and their agent-deposited momentum all obey the
   surface's gluing rule (mirrored re-entry on Klein/projective/Möbius,
-  walls on the strip's free edges). The SURFACES are the levels; the 18
-  declared parameter sliders drive the physarum; beta_1 is read on the
-  surface, not on a flat proxy. The asteroids game survives only as a
-  hidden Easter egg: press X once the field has closed 42 loops and a
+  walls on the strip's free edges). The pieces-and-holes census (b0, b1)
+  is computed on the glued surface (since v2.12.0). The asteroids game
+  survives only as a hidden Easter egg: press X once b1 >= 42 and a
   nav-lighted ship spawns riding the agents' own wind.
 sector: reference
 status: draft
 created: 2026-09-19
-updated: 2026-09-19
+updated: 2026-09-24
 salience: high
 authors:
   - cog (agent, myrgic/eigen-form)
   - chazmaniandinkle
 tags: [stigmergy, advection, topology, quotient-space, physarum, betti, closed-loop, eigen-form, executable-paper, gluing-rule]
 claim: >
-  The closed-loop stigmergic field is not a 2D phenomenon that we choose to
-  LOOK at wrapped: it is a phenomenon whose native domain is a quotient
-  surface, and its topology readout is only honest when both the agent
-  writes and the agent reads obey that surface's gluing rule. Concretely —
-  the sim's wrap-on-both-axes boundary conditions are the torus; re-reading
-  the SAME agents under Klein/projective/Möbius gluing (mirrored field and
-  mirrored headings on twisted edges) produces surfaces whose beta_1 the
-  flat proxy cannot see, and the simulation itself provides the levels.
+  Agents and their trails obey each surface's gluing rule: an agent that
+  crosses an edge re-enters with position and heading mirrored together,
+  and trail and momentum diffuse and are sensed across that edge by the
+  same map (checked cell by cell on every seam). The pieces-and-holes
+  census (b0, b1 with Z/2 coefficients) is computed on the glued surface
+  itself, not on the flat square: it matches an independent GF(2)
+  homology calculation on 2468 test masks across the four surfaces.
 method:
   - param: surface
     label: quotient surface
     range: [torus, klein, projective, mobius]
     default: torus
-    meaning: "which fundamental polygon the sim square is glued into. Agent positions, headings and BOTH field reads/writes transform by the same rule (flipX: x→W−x, vx→−vx, a→π−a; flipY: y→H−y, vy→−vy, a→−a), so structures genuinely live on the surface — a Klein trail carries a real half-twist"
-  - param: b1Target
-    label: level β₁ target
-    range: [0, 120]
-    default: 30
-    meaning: the level's goal — the sim is "solved" when the surface's β₁ (measured by the ancestor's b0−χ machinery on the coverage mask) reaches this count. Level completes; next preset fires
+    meaning: "which fundamental polygon the sim square is glued into. Agent positions, headings, trail and momentum diffusion, field reads and the census all use the same rule (flipX: x→W−x, vx→−vx, a→π−a; flipY: y→H−y, vy→−vy, a→−a; cell i→W−1−i), applied only to the axis each seam names"
   - param: levelMode
     label: level script
     range: [manual, tour]
     default: tour
-    meaning: manual = the knobs are yours; tour = preset parameter sets fire in sequence, each with its own surface, target and note — the simulation provides the levels
+    meaning: "manual = the knobs are yours; tour = each level loads a surface and a parameter preset. A level is done when the bright part has joined into at most 3 pieces (b0 on the glued surface) for 3 measures in a row. Advancing is manual (the next-level button). Before v2.12.0 the gate was a b1 target, which structureless random walkers met and the physarum did not (see limitations)"
   - param: N
     label: agents
     range: [1000, 12000]
@@ -114,12 +107,12 @@ method:
     label: self-field mass
     range: [0, 2]
     default: 1.00
-    meaning: strength of velocity deposition into the momentum field; 0 reduces the system to plain stigmergy, above 0 the loop closes
+    meaning: read gain on the normalised momentum field (every agent deposits a unit heading vector whatever mass is); 0 switches the momentum field off and leaves plain stigmergy
   - param: mdec
     label: momentum decay
     range: [0.700, 0.995]
     default: 0.940
-    meaning: per-frame momentum decay; the governing quantity is the momentum/trail half-life ratio
+    meaning: per-step momentum decay. The momentum lattice is 30x30 blocks of 10 cells (MS divides W since v2.12.0)
   - param: ng
     label: noise gain (exogenous)
     range: [0, 2]
@@ -140,7 +133,7 @@ method:
     range: [1, 40]
     default: 8
     unit: percent
-    meaning: TARGET COVERAGE, not a level — the invariance that makes β₁ comparable
+    meaning: TARGET COVERAGE, not a level. The cut is the exact quantile of the trail values (since v2.12.0), so this share of cells is in the mask up to ties
   - param: relief
     label: 3D relief amplitude
     range: [0, 1]
@@ -160,9 +153,10 @@ observables:
   port: window.__welded
   state: >
     __welded.state() -> {surface, shell, b0, b1, coverage, agents, level,
-    levelName, solved} — the topology readout measured ON the current surface,
-    how the 3D shell is being drawn, level progress, and whether the level's
-    β₁ target has been reached. __welded.setShell(mode) drives the shell.
+    joinMax, solved}. b0/b1 are counted on the glued surface (union-find
+    over glued pixel corners, b1 = b0 + b2 - chi of the glued cubical
+    complex, b2 = 1 only when the mask covers a closed surface). solved =
+    the level's join-up gate held. __welded.setShell(mode) drives the shell.
   field: >
     __welded.fieldAt(x, y, out) -> [dirX, dirY, weight] — the combined
     exogenous+endogenous field at square coordinates, folded by the
@@ -179,16 +173,17 @@ observables:
     their headings and the fields re-read under the new rule immediately.
   levels: >
     __welded.LEVELS / __welded.loadLevel(i) — the tour: each entry binds a
-    surface, parameter presets and a β₁ target into one level.
+    surface and a parameter preset into one level.
 refs:
   - uri: app:welded_fields
     rel: derives-from
     desc: >
       The entire simulation: agents, trail, momentum field, hormone
       weather, robust percentile normalization, coverage-fixed mask, β₀/χ
-      measurement. Only the boundary conditions changed — wrap() now
-      applies the surface's gluing rule instead of plain torus wrapping,
-      and every field read samples through the same fold.
+      measurement. The boundary conditions changed (wrapPos, foldRead and
+      the diffusion stencils apply the surface's gluing rule instead of
+      plain torus wrapping) and the census was generalised from the
+      periodic census of welded_fields (#44) to mirrored seams and walls.
   - uri: app:topo-asteroids
     rel: derives-from
     desc: >
@@ -201,9 +196,8 @@ refs:
   - uri: cog://rfc/058
     rel: demonstrates
     desc: >
-      Declared observables as a decaying deposit medium — here the medium
-      is also the LEVEL: the tour binds parameter presets to β₁ targets and
-      lets the simulation itself provide the progression.
+      Declared observables as a decaying deposit medium; the tour binds
+      parameter presets to a join-up gate on the glued-surface census.
 limitations:
   - >
     Sphere and disk are not offered, exactly as v1 argued: the field's
@@ -221,11 +215,35 @@ limitations:
     most of it through 5400 steps (single seed), so the accumulation comes
     mainly from the sensor convention, not from the no-flux wall itself.
   - >
-    β₁ on a twisted quotient is measured on the SQUARE (fundamental
-    polygon) mask — the honest computation on the glued manifold itself
-    would need persistent homology over the cell complex with
-    identifications; the square measurement is exact for the pixel complex
-    and is what the ancestor's verified machinery provides.
+    b0/b1 are exact Z/2 Betti numbers of the union of bright pixel squares
+    on the glued surface, at one threshold (not persistent homology). On
+    a surface, b1 counts essential loops (a band all the way round) as well
+    as enclosed holes, and says nothing about feature size. Before v2.12.0
+    the census read the flat square with zero padding on every surface: a
+    band round the torus read b1 = 0, a ring across a seam read as 2 pieces
+    and 0 holes (independent check: 1999 of 2468 test masks wrong).
+  - >
+    Levels. Before v2.12.0 each level had a b1 target. A null run (seeds
+    5/6/7, 1200 steps, every level, quotient census) showed structureless
+    random walkers (no steering, no arrows, uniform start) reach b1 13-19
+    on every surface while the physarum settles at b1 0-7, so the target
+    rewarded speckle. The gate is now "joined into at most 3 pieces for 3
+    measures in a row": the physarum passes it on 18/18 runs (6 levels x
+    3 seeds; its end state is 1-3 pieces on 15/18 and 7-12 on 3/18), the
+    walkers pass it on 0/18 (they stay above 2000 pieces). This is a check that a network formed, not a
+    topological target.
+  - >
+    Mirror map and seams (v2.12.0). Trail and momentum diffusion across the
+    left/right seam of the projective plane and Möbius strip used to mirror
+    both axes, so mass stayed in column 0 instead of crossing to column
+    W-1 (seam probe: 86/86 boundary cells wrong), and sensing used
+    W-1-x on continuous coordinates, one cell off from re-entry on every
+    mirrored seam. Now one cell map (cellFold) is used by trail diffusion,
+    momentum diffusion and the momentum read, and foldRead uses the same
+    x -> W - x as re-entry: 0 mismatches on all seams of all surfaces.
+  - >
+    The Möbius edge-row trail excess described above predates v2.12.0 and
+    was not re-measured after the seam fix.
   - >
     The Easter egg is asserted but lightly verified: ship spawn, wind ride
     and hand-mirroring reuse v1's tested code paths, but the β₁ ≥ 42 gate
@@ -313,10 +331,10 @@ limitations:
 </head>
 <body>
 <div id="panel">
-  <h1>Welded Asteroids<small>the field itself, on the quotient surfaces</small></h1>
+  <h1>Welded Asteroids<small>slime-mould trails on a square with glued edges</small></h1>
 
   <div class="grp">
-    <div class="hd">Surface</div>
+    <div class="hd">Shape</div>
     <select id="topo"></select>
     <div class="lvl" id="surf-note"></div>
   </div>
@@ -324,133 +342,131 @@ limitations:
   <div class="grp">
     <div class="hd">Level</div>
     <div class="row">
-      <select id="levelMode"><option value="tour">tour</option><option value="manual">manual</option></select>
-      <button id="btnLevel" style="width:auto;padding:6px 10px">next</button>
+      <select id="levelMode"><option value="tour">guided levels</option><option value="manual">free play</option></select>
+      <button id="btnLevel" style="width:auto;padding:6px 10px">next level</button>
     </div>
     <div class="lvl" id="lvl-note"></div>
-    <div class="ctl"><label>β₁ target <b id="v-b1Target">30</b></label>
-      <input type="range" id="b1Target" min="0" max="120" step="1" value="30"></div>
   </div>
 
   <div class="grp">
-    <div class="hd">Agents</div>
-    <div class="ctl"><label>Sensor angle <b id="v-sa">60°</b></label>
+    <div class="hd">Dots</div>
+    <div class="ctl"><label>Sniff angle <b id="v-sa">60°</b></label>
       <input type="range" id="sa" min="5" max="90" step="1" value="60"></div>
-    <div class="ctl"><label>Rotation angle <b id="v-ra">18°</b></label>
+    <div class="ctl"><label>Turn angle <b id="v-ra">18°</b></label>
       <input type="range" id="ra" min="5" max="90" step="1" value="18"></div>
-    <div class="ctl"><label>Sensor distance <b id="v-so">5</b></label>
+    <div class="ctl"><label>Sniff distance <b id="v-so">5</b></label>
       <input type="range" id="so" min="1" max="30" step="1" value="5"></div>
-    <div class="ctl"><label>Count <b id="v-N">7000</b></label>
+    <div class="ctl"><label>Number of dots <b id="v-N">7000</b></label>
       <input type="range" id="N" min="1000" max="12000" step="500" value="7000"></div>
   </div>
 
   <div class="grp">
-    <div class="hd">Medium</div>
-    <div class="ctl"><label>Evaporation <b id="v-dec">0.990</b></label>
+    <div class="hd">Scent</div>
+    <div class="ctl"><label>Scent kept per step <b id="v-dec">0.990</b></label>
       <input type="range" id="dec" min="0.900" max="0.999" step="0.001" value="0.990"></div>
-    <div class="ctl"><label>Deposit <b id="v-dep">25</b></label>
+    <div class="ctl"><label>Scent per step <b id="v-dep">25</b></label>
       <input type="range" id="dep" min="1" max="60" step="1" value="25"></div>
   </div>
 
   <div class="grp">
-    <div class="hd">Field</div>
-    <div class="ctl"><label>Advection <b id="v-adv">0.02</b></label>
+    <div class="hd">Arrows</div>
+    <div class="ctl"><label>Carried by arrows <b id="v-adv">0.02</b></label>
       <input type="range" id="adv" min="0" max="2" step="0.02" value="0.02"></div>
-    <div class="ctl"><label>Alignment <b id="v-ali">0.02</b></label>
+    <div class="ctl"><label>Turn to follow arrows <b id="v-ali">0.02</b></label>
       <input type="range" id="ali" min="0" max="1" step="0.01" value="0.02"></div>
-    <div class="ctl"><label>Exclusion radius <b id="v-exclR">0</b></label>
+    <div class="ctl"><label>No-crowding distance (0 = off) <b id="v-exclR">0</b></label>
       <input type="range" id="exclR" min="0" max="3" step="1" value="0"></div>
-    <div class="ctl"><label>Exclusion stiffness <b id="v-exclK">0.00</b></label>
+    <div class="ctl"><label>No-crowding strength <b id="v-exclK">0.00</b></label>
       <input type="range" id="exclK" min="0" max="1" step="0.05" value="0"></div>
-    <div class="ctl"><label>Self-field · mass <b id="v-mass">1.00</b></label>
+    <div class="ctl"><label>Arrow strength <b id="v-mass">1.00</b></label>
       <input type="range" id="mass" min="0" max="2" step="0.02" value="1"></div>
-    <div class="ctl"><label>Momentum decay <b id="v-mdec">0.940</b></label>
+    <div class="ctl"><label>Arrows kept per step <b id="v-mdec">0.940</b></label>
       <input type="range" id="mdec" min="0.700" max="0.995" step="0.005" value="0.940"></div>
-    <div class="ctl"><label>3D relief <b id="v-relief">0.60</b></label>
+    <div class="ctl"><label>3D bump height <b id="v-relief">0.60</b></label>
       <input type="range" id="relief" min="0" max="1" step="0.05" value="0.6"></div>
-    <div class="ctl"><label>3D shell</label>
+    <div class="ctl"><label>3D surface</label>
       <select id="shell">
-        <option value="translucent">translucent</option>
-        <option value="wireframe">wireframe</option>
+        <option value="translucent">see-through</option>
+        <option value="wireframe">wire</option>
         <option value="solid">solid</option>
       </select></div>
     <div class="ctl"><label>3D view</label>
       <select id="view3dmode">
-        <option value="globe">globe (surface)</option>
-        <option value="map">map (unwrapped plane)</option>
+        <option value="globe">glued shape</option>
+        <option value="map">flat map</option>
       </select></div>
-    <div class="ctl"><label>Time speed <b id="v-tspeed">1.0×</b></label>
+    <div class="ctl"><label>Speed <b id="v-tspeed">1.0×</b></label>
       <input type="range" id="tspeed" min="0" max="3" step="0.1" value="1"></div>
-    <div class="ctl"><label>Noise gain · exogenous <b id="v-ng">0.00</b></label>
+    <div class="ctl"><label>Outside noise <b id="v-ng">0.00</b></label>
       <input type="range" id="ng" min="0" max="2" step="0.02" value="0"></div>
-    <div class="ctl"><label>Noise scale <b id="v-ns">0.0060</b></label>
+    <div class="ctl"><label>Noise swirl size <b id="v-ns">0.0060</b></label>
       <input type="range" id="ns" min="0.001" max="0.03" step="0.001" value="0.006"></div>
-    <div class="ctl"><label>Drift rate <b id="v-dr">0.0050</b></label>
+    <div class="ctl"><label>Noise drift speed <b id="v-dr">0.0050</b></label>
       <input type="range" id="dr" min="0" max="0.05" step="0.0005" value="0.005"></div>
   </div>
 
   <div class="grp">
-    <div class="hd">Slice scope</div>
-    <div class="ctl"><label>plane z <b id="v-slc">0.00</b></label>
+    <div class="hd">Advanced ▸ Horizontal slice</div>
+    <div class="ctl"><label>slice height <b id="v-slc">0.00</b></label>
       <input type="range" id="slc" min="-0.44" max="0.44" step="0.01" value="0"></div>
-    <div class="ctl"><label><input type="checkbox" id="slcOn"> scope on</label></div>
+    <div class="ctl"><label><input type="checkbox" id="slcOn"> show</label></div>
     <canvas id="sliceCv" width="280" height="120" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px"></canvas>
   </div>
 
   <div class="grp">
-    <div class="hd">Villarceau scope</div>
-    <div class="ctl"><label>obliquity α <b id="v-vls">45°</b> <b id="v-vls-reg"></b></label>
+    <div class="hd">Advanced ▸ Tilted slice (Villarceau circles)</div>
+    <div class="ctl"><label>tilt angle <b id="v-vls">45°</b> <b id="v-vls-reg"></b></label>
       <input type="range" id="vls" min="0" max="89.9" step="0.5" value="45"></div>
-    <div class="ctl"><label><input type="checkbox" id="vlsOn"> scope on</label></div>
+    <div class="ctl"><label><input type="checkbox" id="vlsOn"> show</label></div>
     <canvas id="villCv" width="280" height="130" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px"></canvas>
   </div>
 
   <div class="grp">
-    <div class="hd">Confinement field (v2.11)</div>
+    <div class="hd">Advanced ▸ Outside guiding field</div>
     <div class="ctl"><label>mode <b id="v-cfm">closed</b></label>
       <select id="cfm" style="width:100%">
-        <option value="closed" selected>closed (no field)</option>
-        <option value="field-on">field on (open)</option>
-        <option value="field-decaying">field decaying (shutoff)</option>
+        <option value="closed" selected>field: off</option>
+        <option value="field-on">field: on</option>
+        <option value="field-decaying">field: switching off</option>
       </select></div>
-    <div class="ctl"><label>winding q <b id="v-cfq">1.00</b></label>
+    <div class="ctl"><label>field twist (turns one way per turn the other) <b id="v-cfq">1.00</b></label>
       <input type="range" id="cfq" min="0.2" max="5" step="0.05" value="1"></div>
-    <div class="ctl"><label>coupling κ <b id="v-cfk">0.00</b></label>
+    <div class="ctl"><label>how hard the field steers <b id="v-cfk">0.00</b></label>
       <input type="range" id="cfk" min="0" max="1" step="0.01" value="0"></div>
-    <div class="ctl"><label>drift ν <b id="v-cfn">0.000</b></label>
+    <div class="ctl"><label>sideways drift <b id="v-cfn">0.000</b></label>
       <input type="range" id="cfn" min="0" max="0.5" step="0.005" value="0"></div>
-    <div class="ctl"><label><input type="checkbox" id="cfShow"> field arrows</label></div>
+    <div class="ctl"><label><input type="checkbox" id="cfShow"> show field arrows</label></div>
     <canvas id="qHistCv" width="280" height="90" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px"></canvas>
     <div style="font:9px monospace;color:rgba(255,255,255,0.6)" id="cfRead">τ=— W=— P_in=— P_loss=—</div>
   </div>
 
   <div class="grp">
-    <div class="hd">Measurement</div>
+    <div class="hd">Measurements</div>
 
   <div class="grp">
-    <div class="hd">Quadrant scope</div>
-    <div class="ctl"><label><input type="checkbox" id="qOn"> scope on</label></div>
+    <div class="hd">Advanced ▸ Four quarters</div>
+    <div class="ctl"><label><input type="checkbox" id="qOn"> show</label></div>
     <canvas id="quadCv" width="280" height="240" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px"></canvas>
 
     <canvas id="bpmCv" width="280" height="200" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px;margin-top:6px"></canvas>
   </div>
-    <div class="ctl"><label>Mask coverage <b id="v-thr">8%</b></label>
+    <div class="ctl"><label>Bright part = top share of cells <b id="v-thr">8%</b></label>
       <input type="range" id="thr" min="1" max="40" step="1" value="8"></div>
     <div class="read">
-      <span class="k">voids (β₁)</span><span class="v big" id="r-b1">–</span>
-      <span class="k">components (β₀)</span><span class="v" id="r-b0">–</span>
-      <span class="k">coverage</span><span class="v" id="r-cov">–</span>
-      <span class="k">trail τ½</span><span class="v" id="r-th">–</span>
-      <span class="k">momentum τ½</span><span class="v" id="r-tm">–</span>
-      <span class="k">ratio mom/trail</span><span class="v" id="r-mratio">–</span>
+      <span class="k">holes, on the glued shape (β₁)</span><span class="v big" id="r-b1">–</span>
+      <span class="k">pieces, on the glued shape (β₀)</span><span class="v" id="r-b0">–</span>
+      <span class="k">bright share</span><span class="v" id="r-cov">–</span>
+      <span class="k">scent half-life</span><span class="v" id="r-th">–</span>
+      <span class="k">arrow half-life</span><span class="v" id="r-tm">–</span>
+      <span class="k">arrows ÷ scent lifetime</span><span class="v" id="r-mratio">–</span>
     </div>
   </div>
 
   <div class="row">
-    <button id="btnReset">Reset</button>
+    <button id="btnReset">Start over</button>
     <button id="btn3d">3D: on</button>
   </div>
-  <p class="note"><b>Closed loop:</b> noise gain at 0 — every structure on screen is agents reading their own deposits, glued onto the selected quotient. The tour levels are the simulation's own.</p>
+  <p class="note"><b>Closed loop:</b> with outside noise at 0, every pattern comes from dots reading their own scent and arrows. Pieces and holes are counted on the glued shape: a trail that crosses an edge counts once, and a band that goes all the way round counts as a hole. A level is done when the bright part has joined up into a few pieces; random wandering dots never do that.</p>
 </div>
 
 <button id="panelToggle" aria-label="controls">☰</button>
@@ -459,7 +475,7 @@ limitations:
     <button id="tabSim" class="on">sim</button>
     <button id="tab3d">3D</button>
   </div>
-  <div id="sq"><div id="sqbox"><canvas id="sim"></canvas><canvas id="over"></canvas><div id="verBadge">v2.11.8</div></div></div>
+  <div id="sq"><div id="sqbox"><canvas id="sim"></canvas><canvas id="over"></canvas><div id="verBadge">v2.12.0</div></div></div>
   <div id="v3"><canvas id="c3"></canvas><div id="hint3d">drag to orbit · wheel to zoom</div></div>
 </div>
 <div id="toast"></div>
@@ -475,16 +491,16 @@ limitations:
 const TOPOLOGIES = [
   { id:'torus', name:'Torus', word:'a b a⁻¹ b⁻¹', orientable:true,
     x:{wrap:true, flip:null}, y:{wrap:true, flip:null},
-    note:'Both pairs welded straight — the sim grid\'s native topology. This is welded_fields exactly as the ancestor ran it.' },
+    note:'Donut (torus): both pairs of edges joined straight, the same as Welded Fields.' },
   { id:'klein', name:'Klein bottle', word:'a b a b⁻¹', orientable:false,
     x:{wrap:true, flip:null}, y:{wrap:true, flip:'x'},
-    note:'Top/bottom welded with a mirror. Agents crossing the seam re-enter flipped — heading and trail both — so the structures carry a real half-twist. β₁ reads differently than the flat proxy.' },
+    note:'Klein bottle: top and bottom joined with a flip. Dots crossing that edge come back mirrored, and so do their trail and arrows.' },
   { id:'projective', name:'Projective plane', word:'a b a b', orientable:false,
     x:{wrap:true, flip:'y'}, y:{wrap:true, flip:'x'},
-    note:'Both pairs mirrored: every crossing is a 180° turn of the world. The densest gluing here; loops close on themselves fastest.' },
+    note:'Projective plane: both pairs of edges joined with a flip.' },
   { id:'mobius', name:'Möbius strip', word:'a b a c', orientable:false,
     x:{wrap:true, flip:'y'}, y:{wrap:false, flip:null},
-    note:'One mirrored weld, one pair of walls — the only clipped surface. The field stops at the strip\'s edges; agents bounce off them.' },
+    note:'Möbius strip: one pair of edges joined with a flip, the other pair are walls. Dots bounce off the walls and the scent does not cross them.' },
 ];
 let topo = TOPOLOGIES[0];
 
@@ -507,7 +523,12 @@ let parts = [], time = 0, frame = 0;
 const hist = [];
 const CS = 3, cW = W/CS, cH = H/CS;
 let coarse;
-const MS = 8, mW = Math.floor(W/MS), mH = Math.floor(H/MS);
+/* v2.12.0: MS must divide W and H. MS=8 gave mW=floor(300/8)=37 blocks
+   covering 296 of 300 cells, so the last 4 columns/rows deposited into
+   block 0 and the mirrored block pairing at the seams was off by up to 4
+   cells. 10 divides 300: 30x30 blocks tile the square exactly. */
+const MS = 10, mW = W/MS, mH = H/MS;
+if (W % MS || H % MS) throw new Error('momentum block size must divide the square');
 let momX, momY, mtX, mtY, momRef = 1;
 /* v2.11.5 exclusion: LAGGED occupancy of the base image (foldRead folds
    all seam images onto the base square — correct: mirror images are the
@@ -525,7 +546,7 @@ let horm, hormRef = 1;
 /* defaults: the ancestor's operator regime */
 const P = { relief:0.6, shell:'translucent', view3dmode:'globe', tspeed:1.0, sa:60*Math.PI/180, ra:18*Math.PI/180, so:5,
             dec:0.99, dep:25, adv:0.02, ali:0.02, ns:0.006, dr:0.005, thr:0.08,
-            mass:1, mdec:0.94, ng:0, N:7000, b1Target:30, levelMode:'tour',
+            mass:1, mdec:0.94, ng:0, N:7000, levelMode:'tour',
             exclR:0, exclK:0, exclMode:'excl' };
 
 /* ── THE WELD: wrap + fold under the gluing rule ─────────────────────
@@ -572,11 +593,41 @@ function wrapPos(p) {                     // p has {x, y, a}
    deposits never reach, and the momentum path flipped vx while folding
    in y. 'legacy' preserves that behaviour as an ablation control. */
 let seamFold='named';
+/* continuous mirror of a coordinate in [0, L): L - c. On a wrapped axis
+   L is the same point as 0; on a walled axis stay strictly inside. */
+function mirC(c, L, wraps){ const m = L - c; return wraps ? (m >= L ? m - L : m) : Math.min(L - 1e-4, m); }
+/* CELL version of the same gluing, for diffusion stencils on a Wc x Hc
+   lattice that tiles the square (the trail grid, or the momentum blocks).
+   (x, y) may be one step outside. Returns the glued cell index and the
+   sign each vector component picks up: crossing a seam that mirrors x
+   flips vx, one that mirrors y flips vy. topo.<axis>.flip NAMES the axis
+   that mirrors, so only that coordinate is reflected (cell i -> Wc-1-i,
+   the cell image of x -> W - x). A walled axis is no-flux: the neighbour
+   past the wall is the cell itself. */
+const _cf = [0, 1, 1];
+function cellFold(x, y, Wc, Hc){
+  let fx = x, fy = y, sx = 1, sy = 1;
+  if (fx < 0 || fx >= Wc) {
+    fx = ((fx % Wc) + Wc) % Wc;
+    if (topo.x.flip === 'y') { fy = Hc - 1 - fy; sy = -1; }
+    else if (topo.x.flip === 'x') { fx = Wc - 1 - fx; sx = -1; }
+  }
+  if (fy < 0 || fy >= Hc) {
+    if (!topo.y.wrap) fy = fy < 0 ? 0 : Hc - 1;
+    else {
+      fy = ((fy % Hc) + Hc) % Hc;
+      if (topo.y.flip === 'x') { fx = Wc - 1 - fx; sx = -sx; }
+      else if (topo.y.flip === 'y') { fy = Hc - 1 - fy; sy = -sy; }
+    }
+  }
+  _cf[0] = fy * Wc + fx; _cf[1] = sx; _cf[2] = sy;
+  return _cf;
+}
 function foldRead(x, y) {
   let fx = ((x % W) + W) % W, fy = ((y % H) + H) % H;
   /* v2.11.8 (#39): across a WALL (Möbius y) there is no other side — a
      read past the edge sees the edge row, never the opposite edge. */
-  if (!topo.y.wrap) fy = Math.min(H - 1, Math.max(0, y));   /* H-1 keeps an x-seam mirror (H-1-fy) >= 0 */
+  if (!topo.y.wrap) fy = Math.min(H - 1e-4, Math.max(0, y));
   /* v2.11.5 (review H3): negative coords missed the mirror — use the
      momRead/crossed() double-mod form so x=-0.5 folds to the mirrored
      image like every other read path. */
@@ -587,8 +638,14 @@ function foldRead(x, y) {
     if (yc) fy = H - 1 - fy;
     return [fx, fy];
   }
-  if (xc) { if (topo.x.flip === 'x') fx = W - 1 - fx; else fy = H - 1 - fy; }
-  if (yc) { if (topo.y.flip === 'x') fx = W - 1 - fx; else fy = H - 1 - fy; }
+  /* v2.12.0: the continuous mirror is x -> W - x, the SAME map wrapPos
+     applies to a re-entering agent (flipP). The old W - 1 - x sampled the
+     cell next to the one the agent's deposit lands in, on every mirrored
+     seam (lane-1 seam probe: 86-172 of 172 boundary cells off by one).
+     Cell i maps to cell W-1-i under this map, which is what cellFold uses
+     for diffusion, so sensing, re-entry and diffusion now agree. */
+  if (xc) { if (topo.x.flip === 'x') fx = mirC(fx, W, topo.x.wrap); else fy = mirC(fy, H, topo.y.wrap); }
+  if (yc) { if (topo.y.flip === 'x') fx = mirC(fx, W, topo.x.wrap); else fy = mirC(fy, H, topo.y.wrap); }
   return [fx, fy];
 }
 /* trail read at a (possibly out-of-square) point, honoring the rule */
@@ -601,23 +658,23 @@ const _fm=[0,0];
 function momRead(x, y, out) {
   const [fx, fy] = foldRead(x, y);
   const fxp=fx/MS-0.5, fyp=fy/MS-0.5;
-  let i0=Math.floor(fxp), j0=Math.floor(fyp);
+  const i0=Math.floor(fxp), j0=Math.floor(fyp);
   const tx=fxp-i0, ty=fyp-j0;
-  i0=((i0%mW)+mW)%mW; j0=((j0%mH)+mH)%mH;
-  const i1=(i0+1)%mW;
-  let j1=(j0+1)%mH;
-  /* v2.11.8 (#39): walled y — the bilinear stencil stops at the edge rows */
-  if (!topo.y.wrap) { if (fyp < 0) { j0 = 0; j1 = 0; } else if (j0 >= mH - 1) { j0 = mH - 1; j1 = mH - 1; } }
-  const a=j0*mW, b=j1*mW;
-  const w00=(1-tx)*(1-ty), w10=tx*(1-ty), w01=(1-tx)*ty, w11=tx*ty;
-  let vx = momX[a+i0]*w00+momX[a+i1]*w10+momX[b+i0]*w01+momX[b+i1]*w11;
-  let vy = momY[a+i0]*w00+momY[a+i1]*w10+momY[b+i0]*w01+momY[b+i1]*w11;
-  /* the folded read: on mirrored cells the vector is read through the seam.
-     Crossing the y-seam mirrors the X coordinate → the heading reflects
-     about the vertical axis → VX flips (Klein, Möbius).
-     Crossing the x-seam mirrors the Y coordinate → VY flips (projective). */
-  if (topo.y.flip && Math.floor(((y % (2*H)) + 2*H) % (2*H) / H) === 1) { vx = -vx; }
-  if (topo.x.flip && Math.floor(((x % (2*W)) + 2*W) % (2*W) / W) === 1) { vy = -vy; }
+  /* v2.12.0: the bilinear stencil's corners go through the SAME cell
+     gluing as diffusion (cellFold): a corner past a mirrored seam is read
+     from its mirrored block with the named vector component flipped; past
+     a wall it is the edge block. The old stencil wrapped straight across
+     every seam. */
+  let vx=0, vy=0;
+  const corner=(i, j, w)=>{ if(w===0) return; const c=cellFold(i, j, mW, mH); vx+=w*c[1]*momX[c[0]]; vy+=w*c[2]*momY[c[0]]; };
+  corner(i0, j0, (1-tx)*(1-ty)); corner(i0+1, j0, tx*(1-ty));
+  corner(i0, j0+1, (1-tx)*ty);   corner(i0+1, j0+1, tx*ty);
+  /* the folded read: a sample on a mirrored image is read through the
+     seam, and the vector component along the axis that seam NAMES flips
+     (Klein y-seam and projective y-seam mirror x -> vx flips; projective
+     and Möbius x-seams mirror y -> vy flips). */
+  if (topo.y.flip && Math.floor(((y % (2*H)) + 2*H) % (2*H) / H) === 1) [vx, vy] = flipV(vx, vy, topo.y.flip);
+  if (topo.x.flip && Math.floor(((x % (2*W)) + 2*W) % (2*W) / W) === 1) [vx, vy] = flipV(vx, vy, topo.x.flip);
   out[0]=vx; out[1]=vy;
 }
 const _m=[0,0];
@@ -664,16 +721,7 @@ const Noise = {
    y-neighbour of (x,0) is (W−1−x, H−1)). Plain torus wrap here was the
    slow accumulator: flux at a mirrored seam never cancels, and mass
    got pumped into the two seam rows over ~a minute. */
-function nb(x, y){
-  let fx = ((x % W) + W) % W, fy = ((y % H) + H) % H;
-  /* v2.11.8 (#39): a wall is no-flux — the neighbour past it is the cell itself */
-  if (!topo.y.wrap && (y < 0 || y >= H)) fy = y < 0 ? 0 : H - 1;
-  if (topo.x.flip && (x < 0 || x >= W)) fx = W - 1 - fx;
-  if (topo.y.flip && (y < 0 || y >= H)) fx = W - 1 - fx;
-  if (topo.x.flip === 'y' && (x < 0 || x >= W)) fy = H - 1 - fy;
-  if (topo.y.flip === 'y' && (y < 0 || y >= H)) fy = H - 1 - fy;
-  return grid[fy * W + fx];
-}
+function nb(x, y){ return grid[cellFold(x, y, W, H)[0]]; }
 function diffuseDecay(){
   for(let y=0;y<H;y++){
     const r=y*W;
@@ -683,15 +731,7 @@ function diffuseDecay(){
     }
   }
   const d=P.dec;
-  const nbT = (x, y) => {
-    let fx = ((x % W) + W) % W, fy = ((y % H) + H) % H;
-    if (!topo.y.wrap && (y < 0 || y >= H)) fy = y < 0 ? 0 : H - 1;   /* v2.11.8 (#39): no-flux wall */
-    if (topo.x.flip && (x < 0 || x >= W)) fx = W - 1 - fx;
-    if (topo.y.flip && (y < 0 || y >= H)) fx = W - 1 - fx;
-    if (topo.x.flip === 'y' && (x < 0 || x >= W)) fy = H - 1 - fy;
-    if (topo.y.flip === 'y' && (y < 0 || y >= H)) fy = H - 1 - fy;
-    return tmp[fy * W + fx];
-  };
+  const nbT = (x, y) => tmp[cellFold(x, y, W, H)[0]];
   for(let y=0;y<H;y++){
     const r=y*W;
     for(let x=0;x<W;x++){
@@ -705,14 +745,9 @@ function diffuseDecayMom(){
      the VECTOR carries the mirror too — the x-component flips when the
      seam mirrors x, the y-component flips when the seam mirrors y */
   const mnb = (F, x, y, cx) => {
-    let fx = ((x % mW) + mW) % mW, fy = ((y % mH) + mH) % mH;
-    let s = 1;
-    if (!topo.y.wrap && (y < 0 || y >= mH)) fy = y < 0 ? 0 : mH - 1;   /* v2.11.8 (#39): no-flux wall */
-    if (topo.x.flip && (x < 0 || x >= mW)) { if (cx === 'x') s = -s; fx = mW - 1 - fx; }
-    if (topo.y.flip && (y < 0 || y >= mH)) { if (cx === 'x') s = -s; fx = mW - 1 - fx; }
-    if (topo.x.flip === 'y' && (x < 0 || x >= mW)) { if (cx === 'y') s = -s; fy = mH - 1 - fy; }
-    if (topo.y.flip === 'y' && (y < 0 || y >= mH)) { if (cx === 'y') s = -s; fy = mH - 1 - fy; }
-    return s * F[fy * mW + fx];
+    if (x >= 0 && x < mW && y >= 0 && y < mH) return F[y * mW + x];
+    const c = cellFold(x, y, mW, mH);
+    return (cx === 'x' ? c[1] : c[2]) * F[c[0]];
   };
   for(let y=0;y<mH;y++){
     const r=y*mW;
@@ -1016,64 +1051,112 @@ function stepAgents(){
   }
 }
 
-/* ── robust refs (ancestor, verbatim) ──────────────────────────────── */
+/* ── robust refs: exact quantiles (v2.12.0, same code as welded_fields
+   v1.3.0). ref = 99.5th percentile, cut = the level that puts P.thr of
+   cells in the mask. The ancestor's 1024-bin linear histogram put most
+   cells in bin 0 and could miss a 20-40% coverage target badly. ── */
 const NB=1024; const histo=new Int32Array(NB);
+const LOGSPAN=Math.log(1e7);                 // bins cover [max*1e-7, max]; lower values share bin 0
+let selBuf=new Float32Array(0);
+function binOf(v, lmax){ if(v<=0) return 0; const b=((Math.log(v)-lmax)/LOGSPAN+1)*(NB-1); return b<=0?0:(b>=NB-1?NB-1:b|0); }
+/* value of rank k (0 = largest) */
+function selectRank(k, lmax){
+  let acc=0, b=NB-1;
+  for(; b>0; b--){ if(acc+histo[b]>k) break; acc+=histo[b]; }
+  if(selBuf.length<histo[b]) selBuf=new Float32Array(histo[b]);
+  /* cheap value window around the bin; binOf() decides at the edges */
+  const lo = b===0 ? -Infinity : Math.exp(lmax+(b/(NB-1)-1)*LOGSPAN)*0.999;
+  const hi = Math.exp(lmax+((b+1)/(NB-1)-1)*LOGSPAN)*1.001;
+  let n=0;
+  for(let i=0;i<grid.length;i++){ const v=grid[i]; if(v>=lo && v<=hi && binOf(v,lmax)===b) selBuf[n++]=v; }
+  const sub=selBuf.subarray(0,n); sub.sort();       // ascending
+  return sub[n-1-(k-acc)];
+}
 function refs(){
   let max=0; for(let i=0;i<grid.length;i++) if(grid[i]>max) max=grid[i];
   if(max<=0) return {ref:1, cut:Infinity, max:0};
   histo.fill(0);
-  const s=(NB-1)/max;
-  for(let i=0;i<grid.length;i++) histo[(grid[i]*s)|0]++;
+  const lmax=Math.log(max);
+  for(let i=0;i<grid.length;i++) histo[binOf(grid[i],lmax)]++;
   const total=grid.length;
-  let acc=0, ref=max, cut=max, gotRef=false, gotCut=false;
-  const needRef=total*0.005, needCut=total*P.thr;
-  for(let b=NB-1;b>=0;b--){
-    acc+=histo[b];
-    if(!gotRef && acc>=needRef){ ref=(b+0.5)/s; gotRef=true; }
-    if(!gotCut && acc>=needCut){ cut=(b+0.5)/s; gotCut=true; }
-    if(gotRef&&gotCut) break;
-  }
+  const kRef=Math.min(total-1, Math.floor(total*0.005));
+  const kCut=Math.min(total-1, Math.max(0, Math.round(total*P.thr)));
+  const ref=selectRank(kRef, lmax), cut=selectRank(kCut, lmax);
   return {ref:Math.max(ref,1e-6), cut, max};
 }
 
-/* ── topology readout (ancestor's b0−χ, verbatim) ──────────────────── */
-function euler(){
-  let C1=0,C3=0,Cd=0;
-  const at=(x,y)=>(x<0||y<0||x>=W||y>=H)?0:mask[y*W+x];
-  for(let y=-1;y<H;y++) for(let x=-1;x<W;x++){
-    const a=at(x,y),b=at(x+1,y),c=at(x,y+1),d=at(x+1,y+1), n=a+b+c+d;
-    if(n===1) C1++;
-    else if(n===3) C3++;
-    else if(n===2 && ((a&&d&&!b&&!c)||(b&&c&&!a&&!d))) Cd++;
+/* ── topology readout ON THE GLUED SURFACE (v2.12.0) ─────────────────
+   The mask is a union of closed pixel squares. Glue the square's edges by
+   the surface's rule and count the cubical complex that results:
+   vertices, edges and faces are identified across each seam (mirrored
+   where the rule mirrors), then
+     b0 = connected pieces (union-find over glued vertices),
+     chi = V - E + F of the glued complex,
+     b2 = 1 only when the mask covers a CLOSED surface completely
+          (torus, Klein, projective; the Möbius strip has walls, so 0),
+     b1 = b0 + b2 - chi   (Z/2 coefficients, so non-orientable surfaces
+          have no torsion problem).
+   Checked against an independent GF(2) rank computation of the same
+   complexes (scripts in the lane-1 PR): 0 mismatches on random masks per
+   surface. Before v2.12.0 this readout was the FLAT square's count. */
+let GC = null;
+function ufFind(p, i){ while(p[i]!==i){ p[i]=p[p[i]]; i=p[i]; } return i; }
+function glueClasses(){
+  const VW=W+1, VH=H+1;
+  const pv=new Int32Array(VW*VH), ph=new Int32Array(W*VH), pe=new Int32Array(VW*H);
+  for(let i=0;i<pv.length;i++) pv[i]=i;
+  for(let i=0;i<ph.length;i++) ph[i]=i;
+  for(let i=0;i<pe.length;i++) pe[i]=i;
+  const un=(p,a,b)=>{ a=ufFind(p,a); b=ufFind(p,b); if(a!==b) p[a]=b; };
+  /* x-seam: the point (W, t) is the point (0, t) — or (0, H−t) when the
+     seam mirrors y (flipP: crossing x mirrors the named axis) */
+  if(topo.x.wrap){
+    const m = topo.x.flip==='y';
+    for(let j=0;j<=H;j++) un(pv, j*VW+W, (m?H-j:j)*VW);
+    for(let j=0;j<H;j++)  un(pe, j*VW+W, (m?H-1-j:j)*VW);
   }
-  return (C1-C3-2*Cd)/4;
-}
-const seen={buf:null};
-function components(){
-  if(!seen.buf || seen.buf.length!==W*H) seen.buf=new Uint8Array(W*H);
-  const s=seen.buf; s.fill(0);
-  let n=0; const st=[];
-  for(let i=0;i<W*H;i++){
-    if(!mask[i]||s[i]) continue;
-    n++; st.push(i); s[i]=1;
-    while(st.length){
-      const q=st.pop(), qx=q%W, qy=(q-qx)/W;
-      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
-        const nx=qx+dx, ny=qy+dy;
-        if(nx<0||ny<0||nx>=W||ny>=H) continue;
-        const k=ny*W+nx;
-        if(mask[k]&&!s[k]){ s[k]=1; st.push(k); }
-      }
-    }
+  /* y-seam: (t, H) is (t, 0) — or (W−t, 0) when the seam mirrors x */
+  if(topo.y.wrap){
+    const m = topo.y.flip==='x';
+    for(let i=0;i<=W;i++) un(pv, H*VW+i, m?W-i:i);
+    for(let i=0;i<W;i++)  un(ph, H*W+i,  m?W-1-i:i);
   }
-  return n;
+  const compress=(p)=>{ const id=new Int32Array(p.length).fill(-1), out=new Int32Array(p.length); let n=0;
+    for(let i=0;i<p.length;i++){ const r=ufFind(p,i); if(id[r]<0) id[r]=n++; out[i]=id[r]; } return [out,n]; };
+  const [vC,nV]=compress(pv), [hC,nH]=compress(ph), [eC,nE]=compress(pe);
+  GC={ key:topo.id+':'+W+'x'+H, vC, hC, eC, nV, nH, nE,
+       closed: !!(topo.x.wrap && topo.y.wrap),
+       sv:new Uint8Array(nV), sh:new Uint8Array(nH), se:new Uint8Array(nE), uf:new Int32Array(nV) };
 }
+function census(){
+  if(!GC || GC.key!==topo.id+':'+W+'x'+H) glueClasses();
+  const {vC,hC,eC,sv,sh,se,uf}=GC, VW=W+1;
+  sv.fill(0); sh.fill(0); se.fill(0);
+  for(let i=0;i<uf.length;i++) uf[i]=i;
+  let F=0;
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    if(!mask[y*W+x]) continue;
+    F++;
+    const a=vC[y*VW+x], b=vC[y*VW+x+1], c=vC[(y+1)*VW+x], d=vC[(y+1)*VW+x+1];
+    sv[a]=1; sv[b]=1; sv[c]=1; sv[d]=1;
+    sh[hC[y*W+x]]=1; sh[hC[(y+1)*W+x]]=1; se[eC[y*VW+x]]=1; se[eC[y*VW+x+1]]=1;
+    const ra=ufFind(uf,a);
+    for(const v of [b,c,d]){ const r=ufFind(uf,v); if(r!==ra) uf[r]=ra; }
+  }
+  let V=0, E=0, b0=0;
+  for(let i=0;i<sv.length;i++) if(sv[i]){ V++; if(ufFind(uf,i)===i) b0++; }
+  for(let i=0;i<sh.length;i++) E+=sh[i];
+  for(let i=0;i<se.length;i++) E+=se[i];
+  const chi=V-E+F, b2=(GC.closed && F===W*H)?1:0;
+  return { b0, b1:b0+b2-chi, b2, chi };
+}
+/* /census */
 let B = {b0:0, b1:0, coverage:0};
 function measure(t){
   let on=0;
   for(let i=0;i<grid.length;i++){ const m=grid[i]>t?1:0; mask[i]=m; on+=m; }
-  const b0=components();
-  B = {b0, b1:b0-euler(), coverage:+(100*on/grid.length).toFixed(2)};
+  const c=census();
+  B = {b0:c.b0, b1:c.b1, b2:c.b2, chi:c.chi, coverage:+(100*on/grid.length).toFixed(2)};
   hist.push(B.b1); if(hist.length>240) hist.shift();
   document.getElementById('r-b1').textContent=B.b1;
   document.getElementById('r-b0').textContent=B.b0;
@@ -1081,25 +1164,35 @@ function measure(t){
   checkLevel();
 }
 
-/* ── levels: the simulation provides them ──────────────────────────── */
+/* ── levels ─────────────────────────────────────────────────────────
+   v2.12.0: a level is DONE when the bright part has joined up into at
+   most JOIN_MAX pieces (β₀, counted on the glued surface) for 3 measures
+   in a row. The old gate was a β₁ target, and a null run showed it
+   measured speckle: structureless random walkers (no steering, no
+   arrows) reach β₁ 13-19 on every surface while the physarum settles at
+   β₁ 0-7, so the walkers met the low targets and the physarum met none
+   (levels I-VI x seeds 5/6/7, 1200 steps, quotient census). The piece
+   count separates them: the physarum passes this gate on 18/18 runs,
+   the walkers on 0/18 (they stay above 2000 pieces). β₁ is still shown, as a readout. */
+const JOIN_MAX = 3;
 const LEVELS = [
-  { name:'I — the plain torus', surface:'torus', target:12,
-    note:'welded_fields as the ancestor ran it. Close 12 loops by letting the swarm find its own steady state. Patience, not knobs.',
+  { name:'1. The donut', surface:'torus',
+    note:'Same setup as Welded Fields. Wait for the trails to join up into one network.',
     set:{ mass:1, adv:0.02, ali:0.02, ng:0, dec:0.99, mdec:0.94, sa:60, ra:18, so:5 } },
-  { name:'II — the half-twist', surface:'klein', target:18,
-    note:'the SAME swarm on the Klein bottle. Crossing the seam flips heading and trail; watch the structures braid across the weld.',
+  { name:'2. The Klein bottle', surface:'klein',
+    note:'Same dots, but the top edge joins the bottom with a flip. Watch trails come back mirrored.',
     set:{ mass:1, adv:0.02, ali:0.02, ng:0, dec:0.99, mdec:0.94, sa:60, ra:18, so:5 } },
-  { name:'III — doubled back', surface:'projective', target:24,
-    note:'projective plane: every crossing turns the world 180°. Loops close on themselves fastest here.',
+  { name:'3. The projective plane', surface:'projective',
+    note:'Both pairs of edges flip.',
     set:{ mass:1.4, adv:0.05, ali:0.05, ng:0, dec:0.985, mdec:0.92, sa:70, ra:22, so:6 } },
-  { name:'IV — the strip', surface:'mobius', target:20,
-    note:'Möbius: one weld, two walls. The field is clipped at the strip\'s edges — topology with a boundary.',
+  { name:'4. The Möbius strip', surface:'mobius',
+    note:'One flipped join and two walls.',
     set:{ mass:1, adv:0.02, ali:0.02, ng:0, dec:0.99, mdec:0.94, sa:60, ra:18, so:5 } },
-  { name:'V — the storm', surface:'klein', target:36,
-    note:'exogenous weather switched on over the half-twist: noise gain 0.6. The external clock vs the medium\'s memory.',
+  { name:'5. Storm', surface:'klein',
+    note:'The Klein bottle with outside noise turned on.',
     set:{ mass:1, adv:0.08, ali:0.06, ng:0.6, ns:0.006, dr:0.005, dec:0.99, mdec:0.94, sa:60, ra:18, so:5 } },
-  { name:'VI — the closed loop', surface:'torus', target:48,
-    note:'the ancestor\'s thesis, as a level: mass 1.6, momentum outliving the trail — the field the agents themselves own.',
+  { name:'6. Closed loop', surface:'torus',
+    note:'Outside noise off, strong arrows that outlast the scent.',
     set:{ mass:1.6, adv:0.10, ali:0.10, ng:0, dec:0.993, mdec:0.975, sa:60, ra:18, so:5 } },
 ];
 let levelIdx = 0, levelSolved = false, lastSolve = -1, solveStreak = 0;
@@ -1116,9 +1209,6 @@ function loadLevel(i){
   levelSolved = false; solveStreak = 0;
   setSurface(L.surface, true);
   applySet(L.set);
-  P.b1Target = L.target;
-  document.getElementById('b1Target').value = L.target;
-  document.getElementById('v-b1Target').textContent = L.target;
   resetField();
   updateLevelNote();
   toast(L.name);
@@ -1127,21 +1217,19 @@ function updateLevelNote(){
   const L = LEVELS[levelIdx];
   const st = document.getElementById('levelMode').value;
   document.getElementById('lvl-note').innerHTML =
-    `<b>${L.name}</b> · target β₁ ${L.target}<br>${L.note}` +
-    (levelSolved ? ' <span class="done">— SOLVED</span>' : '');
+    `<b>${L.name}</b> · done when the bright part is ${JOIN_MAX} pieces or fewer<br>${L.note}` +
+    (levelSolved ? ' <span class="done">— joined up</span>' : '');
   document.getElementById('r-mratio').parentElement && void 0;
 }
 function checkLevel(){
   if (P.levelMode !== 'tour') return;
-  const target = LEVELS[levelIdx].target;
   if (levelSolved) return;
-  if (B.b1 >= target) { solveStreak++; } else { solveStreak = 0; }
-  /* solved only when the target holds for 3 consecutive measures (1s apart):
-     a young field's speckle spikes β₁ spuriously; the level requires the
-     structure to be real, not transient */
+  if (B.b0 >= 1 && B.b0 <= JOIN_MAX) { solveStreak++; } else { solveStreak = 0; }
+  /* done only when it holds for 3 consecutive measures (20 steps apart),
+     so a transient does not count */
   if (solveStreak >= 3) {
     levelSolved = true; lastSolve = frame;
-    updateLevelNote(); toast(`${LEVELS[levelIdx].name} — SOLVED (β₁ ${B.b1})`);
+    updateLevelNote(); toast(`${LEVELS[levelIdx].name}: joined up (${B.b0} piece${B.b0>1?'s':''}, β₁ ${B.b1})`);
   }
 }
 document.getElementById('btnLevel').addEventListener('click', ()=>loadLevel(levelIdx+1));
@@ -1193,7 +1281,6 @@ bind('ng','ng', v=>v.toFixed(2));
 bind('ns','ns', v=>v.toFixed(4));
 bind('dr','dr', v=>v.toFixed(4));
 bind('thr','thr',v=>v+'%', v=>v/100, v=>Math.round(v*100));
-bind('b1Target','b1Target', v=>String(v|0));
 document.getElementById('slc').addEventListener('input', e=>{
   SL.c = parseFloat(e.target.value);
   document.getElementById('v-slc').textContent = SL.c.toFixed(2);
@@ -1267,7 +1354,6 @@ function setSurface(i, fromLevel){
   document.getElementById('surf-note').textContent = topo.note;
   if (!fromLevel) toast(topo.name);
 }
-document.getElementById('b1Target').addEventListener('input', ()=>updateLevelNote());
 
 /* ── setup + render ────────────────────────────────────────────────── */
 const cv=document.getElementById('sim'), ctx=cv.getContext('2d', {willReadFrequently:true});
@@ -2595,7 +2681,7 @@ window.__welded={
   ablate(o={}){ if(o.seamFold) seamFold=o.seamFold; return {seamFold}; },
   state(){ return { surface:topo.id, shell:P.shell, b0:B.b0, b1:B.b1, coverage:B.coverage,
                     agents:parts.length, level:LEVELS[levelIdx].name,
-                    target:LEVELS[levelIdx].target, solved:levelSolved, egg:!!egg,
+                    joinMax:JOIN_MAX, solved:levelSolved, egg:!!egg,
                     exclReject:(exclReject||0),
                     exclPins:(exclPins||0),
                     exclSteps:(exclSteps||0) }; },

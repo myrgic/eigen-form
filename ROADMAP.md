@@ -16,8 +16,10 @@ These hold at every version below.
    way around.
 2. **Process-honest rendering.** Steady states are reached by running the
    dynamics, not by painting a stored picture of them. The reduced-motion
-   fallback is the real system stopped, not a reconstruction. Depth and
-   crossing order emerge from the drawing process itself.
+   fallback is the real system stopped, not a reconstruction. Crossing
+   order is computed from the knot's height z at each step (the lower
+   strand gets a gap where the upper one runs); paint order alone would
+   draw an unknot (GH #35).
 3. **One source of truth for parameters.** Every tunable lives in one table
    per primitive, serializable, with documented ranges. No magic numbers in
    the draw loop.
@@ -129,7 +131,8 @@ items below are what it still needs to grow into the full v0.3 vision.
 
 - Not a charting library. Axes, legends, and dashboards belong to other
   tools; eigen-form supplies primitives those tools can host.
-- Not a 3D engine. Depth stays emergent (paint order, parallax) until an
+- Not a 3D engine. Depth is limited to the crossing gaps from the knot's
+  height and the hue parallax until an
   honest need for real geometry arrives, and then it arrives as its own
   backend, not a rewrite.
 - No hidden global state. Anything that changes a render is in the parameter
@@ -138,7 +141,7 @@ items below are what it still needs to grow into the full v0.3 vision.
 ## Origin
 
 The library began as the engine for the Myrgic mark: a (2, 3) torus knot
-whose crossings emerge from its own maintenance. That origin sets the bar
+kept alive by re-tracing it against a fading trail. That origin sets the bar
 for everything that follows. The mark is not a logo drawn once; it is a
 process kept alive, and the library exists to render more objects with that
 kind of honesty.
