@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Screen probe</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; background: #111; color: #eee; font: 15px/1.35 ui-monospace, Menlo, monospace; }
+  body { padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+  h1 { font-size: 16px; margin: 0 0 6px; color: #8cf; }
+  table { border-collapse: collapse; width: 100%; }
+  td { padding: 2px 6px; border-bottom: 1px solid #2a2a2a; vertical-align: top; }
+  td:first-child { color: #9a9; white-space: nowrap; }
+  td:last-child { color: #fff; word-break: break-all; }
+  #note { color: #aaa; font-size: 12px; margin-top: 6px; }
+  button { font: inherit; margin-top: 8px; padding: 8px 12px; background: #234; color: #fff; border: 1px solid #456; border-radius: 6px; }
+  #probe { position: fixed; visibility: hidden; pointer-events: none;
+    top: env(safe-area-inset-top, 0px); right: env(safe-area-inset-right, 0px); bottom: env(safe-area-inset-bottom, 0px); left: env(safe-area-inset-left, 0px); }
+  #seg { position: fixed; visibility: hidden; pointer-events: none;
+    left: env(viewport-segment-left 0 0, -1px); top: env(viewport-segment-top 0 0, -1px);
+    width: env(viewport-segment-width 0 0, 0px); height: env(viewport-segment-height 0 0, 0px); }
+</style>
+</head>
+<body>
+<h1>Screen probe — screenshot this page in each posture</h1>
+<table id="t"></table>
+<div id="note">Updates live on rotate / fold / resize. Nothing is sent anywhere.</div>
+<button id="copy">Copy as JSON</button>
+<div id="probe"></div><div id="seg"></div>
+<script>
+const mq = (q) => matchMedia(q).matches;
+function collect() {
+  const p = getComputedStyle(document.getElementById("probe"));
+  const vv = window.visualViewport;
+  const segs = window.viewport?.segments ?? window.getWindowSegments?.() ?? null;
+  const segEl = document.getElementById("seg").getBoundingClientRect();
+  const posture = navigator.devicePosture?.type ?? "n/a";
+  const hSeg = [1, 2, 3].find((n) => mq(`(horizontal-viewport-segments: ${n})`)) ?? "n/a";
+  const vSeg = [1, 2, 3].find((n) => mq(`(vertical-viewport-segments: ${n})`)) ?? "n/a";
+  return {
+    "screen (CSS px)": `${screen.width} x ${screen.height}`,
+    "screen.avail": `${screen.availWidth} x ${screen.availHeight}`,
+    "devicePixelRatio": window.devicePixelRatio,
+    "screen (device px)": `${Math.round(screen.width * devicePixelRatio)} x ${Math.round(screen.height * devicePixelRatio)}`,
+    "window.inner": `${innerWidth} x ${innerHeight}`,
+    "documentElement.client": `${document.documentElement.clientWidth} x ${document.documentElement.clientHeight}`,
+    "visualViewport": vv ? `${Math.round(vv.width)} x ${Math.round(vv.height)} @ scale ${vv.scale}` : "n/a",
+    "orientation": `${screen.orientation?.type ?? "n/a"} ${screen.orientation?.angle ?? ""}`,
+    "safe-area t/r/b/l": `${p.top} / ${p.right} / ${p.bottom} / ${p.left}`,
+    "device posture": posture,
+    "viewport segments (JS)": segs ? JSON.stringify(Array.from(segs, (s) => [Math.round(s.x ?? s.left), Math.round(s.y ?? s.top), Math.round(s.width), Math.round(s.height)])) : "n/a",
+    "segments (CSS h / v)": `${hSeg} / ${vSeg}`,
+    "segment 0 (CSS env)": segEl.width ? `${Math.round(segEl.left)},${Math.round(segEl.top)} ${Math.round(segEl.width)} x ${Math.round(segEl.height)}` : "n/a",
+    "pointer / hover": `${mq("(pointer: coarse)") ? "coarse" : mq("(pointer: fine)") ? "fine" : "none"} / ${mq("(hover: hover)") ? "hover" : "none"}`,
+    "any-pointer": `${mq("(any-pointer: coarse)") ? "coarse " : ""}${mq("(any-pointer: fine)") ? "fine" : ""}`,
+    "maxTouchPoints": navigator.maxTouchPoints,
+    "display-mode": ["fullscreen", "standalone", "minimal-ui", "browser"].find((m) => mq(`(display-mode: ${m})`)),
+    "color / reduced motion": `${mq("(prefers-color-scheme: dark)") ? "dark" : "light"} / ${mq("(prefers-reduced-motion: reduce)") ? "reduce" : "no-pref"}`,
+    "WebGL2": (() => { try { return !!document.createElement("canvas").getContext("webgl2"); } catch { return false; } })(),
+    "userAgent": navigator.userAgent,
+  };
+}
+function render() {
+  const d = collect();
+  document.getElementById("t").innerHTML = Object.entries(d).map(([k, v]) => `<tr><td>${k}</td><td>${String(v).replace(/</g, "&lt;")}</td></tr>`).join("");
+}
+render();
+for (const ev of ["resize", "orientationchange"]) addEventListener(ev, () => setTimeout(render, 60));
+window.visualViewport?.addEventListener("resize", () => setTimeout(render, 60));
+navigator.devicePosture?.addEventListener?.("change", render);
+document.getElementById("copy").onclick = () => navigator.clipboard?.writeText(JSON.stringify(collect(), null, 1)).then(() => { document.getElementById("copy").textContent = "Copied"; });
+</script>
+</body>
+</html>
