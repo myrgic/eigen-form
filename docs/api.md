@@ -99,6 +99,51 @@ and `src/figure-spec.js`) carries whatever band values were in effect
 at export time directly — clamped band values travel with the spec by
 construction, the same as every other tunable, with no special-casing.
 
+## Woven mark: stills and the animated pen
+
+`createTrefoilMark` is built for live motion: it stamps short chords and fades
+the canvas every frame. Frozen (an icon, a screenshot, a recording) that shows
+as scalloped edges and stepped colour bands. `src/render/knot-pen.js` draws the
+same (p,q) knot, from the same `knotPoint` geometry and `colorFor` palette, as a
+woven object instead. Each frame is painted from scratch, back to front by the
+knot's height, and every crossing leaves a gap in the strand beneath.
+
+```js
+import { createKnotPen, createKnotPenMark } from 'eigen-form';
+
+const pen = createKnotPen({ p: 2, q: 3, size: 1024 });
+pen.drawStill(ctx);          // the woven still: colour fixed to position, no pen
+pen.drawFrame(ctx, t);       // t in laps; the pen is at t mod 1 and rewrites the
+                             // knot over its older paint, casting the same gap
+
+createKnotPenMark(canvas, { p: 3, q: 4, stroke: 0.065, lapMs: 3000 }); // animated
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `p`, `q` | 2, 3 | knot. The diagram has `q*(p-1)` crossings (`diagramCrossings`) |
+| `size` | 1024 | square output, px |
+| `fill` | 0.80 | knot diameter (incl. stroke) / size |
+| `stroke` | 0.10 | stroke width / size (0.065 suits (3,4), (2,5)) |
+| `gap` | 0.5 | crossing gap each side, in stroke widths |
+| `ground` | `#070707` | ground colour; `null` = transparent (gaps erased) |
+| `gradient` | `spectrum` | same band objects as `createTrefoilMark` |
+| `hueRatio` | 4/3 | hue period / lap. 1 = colour locked to position. The loop is seamless after `laps` with `laps / hueRatio` whole |
+| `fadeMin` | 0.4 | brightness of the oldest paint |
+| `ball` | 0.9 | pen ball diameter in stroke widths; 0 = none |
+
+The pen is painted at the depth of its own stretch of curve, so a strand that
+truly passes over it hides it, and its own fresh trail never does. It passes
+under exactly `q*(p-1)` crossings per lap, which `tests/knot-pen.js` checks.
+
+Export: `apps/woven_mark/` is the interactive page (still / frame PNG
+downloads). `tools/knot_pen_export.py` writes a still PNG, a frame sequence, an
+MP4 and a GIF through headless Chromium plus ffmpeg:
+
+```sh
+uv run --no-project --with playwright python tools/knot_pen_export.py --p 3 --q 4 --seconds 12 --out out/four
+```
+
 ## Window globals
 
 The library exposes two globals when loaded in a browser:

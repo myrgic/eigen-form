@@ -387,6 +387,7 @@ if (typeof window !== 'undefined') {
 }
 
 export { createTrefoilMark, GRADIENTS };
+export { createKnotPen, createKnotPenMark, diagramCrossings, KNOT_PEN_DEFAULTS } from './render/knot-pen.js';
 export const exportSpec = figureSpec.exportSpec;
 export const fromSpec = figureSpec.fromSpec;
 export default { createTrefoilMark, GRADIENTS, exportSpec: figureSpec.exportSpec, fromSpec: figureSpec.fromSpec };
