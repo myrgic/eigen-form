@@ -1,0 +1,23 @@
+{
+  "id": "woven_mark",
+  "title": "The Woven Mark",
+  "description": "The (p,q) torus knot painted back-to-front by its own height, so every crossing leaves a gap in the strand beneath; a pen keeps rewriting the knot over its older paint. Exports stills and frames without banding.",
+  "version": "1.0.0",
+  "kind": "sdk-page",
+  "entry": "index.html",
+  "provenance": { "builtOn": "eigen-form@0.4.0 e8593e2" },
+  "sdk": { "eigen-form": ">=0.4.0" },
+  "capabilities": { "emits": [], "accepts": [] },
+  "pwa": { "installable": false },
+  "display": { "order": 2, "accent": "#9ba8ff" },
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2026-10-04",
+      "changes": [
+        "First version, on src/render/knot-pen.js. Made for the Myrgic server icon and the animated mark: the live mark's per-frame fade shows as scallops and colour steps when frozen.",
+        "Pen depth: keyed at least as high as its own stretch of curve, so its trail cannot paint over the ball; tests/knot-pen.js checks it passes under exactly q*(p-1) crossings per lap."
+      ]
+    }
+  ]
+}

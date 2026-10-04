@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Woven Mark: eigen-form lab</title>
+<link rel="stylesheet" href="../../src/panel/tokens.css">
+<link rel="stylesheet" href="../../src/panel/panel.css">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    display: grid; grid-template-columns: 1fr 320px; gap: 32px; padding: 32px;
+    background: var(--bg); color: var(--fg); font-family: var(--sans);
+  }
+  @media (max-width: 820px) { body { grid-template-columns: 1fr; padding: 16px; } }
+  .stage-col { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; min-height: 80vh; }
+  .stage { width: min(70vmin, 600px); aspect-ratio: 1; border: 1px solid var(--line); border-radius: var(--radius-3); overflow: hidden; }
+  canvas { width: 100%; height: 100%; display: block; }
+  .meta { text-align: center; }
+  .meta .title { font-size: 20px; letter-spacing: 0.04em; }
+  .meta .tagline { margin-top: 6px; font-size: 12px; color: var(--faint); max-width: 520px; }
+  #panel { border: 1px solid var(--line); border-radius: var(--radius-3); position: sticky; top: 24px; max-height: calc(100vh - 48px); }
+  #panel hr.ef-div { border: 0; border-top: 1px solid var(--line); margin: var(--space-2) 0; }
+  #panel button.ef-action {
+    width: 100%; margin-top: var(--space-1); background: transparent; border: 1px solid var(--line);
+    border-radius: var(--radius-1); padding: var(--space-2) var(--space-3);
+    font: 10.5px var(--mono); color: var(--dim); cursor: pointer; letter-spacing: 0.04em;
+  }
+  #panel button.ef-action:hover { color: var(--fg); border-color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="stage-col">
+    <div class="stage"><canvas id="mark" width="1024" height="1024"></canvas></div>
+    <div class="meta">
+      <div class="title">The Woven Mark</div>
+      <div class="tagline">The (p,q) torus knot painted back-to-front by its own height: every crossing leaves a gap in the strand beneath, and a pen keeps rewriting the knot over its older paint.</div>
+    </div>
+  </div>
+  <div class="panel" id="panel"></div>
+<script type="module">
+import { createKnotPen } from '../../src/render/knot-pen.js';
+import { defineParams } from '../../src/params/define.js';
+import { renderPanel } from '../../src/panel/render.js';
+
+const schema = {
+  p:        { type: 'number', min: 1, max: 7, step: 1, default: 2, group: 'knot', label: 'p (angular)' },
+  q:        { type: 'number', min: 1, max: 7, step: 1, default: 3, group: 'knot', label: 'q (radial)' },
+  stroke:   { type: 'number', min: 0.02, max: 0.16, step: 0.005, default: 0.10, group: 'knot', label: 'thickness' },
+  gap:      { type: 'number', min: 0, max: 1.5, step: 0.05, default: 0.5, group: 'knot', label: 'crossing gap' },
+  animate:  { type: 'boolean', default: true, group: 'pen', label: 'pen' },
+  lapMs:    { type: 'number', min: 600, max: 12000, step: 50, unit: 'ms', default: 2250, group: 'pen', label: 'lap', scale: 'log' },
+  hueRatio: { type: 'number', min: 0.5, max: 3, step: 0.01, default: 1.33, group: 'pen', label: 'hue drift' },
+  fadeMin:  { type: 'number', min: 0, max: 1, step: 0.05, default: 0.4, group: 'pen', label: 'oldest paint' },
+  ball:     { type: 'number', min: 0, max: 1.5, step: 0.05, default: 0.9, group: 'pen', label: 'ball' },
+  hueStart: { type: 'angle', min: 0, max: 360, step: 1, unit: 'deg', default: 0, group: 'hue', label: 'hue start' },
+  hueEnd:   { type: 'angle', min: 0, max: 360, step: 1, unit: 'deg', default: 360, group: 'hue', label: 'hue end' },
+  sat:      { type: 'number', min: 0, max: 100, step: 1, unit: '%', default: 70, group: 'hue', label: 'saturation' },
+  light:    { type: 'number', min: 0, max: 100, step: 1, unit: '%', default: 60, group: 'hue', label: 'light' }
+};
+const store = defineParams(schema);
+const canvas = document.getElementById('mark');
+const ctx = canvas.getContext('2d');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let pen = null, dirty = true, t0 = null, tNow = 0;
+function build() {
+  const v = store.values();
+  pen = createKnotPen({
+    p: v.p, q: v.q, stroke: v.stroke, gap: v.gap, size: canvas.width,
+    samples: 9000, hueRatio: v.hueRatio, fadeMin: v.fadeMin, ball: v.ball,
+    gradient: { hueStart: v.hueStart, hueEnd: v.hueEnd, sat: v.sat, light: v.light, lightEnd: v.light }
+  });
+  dirty = false;
+}
+store.subscribe(() => { dirty = true; if (!store.get('animate') || reduced) { build(); pen.drawStill(ctx); } });
+function frame(now) {
+  if (dirty) build();
+  if (store.get('animate') && !reduced) {
+    if (t0 === null) t0 = now;
+    tNow = (now - t0) / store.get('lapMs');
+    pen.drawFrame(ctx, tNow);
+  }
+  requestAnimationFrame(frame);
+}
+build(); pen.drawStill(ctx);
+requestAnimationFrame(frame);
+
+const panelEl = document.getElementById('panel');
+renderPanel(store, panelEl);
+const hr = document.createElement('hr'); hr.className = 'ef-div'; panelEl.appendChild(hr);
+function button(label, fn) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'ef-action';
+  b.textContent = label; b.addEventListener('click', fn); panelEl.appendChild(b);
+}
+function download(name, url) { const a = document.createElement('a'); a.href = url; a.download = name; a.click(); }
+button('⤓ still PNG (1024)', () => {
+  const c = document.createElement('canvas'); c.width = c.height = 1024;
+  if (dirty) build();
+  const still = createKnotPen({ ...pen.options, size: 1024, samples: 24000 });
+  still.drawStill(c.getContext('2d'));
+  download(`knot-${store.get('p')}-${store.get('q')}.png`, c.toDataURL('image/png'));
+});
+button('⤓ frame PNG (1024)', () => {
+  const c = document.createElement('canvas'); c.width = c.height = 1024;
+  const f = createKnotPen({ ...pen.options, size: 1024 });
+  f.drawFrame(c.getContext('2d'), tNow);
+  download(`knot-${store.get('p')}-${store.get('q')}-frame.png`, c.toDataURL('image/png'));
+});
+
+// Test port (lab convention): headless checks and the frame exporter
+// (tools/knot_pen_frames.py) drive the renderer through this.
+window.__wovenMark = {
+  store,
+  renderer: () => pen,
+  setTime(t) { if (dirty) build(); store.set('animate', false); pen.drawFrame(ctx, t); },
+  frameDataURL(t, opts) {
+    const c = document.createElement('canvas'); const size = (opts && opts.size) || 768; c.width = c.height = size;
+    createKnotPen({ ...pen.options, ...(opts || {}), size }).drawFrame(c.getContext('2d'), t);
+    return c.toDataURL('image/png');
+  }
+};
+</script>
+</body>
+</html>

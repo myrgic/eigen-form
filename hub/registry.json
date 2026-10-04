@@ -60,6 +60,26 @@
       }
     },
     {
+      "id": "woven_mark",
+      "title": "The Woven Mark",
+      "description": "The (p,q) torus knot painted back-to-front by its own height, so every crossing leaves a gap in the strand beneath; a pen keeps rewriting the knot over its older paint. Exports stills and frames without banding.",
+      "path": "../apps/woven_mark/index.html",
+      "kind": "sdk-page",
+      "provenance": {
+        "builtOn": "eigen-form@0.4.0 e8593e2"
+      },
+      "pwa": {
+        "installable": false
+      },
+      "sdk": {
+        "eigen-form": ">=0.4.0"
+      },
+      "display": {
+        "order": 2,
+        "accent": "#9ba8ff"
+      }
+    },
+    {
       "id": "ast_diffusion",
       "title": "Heat on a code map",
       "description": "A toy map of seven code files: click a file to add heat, and each step moves a share of it along the import links (faster against the arrows than with them) and keeps a fraction T of the total.",
