@@ -39,6 +39,26 @@
       }
     },
     {
+      "id": "mark_live",
+      "title": "The Mark, Live",
+      "description": "The torus knot as a visual instrument: Oscine's signal (or a built-in loop) routed onto the mark's declared parameters.",
+      "path": "../apps/mark_live/index.html",
+      "kind": "sdk-page",
+      "provenance": {
+        "builtOn": "eigen-form@0.4.0 b7be354"
+      },
+      "pwa": {
+        "installable": false
+      },
+      "sdk": {
+        "eigen-form": ">=0.2.0"
+      },
+      "display": {
+        "order": 3,
+        "accent": "#ff5a4d"
+      }
+    },
+    {
       "id": "ast_diffusion",
       "title": "AST Topological Convolution Kernel",
       "description": "A directed acyclic graph representing code, where clicking a node injects heat that a convolution kernel diffuses asymmetrically.",

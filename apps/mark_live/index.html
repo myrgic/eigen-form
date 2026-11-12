@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Mark, Live: eigen-form lab</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../src/panel/tokens.css">
+<link rel="stylesheet" href="../../src/panel/panel.css">
+<style>
+  /* A performance page: the stage is the page. Everything else is a
+     drawer the performer can dismiss (H) before the projector sees it.
+     Theme comes from the SDK tokens; this sheet owns layout only, plus
+     the one accent this app declares in app.json. */
+  :root { --live: #ff5a4d; --drawer: 348px; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: #000; color: var(--fg); font-family: var(--sans); overflow: hidden; }
+  body.quiet { cursor: none; }
+
+  .stage { position: fixed; inset: 0 var(--drawer) 0 0; display: grid; place-items: center; transition: inset 220ms ease; }
+  body.quiet .stage { inset: 0; }
+  .frame { position: relative; height: min(100%, calc(100vw - var(--drawer))); aspect-ratio: 1; }
+  body.quiet .frame { height: min(100%, 100vw); }
+  .frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  /* Bloom: a quarter-size copy of the mark, blurred and screened back
+     over it. Page-level (the engine stays untouched), and its strength
+     is a declared parameter like any other, so the kick can drive it. */
+  #bloom { filter: blur(22px) brightness(1.7) saturate(1.3); mix-blend-mode: screen; opacity: 0; transform: scale(1.04); pointer-events: none; }
+
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: var(--drawer); background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; transition: transform 220ms ease; }
+  body.quiet .drawer { transform: translateX(100%); }
+  .drawer section { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .drawer h2 { margin: 0 0 10px; font: 500 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); display: flex; justify-content: space-between; align-items: baseline; }
+  .drawer h2 span { letter-spacing: 0.04em; text-transform: none; color: var(--faint); }
+  .scroll { overflow-y: auto; flex: 1; min-height: 0; }
+
+  /* source */
+  .src { display: flex; gap: 6px; }
+  .src button, .mini { flex: 1; background: transparent; color: var(--dim); border: 1px solid var(--line); border-radius: var(--radius-1); padding: 7px 8px; font: 11px var(--mono); letter-spacing: 0.04em; cursor: pointer; }
+  .src button[aria-pressed="true"] { color: var(--fg); border-color: var(--live); }
+  .src button:hover, .mini:hover { color: var(--fg); }
+  .now { margin-top: 10px; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font: 11px var(--mono); color: var(--dim); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+  .dot.on { background: var(--live); box-shadow: 0 0 10px var(--live); }
+  .now .where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .now .pos { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .meters { margin-top: 10px; display: grid; grid-template-columns: repeat(5, 1fr) 22px; gap: 4px; align-items: end; height: 34px; }
+  .meters i { display: block; background: var(--line); height: 100%; position: relative; border-radius: 1px; overflow: hidden; }
+  .meters i b { position: absolute; left: 0; right: 0; bottom: 0; background: var(--dim); height: 0; }
+  .meters .lamp { border-radius: 50%; height: 22px; align-self: center; background: var(--line); }
+  .meters .lamp.hit { background: var(--live); }
+  .legend { display: grid; grid-template-columns: repeat(5, 1fr) 22px; gap: 4px; margin-top: 3px; font: 9px var(--mono); color: var(--faint); text-align: center; }
+
+  /* patch */
+  .route { display: grid; grid-template-columns: 1fr 12px 1fr 18px; gap: 4px 6px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+  .route:first-child { border-top: 0; }
+  .route select, .route input[type=number] { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: var(--radius-1); font: 10.5px var(--mono); padding: 3px 4px; min-width: 0; }
+  .route .arrow { color: var(--faint); font: 11px var(--mono); text-align: center; }
+  .route .x { background: none; border: 0; color: var(--faint); cursor: pointer; font: 13px var(--mono); padding: 0; }
+  .route .x:hover { color: var(--live); }
+  .route .amt { grid-column: 1 / 4; display: grid; grid-template-columns: 1fr 44px 44px; gap: 6px; align-items: center; }
+  .route input[type=range] { width: 100%; accent-color: var(--live); }
+  .route .lvl { grid-column: 1 / 5; height: 2px; background: var(--line); position: relative; }
+  .route .lvl b { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--live); }
+  .fixed { font: 10.5px var(--mono); color: var(--dim); line-height: 1.7; margin-top: 8px; }
+  .fixed em { color: var(--fg); font-style: normal; }
+  .row { display: flex; gap: 6px; margin-top: 10px; }
+  .keys { font: 10px var(--mono); color: var(--faint); line-height: 1.9; }
+  .keys kbd { color: var(--dim); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font: inherit; }
+
+  #panel { border: 0; padding: 0; }
+  @media (max-width: 760px) {
+    :root { --drawer: 0px; }
+    .stage { inset: 0 0 55vh 0; }
+    .frame { height: min(100%, 100vw); }
+    .drawer { width: 100vw; top: 45vh; border-left: 0; border-top: 1px solid var(--line); }
+    body.quiet .drawer { transform: translateY(100%); }
+  }
+  @media (prefers-reduced-motion: reduce) { .stage, .drawer { transition: none; } }
+</style>
+</head>
+<body>
+  <div class="stage"><div class="frame">
+    <canvas id="mark" width="1080" height="1080"></canvas>
+    <canvas id="bloom" width="270" height="270" aria-hidden="true"></canvas>
+  </div></div>
+
+  <aside class="drawer" aria-label="Instrument">
+    <section>
+      <h2>Source</h2>
+      <div class="src">
+        <button type="button" id="src-oscine" aria-pressed="false">Oscine</button>
+        <button type="button" id="src-demo" aria-pressed="false">Built-in loop</button>
+      </div>
+      <div class="now"><span class="dot" id="dot"></span><span class="where" id="where">starting</span><span class="pos" id="pos">–</span></div>
+      <div class="meters" id="meters"><i><b></b></i><i><b></b></i><i><b></b></i><i><b></b></i><i><b></b></i><span class="lamp" id="lamp"></span></div>
+      <div class="legend"><span>sub</span><span>bass</span><span>low</span><span>mid</span><span>high</span><span>kick</span></div>
+    </section>
+    <div class="scroll">
+      <section>
+        <h2>Patch <span id="patch-note"></span></h2>
+        <div id="routes"></div>
+        <div class="fixed" id="fixed"></div>
+        <div class="row">
+          <button type="button" class="mini" id="add">+ route</button>
+          <button type="button" class="mini" id="reset">reset patch</button>
+        </div>
+      </section>
+      <section>
+        <h2>Knobs <span>where the patch rides from</span></h2>
+        <div id="panel"></div>
+      </section>
+      <section class="keys">
+        <kbd>H</kbd> hide this drawer &nbsp; <kbd>F</kbd> fullscreen &nbsp; <kbd>R</kbd> replay emergence<br>
+        <kbd>[</kbd> <kbd>]</kbd> nudge timing <span id="offset">0 ms</span>
+      </section>
+    </div>
+  </aside>
+
+<script type="module">
+// The Mark as an instrument. Three library pieces meet here:
+//   createTrefoilMark   draws           (src/eigen-form.js)
+//   defineParams        declares knobs  (src/params/define.js)
+//   createRouter        plays them      (src/signal/router.js)
+// and a source (src/signal/sources.js) supplies the music. This page
+// owns only the wiring between them and the drawer's DOM.
+import { createTrefoilMark } from '../../src/eigen-form.js';
+import { defineParams } from '../../src/params/define.js';
+import { renderPanel } from '../../src/panel/render.js';
+import { createRouter, SOURCES } from '../../src/signal/router.js';
+import { oscineSource, demoSource } from '../../src/signal/sources.js';
+
+// The mark's schema as apps/mark declares it, with two differences:
+// parallax stops at 0 (the hue period is period / (1 + parallax), and a
+// route sweeping through -1 would divide by zero), and one page-owned
+// knob is added: bloom, the halo this page draws over the canvas.
+const schema = {
+  p:           { type: 'number', min: 1,      max: 7,      step: 1,   default: 2,    group: 'eigenmode',  label: 'p (angular)' },
+  q:           { type: 'number', min: 1,      max: 7,      step: 1,   default: 3,    group: 'eigenmode',  label: 'q (radial)' },
+  scale:       { type: 'number', min: 100,    max: 350,    step: 1,   unit: 'px',    default: 172,  group: 'orbit',      label: 'scale' },
+  period:      { type: 'number', min: 500,    max: 30000,  step: 100, unit: 'ms',    default: 3000, group: 'orbit',      label: 'period', scale: 'log' },
+  ballRadius:  { type: 'number', min: 2,      max: 60,     step: 1,   unit: 'px',    default: 18,   group: 'path',       label: 'ball radius' },
+  strokeWidth: { type: 'number', min: 1,      max: 100,    step: 1,   unit: 'px',    default: 13,   group: 'path',       label: 'thickness' },
+  decay:       { type: 'number', min: 500,    max: 60000,  step: 100, unit: 'ms',    default: 2600, group: 'path',       label: 'memory', scale: 'log' },
+  precession:  { type: 'number', min: -100000, max: 100000, step: 500, unit: 'ms',   default: 0,    group: 'precession', label: 'period' },
+  parallax:    { type: 'number', min: 0,      max: 4,      step: 0.05, default: 0,   group: 'hue parallax', label: 'detune' },
+  hueStart:    { type: 'angle',  min: 0,      max: 360,    step: 1,   unit: 'deg',   default: 0,    group: 'hue', label: 'hue start' },
+  hueEnd:      { type: 'angle',  min: 0,      max: 360,    step: 1,   unit: 'deg',   default: 360,  group: 'hue', label: 'hue end' },
+  sat:         { type: 'number', min: 0,      max: 100,    step: 1,   unit: '%',     default: 78,   group: 'hue', label: 'saturation' },
+  light:       { type: 'number', min: 0,      max: 100,    step: 1,   unit: '%',     default: 52,   group: 'hue', label: 'light' },
+  lightEnd:    { type: 'number', min: 0,      max: 100,    step: 1,   unit: '%',     default: 52,   group: 'hue', label: 'light end' },
+  bloom:       { type: 'number', min: 0,      max: 1,      step: 0.01, default: 0.28, group: 'stage', label: 'bloom' }
+};
+const store = defineParams(schema);
+
+// Sized to stay inside the engine's 480-unit square at full modulation:
+// scale (172 + 0.12 x 250) + half the widest stroke (13 + 0.24 x 99) = 221 < 240.
+// The patch this page opens with. A starting point, not a preset menu:
+// every route is editable in the drawer and the edit is remembered.
+const DEFAULT_PATCH = {
+  offsetMs: 0,
+  syncs: [
+    { target: 'period', bars: 2 },          // one trace of the knot every two bars
+    { target: 'precession', bars: 32 }      // the whole figure turns once per thirty-two
+  ],
+  routes: [
+    { source: 'hit.kick',  target: 'strokeWidth', amount: 0.24, attack: 0,   release: 170 },
+    { source: 'hit.kick',  target: 'bloom',       amount: 0.55, attack: 0,   release: 240 },
+    { source: 'band.bass', target: 'scale',       amount: 0.12, attack: 20,  release: 280 },
+    { source: 'hit.snare', target: 'light',       amount: 0.24, attack: 0,   release: 150 },
+    { source: 'band.high', target: 'parallax',    amount: 0.14, attack: 40,  release: 600 },
+    { source: 'rms',       target: 'decay',       amount: 0.12, attack: 300, release: 2200 }
+  ],
+  steps: [
+    { on: 'section', targets: ['p', 'q'], values: [[2, 3], [3, 4], [2, 5], [3, 5]] }
+  ]
+};
+const PATCH_KEY = 'eigen-form.mark_live.patch.v1';
+function loadPatch() {
+  try { const raw = localStorage.getItem(PATCH_KEY); if (raw) return JSON.parse(raw); } catch { /* private window, blocked storage */ }
+  return DEFAULT_PATCH;
+}
+function savePatch() { try { localStorage.setItem(PATCH_KEY, JSON.stringify(router.serialize())); } catch { /* fine without */ } }
+
+// ---- the mark -----------------------------------------------------
+const HUE_KEYS = ['hueStart', 'hueEnd', 'sat', 'light', 'lightEnd'];
+const eff = {};                                        // values the router is currently holding a knob at
+const valueOf = (k) => (k in eff ? eff[k] : store.get(k));
+const band = () => Object.fromEntries(HUE_KEYS.map((k) => [k, valueOf(k)]));
+function opts(overrides) {
+  const rest = { ...store.values() };
+  for (const k of [...HUE_KEYS, 'bloom']) delete rest[k];
+  return { ...rest, gradient: band(), ...overrides };
+}
+const canvas = document.getElementById('mark');
+const bloomEl = document.getElementById('bloom');
+const bloomCtx = bloomEl.getContext('2d');
+let bloomNow = 0;
+let mark = createTrefoilMark(canvas, opts({ emergence: false }));
+
+function toSim(key, value) {
+  if (key === 'bloom') { bloomNow = value; bloomEl.style.opacity = String(value); return; }
+  if (!mark || !mark.setParam) return;
+  if (HUE_KEYS.includes(key)) mark.setParam('gradient', band());
+  else mark.setParam(key, value);
+}
+function rebuild() {
+  if (mark && mark.stop) mark.stop();
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  mark = createTrefoilMark(canvas, opts({ emergence: true }));
+  for (const k of Object.keys(eff)) toSim(k, eff[k]);
+}
+
+// ---- the router ---------------------------------------------------
+const apply = (k, v) => { eff[k] = v; toSim(k, v); };
+let router;
+try {
+  router = createRouter({ store, apply, patch: loadPatch() });
+} catch (err) {
+  // a remembered patch that no longer fits this schema: start over rather than refuse to open
+  console.warn('[mark_live] saved patch rejected, using the default:', err.message);
+  router = createRouter({ store, apply, patch: DEFAULT_PATCH });
+}
+// A knob the patch is not riding goes straight to the mark, as on apps/mark.
+store.subscribe((key, value) => { if (!router.drives(key)) { delete eff[key]; toSim(key, value); } });
+toSim('bloom', store.get('bloom'));
+const forget = () => { for (const k of Object.keys(eff)) if (!router.drives(k)) delete eff[k]; };
+
+// ---- sources ------------------------------------------------------
+const $ = (id) => document.getElementById(id);
+let source = null, wanted = 'auto', lastFrame = null, fallbackTimer = null;
+const hooks = {
+  onFrame: (f) => { lastFrame = f; router.frame(f); },
+  onNotes: (n) => router.notes(n),
+  onStatus: (s) => {
+    $('dot').classList.toggle('on', !!s.connected);
+    $('where').textContent = s.kind === 'demo' ? `built-in loop, silent (${s.detail})` : (s.connected ? `Oscine: ${s.project || 'untitled'}` : `${s.detail} (port ${s.port})`);
+    if (s.kind === 'oscine' && s.connected) clearTimeout(fallbackTimer);
+  }
+};
+function use(kind) {
+  if (source) source.stop();
+  lastFrame = null; router.frame({ playing: false });
+  $('src-oscine').setAttribute('aria-pressed', String(kind === 'oscine'));
+  $('src-demo').setAttribute('aria-pressed', String(kind === 'demo'));
+  source = kind === 'demo' ? demoSource(hooks) : oscineSource(hooks);
+}
+$('src-oscine').addEventListener('click', () => { wanted = 'oscine'; clearTimeout(fallbackTimer); use('oscine'); });
+$('src-demo').addEventListener('click', () => { wanted = 'demo'; clearTimeout(fallbackTimer); use('demo'); });
+const q = new URLSearchParams(location.search);
+if (q.get('source') === 'demo') { wanted = 'demo'; use('demo'); }
+else {
+  use('oscine');
+  // Nobody chose: if Oscine isn't there, don't sit dark.
+  if (q.get('source') !== 'oscine') fallbackTimer = setTimeout(() => { if (wanted === 'auto' && !source.connected) use('demo'); }, 2500);
+}
+if (q.get('ui') === '0') document.body.classList.add('quiet');
+
+// ---- drawer: patch ------------------------------------------------
+const routable = Object.keys(schema).filter((k) => !store.locked(k) && k !== 'p' && k !== 'q');
+const labelOf = (k) => (schema[k].group === schema[k].label ? schema[k].label : `${schema[k].group}: ${schema[k].label}`);
+const option = (value, text, selected) => { const o = document.createElement('option'); o.value = value; o.textContent = text; o.selected = selected; return o; };
+let levelEls = [];
+function editPatch(mutate) {
+  const p = router.serialize();
+  mutate(p);
+  router.setPatch(p);
+  forget(); savePatch(); drawPatch();
+}
+function drawPatch() {
+  const host = $('routes'); host.textContent = ''; levelEls = [];
+  const known = new Set(SOURCES);
+  for (const r of router.routes) known.add(r.source);
+  if (lastFrame && lastFrame.tracks) for (const t of Object.keys(lastFrame.tracks)) { known.add('track.' + t); known.add('note.' + t); known.add('pitch.' + t); }
+  router.routes.forEach((r, i) => {
+    const row = document.createElement('div'); row.className = 'route';
+    const src = document.createElement('select'); src.setAttribute('aria-label', 'source');
+    for (const s of known) src.appendChild(option(s, s, s === r.source));
+    src.addEventListener('change', () => editPatch((p) => { p.routes[i].source = src.value; }));
+    const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.textContent = '→';
+    const tgt = document.createElement('select'); tgt.setAttribute('aria-label', 'target');
+    for (const k of routable) tgt.appendChild(option(k, labelOf(k), k === r.target));
+    tgt.addEventListener('change', () => editPatch((p) => { p.routes[i].target = tgt.value; }));
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'x'; x.textContent = '×'; x.title = 'remove this route'; x.setAttribute('aria-label', 'remove this route');
+    x.addEventListener('click', () => editPatch((p) => { p.routes.splice(i, 1); }));
+    const amt = document.createElement('div'); amt.className = 'amt';
+    const range = document.createElement('input'); range.type = 'range'; range.min = '-1'; range.max = '1'; range.step = '0.01'; range.value = String(r.amount); range.title = 'amount: how far along the knob this route pushes'; range.setAttribute('aria-label', 'amount');
+    range.addEventListener('input', () => { router.routes[i].amount = parseFloat(range.value); savePatch(); });
+    const att = document.createElement('input'); att.type = 'number'; att.min = '0'; att.max = '5000'; att.step = '10'; att.value = String(r.attack); att.title = 'attack, ms'; att.setAttribute('aria-label', 'attack in milliseconds');
+    att.addEventListener('change', () => { router.routes[i].attack = Math.max(0, +att.value || 0); savePatch(); });
+    const rel = document.createElement('input'); rel.type = 'number'; rel.min = '0'; rel.max = '10000'; rel.step = '10'; rel.value = String(r.release); rel.title = 'release, ms'; rel.setAttribute('aria-label', 'release in milliseconds');
+    rel.addEventListener('change', () => { router.routes[i].release = Math.max(0, +rel.value || 0); savePatch(); });
+    amt.append(range, att, rel);
+    const lvl = document.createElement('div'); lvl.className = 'lvl'; const bar = document.createElement('b'); lvl.appendChild(bar); levelEls.push(bar);
+    row.append(src, arrow, tgt, x, amt, lvl);
+    host.appendChild(row);
+  });
+  // Built as nodes, not markup: a remembered patch is data and must not become HTML.
+  const fixedEl = $('fixed'); fixedEl.textContent = '';
+  const line = (strong, rest) => { const d = document.createElement('div'); const em = document.createElement('em'); em.textContent = strong; d.append(em, rest); fixedEl.appendChild(d); };
+  for (const s of router.syncs) line(labelOf(s.target), ` locked to ${s.bars} bar${s.bars === 1 ? '' : 's'}`);
+  for (const s of router.steps) line(s.targets.join(', '), ` steps through ${s.values.map((v) => '(' + v.join(',') + ')').join(' ')} on each ${s.on}`);
+  $('patch-note').textContent = `${router.routes.length} route${router.routes.length === 1 ? '' : 's'}`;
+  $('offset').textContent = `${router.offsetMs > 0 ? '+' : ''}${router.offsetMs} ms`;
+}
+$('add').addEventListener('click', () => editPatch((p) => { p.routes.push({ source: 'band.mid', target: 'sat', amount: 0.2, attack: 30, release: 300 }); }));
+$('reset').addEventListener('click', () => { router.setPatch(DEFAULT_PATCH); forget(); try { localStorage.removeItem(PATCH_KEY); } catch { /* ok */ } drawPatch(); });
+drawPatch();
+renderPanel(store, $('panel'));
+
+// ---- the loop: music -> knobs, and the drawer's meters ------------
+const meterBars = [...$('meters').querySelectorAll('i b')];
+let tracksSeen = '', lampUntil = 0;
+function frame() {
+  const now = Date.now();
+  router.tick(now);
+  // bloom: quarter-size copy of whatever the mark just drew
+  if (bloomNow > 0.01) { bloomCtx.clearRect(0, 0, 270, 270); bloomCtx.drawImage(canvas, 0, 0, 270, 270); }
+  if (!document.body.classList.contains('quiet')) {
+    const f = lastFrame;
+    for (let i = 0; i < 5; i++) meterBars[i].style.height = (f && f.playing ? (f.bands[i] || 0) * 100 : 0) + '%';
+    if (router.source('hit.kick') > 0) lampUntil = now + 90;
+    $('lamp').classList.toggle('hit', now < lampUntil);
+    $('pos').textContent = f && f.playing ? `${f.bpm} bpm  ${f.slot ?? ''}${f.marker ? ' ' + f.marker : ''}  ${f.bar}.${f.beat}` : (f ? 'stopped' : '–');
+    for (let i = 0; i < levelEls.length; i++) levelEls[i].style.width = Math.min(100, Math.abs(router.level(i)) * 100) + '%';
+    // new track names give the patch new sources to offer
+    const names = f && f.tracks ? Object.keys(f.tracks).join('|') : '';
+    if (names !== tracksSeen && !document.activeElement?.closest?.('.route')) { tracksSeen = names; drawPatch(); }
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---- keys ---------------------------------------------------------
+addEventListener('keydown', (e) => {
+  if (e.target.closest && e.target.closest('input, select, textarea')) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'h') document.body.classList.toggle('quiet');
+  else if (k === 'f') { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.().catch(() => {}); }
+  else if (k === 'r') rebuild();
+  else if (k === '[' || k === ']') { router.offsetMs += k === ']' ? 5 : -5; savePatch(); $('offset').textContent = `${router.offsetMs > 0 ? '+' : ''}${router.offsetMs} ms`; }
+});
+</script>
+</body>
+</html>
