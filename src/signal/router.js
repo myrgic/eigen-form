@@ -98,7 +98,7 @@ function quantize(def, v) {
   return Math.min(def.max, Math.max(def.min, v));
 }
 
-function createRouter({ store, apply, trigger, patch } = {}) {
+function createRouter({ store, apply, trigger, onNote, patch } = {}) {
   if (!store || typeof store.get !== 'function') throw new Error('router: needs a params store');
   if (typeof apply !== 'function') throw new Error('router: needs apply(key, value)');
 
@@ -198,6 +198,7 @@ function createRouter({ store, apply, trigger, patch } = {}) {
       if (due - n.at > 500) continue;
       const vel = clamp01(Number.isFinite(n.vel) ? n.vel : 1);
       lastNoteSeen = now;
+      if (onNote) onNote(n, now);                           // every note at its moment, patch or no patch (a signal texture's note rows)
       if (n.kind === 'drum') {
         const m = { track: n.track, lane: n.lane };
         bump('hit.' + n.lane, vel, m); bump('hit.any', vel, m);

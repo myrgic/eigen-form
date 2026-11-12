@@ -17,6 +17,7 @@
        defaultPatch,           // { routes, syncs, steps, triggers, offsetMs }
        patchKey,               // localStorage key for the edited patch
        trigger(action, strength, meta),   // optional: the sim's events
+       onNote(note, now),      // optional: every note at the moment it sounds
        onValue(key, value),    // optional: pushed when an effective value changes
        keys: { r: () => ... }, // optional: extra single-key actions
        keyHelp: 'R respawn',   // optional: text for them
@@ -31,7 +32,7 @@ import { oscineSource, demoSource } from './sources.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
-function mountInstrument({ store, defaultPatch, patchKey, trigger, onValue, keys = {}, keyHelp = '', routable } = {}) {
+function mountInstrument({ store, defaultPatch, patchKey, trigger, onNote, onValue, keys = {}, keyHelp = '', routable } = {}) {
   const schema = store.schema;
   const eff = {};                                         // values the router is holding a knob at
   const value = (k) => (k in eff ? eff[k] : store.get(k));
@@ -40,11 +41,11 @@ function mountInstrument({ store, defaultPatch, patchKey, trigger, onValue, keys
 
   const load = () => { try { const raw = patchKey && localStorage.getItem(patchKey); if (raw) return JSON.parse(raw); } catch { /* private window, blocked storage */ } return defaultPatch; };
   let router;
-  try { router = createRouter({ store, apply, trigger, patch: load() }); }
+  try { router = createRouter({ store, apply, trigger, onNote, patch: load() }); }
   catch (err) {
     // a remembered patch that no longer fits this schema: start over rather than refuse to open
     console.warn('[instrument] saved patch rejected, using the default:', err.message);
-    router = createRouter({ store, apply, trigger, patch: defaultPatch });
+    router = createRouter({ store, apply, trigger, onNote, patch: defaultPatch });
   }
   const save = () => { try { if (patchKey) localStorage.setItem(patchKey, JSON.stringify(router.serialize())); } catch { /* fine without */ } };
   const forget = () => { for (const k of Object.keys(eff)) if (!router.drives(k)) { delete eff[k]; push(k, store.get(k)); } };

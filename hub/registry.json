@@ -87,6 +87,26 @@
       }
     },
     {
+      "id": "vj_deck",
+      "title": "VJ Deck",
+      "description": "Six classic visual sims on the GPU, played by Oscine's signal through an AudioLink-layout texture: fluid, reaction-diffusion, video feedback, warped noise, a band-history tunnel and Chladni figures.",
+      "path": "../apps/vj_deck/index.html",
+      "kind": "sdk-page",
+      "provenance": {
+        "builtOn": "eigen-form@0.4.0 398d648"
+      },
+      "pwa": {
+        "installable": false
+      },
+      "sdk": {
+        "eigen-form": ">=0.2.0"
+      },
+      "display": {
+        "order": 5,
+        "accent": "#ffb347"
+      }
+    },
+    {
       "id": "ast_diffusion",
       "title": "AST Topological Convolution Kernel",
       "description": "A directed acyclic graph representing code, where clicking a node injects heat that a convolution kernel diffuses asymmetrically.",
