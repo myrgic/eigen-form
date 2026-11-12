@@ -26,7 +26,9 @@
      --origin <url>      default http://127.0.0.1:8471
      --ui                keep the drawer in the picture
      --gpu               ask for the real GPU instead of the software renderer
-   Prints one JSON line per picture: { sim, at, file, song: {...}, frames, error }.
+   Prints one JSON line per picture: { sim, at, file, reached, song: {...}, frames, renderer, error }.
+   `frames` is model steps since the page opened and `renderer` is the GPU that drew it: a software
+   renderer runs the heavy sims well below 60 steps a second, so its pictures are of a younger sim.
    ===================================================================== */
 
 import { createRequire } from 'node:module';
@@ -48,8 +50,11 @@ const sims = args.app ? [null] : (args.sim && args.sim !== true ? String(args.si
 const stops = String(args.at && args.at !== true ? args.at : 'A:2').split(',').map((s) => { const [sec, bar] = s.split(':'); return { sec, bar: Math.max(1, Number(bar) || 1) }; });
 const settle = Number(args.settle) || 0;
 
-const flags = ['--autoplay-policy=no-user-gesture-required', '--no-sandbox', '--ignore-gpu-blocklist', '--enable-webgl'];
+// --mute-audio silences the device, not the graph: the engine still plays and the tap still hears it,
+// so a shoot can run beside a window that is playing the same song out loud
+const flags = ['--autoplay-policy=no-user-gesture-required', '--mute-audio', '--no-sandbox', '--ignore-gpu-blocklist', '--enable-webgl'];
 if (!args.gpu) flags.push('--use-angle=swiftshader', '--enable-unsafe-swiftshader');
+else if (process.platform === 'darwin') flags.push('--use-angle=metal');
 const browser = await chromium.launch(args.chrome && args.chrome !== true ? { executablePath: String(args.chrome), args: flags } : { channel: 'chrome', args: flags });
 let failed = 0;
 try {
@@ -62,6 +67,7 @@ try {
     const q = new URLSearchParams({ song: String(args.song), from: stop.sec });
     if (sim) q.set('sim', sim); if (!args.ui) q.set('ui', '0');
     await page.goto(`${origin}${args.app && args.app !== true ? args.app : '/apps/vj_deck/index.html'}?${q}`);
+    const renderer = () => page.evaluate(() => { const g = document.createElement('canvas').getContext('webgl2'); if (!g) return 'no webgl2'; const x = g.getExtension('WEBGL_debug_renderer_info'); return x ? g.getParameter(x.UNMASKED_RENDERER_WEBGL) : 'webgl2'; });
     const pos = () => page.evaluate(() => { const d = window.__deck || {}, w = document.querySelector('.drawer .where'), said = w ? w.textContent : ''; return { song: d.song || null, frames: d.frames || 0, error: d.error || (/^could not start/.test(said) ? said : null) }; });
     // wait for the song to be playing at the asked bar (or past it), at most the length of 64 bars at 60 bpm
     let st = await pos(); const t0 = Date.now();
@@ -77,7 +83,7 @@ try {
     await page.screenshot({ path: file });
     const reached = !!(st.song && st.song.playing && st.song.bar >= stop.bar);
     if (!reached || st.error || errors.length) failed++;
-    console.log(JSON.stringify({ sim, at: `${stop.sec}:${stop.bar}`, file, reached, song: st.song, frames: st.frames, error: st.error || errors[0] || null }));
+    console.log(JSON.stringify({ sim, at: `${stop.sec}:${stop.bar}`, file, reached, song: st.song, frames: st.frames, renderer: await renderer(), error: st.error || errors[0] || null }));
     await page.close();
   }
 } finally { await browser.close(); }
