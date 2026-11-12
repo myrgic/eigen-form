@@ -3,47 +3,320 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>eigen-form</title>
-<meta name="description" content="Mathematical design primitives: every visual element a rigorously defined mathematical object.">
+<title>eigen-form: simulations and their sources</title>
+<meta name="description" content="A gallery of the eigen-form lab's simulations, each set beside the equations it implements and the original papers those equations come from.">
+<link rel="stylesheet" href="src/panel/tokens.css">
+<link rel="stylesheet" href="gallery/vendor/katex/katex.min.css">
 <style>
   :root { color-scheme: dark; }
   * { margin: 0; box-sizing: border-box; }
-  body {
-    min-height: 100vh;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 1.75rem; padding: 2rem 1.25rem;
-    background: #050505; color: #eeeeef;
-    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  }
-  canvas { width: min(70vw, 420px); height: auto; aspect-ratio: 1; }
-  h1 { font-size: 1.6rem; font-weight: 600; letter-spacing: 0.04em; }
-  p.tag { max-width: 34rem; text-align: center; line-height: 1.55; color: #a0a0a4; }
-  nav { display: flex; flex-wrap: wrap; gap: 1.25rem; justify-content: center; }
-  a { color: #b794ff; text-decoration: none; border-bottom: 1px solid rgba(183,148,255,0.35); padding-bottom: 1px; }
-  a:hover { color: #d0bfff; border-color: currentColor; }
-  footer { font-size: 0.8rem; color: #636367; margin-top: 0.5rem; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--sans); line-height: 1.55; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(183,148,255,.35); }
+  a:hover { border-color: currentColor; }
+  code, .mono { font-family: var(--mono); }
+
+  /* ---- hero: the original landing page, kept */
+  .hero { display: grid; grid-template-columns: minmax(180px, 300px) 1fr; gap: 2.5rem; align-items: center;
+          max-width: 1180px; margin: 0 auto; padding: 3rem 1.5rem 2rem; }
+  .hero canvas { width: 100%; height: auto; aspect-ratio: 1; }
+  .hero h1 { font-size: 1.9rem; font-weight: 600; letter-spacing: .04em; }
+  .hero p { color: var(--dim); max-width: 44rem; margin-top: .8rem; }
+  .hero nav { display: flex; flex-wrap: wrap; gap: 1.1rem; margin-top: 1.2rem; font-size: .95rem; }
+  .hero nav a.primary { color: var(--fg); border-color: var(--accent); }
+  @media (max-width: 720px) { .hero { grid-template-columns: 1fr; text-align: center; }
+    .hero canvas { width: min(60vw, 260px); margin: 0 auto; } .hero nav { justify-content: center; } .hero p { margin-inline: auto; } }
+
+  /* ---- section chrome */
+  section.band { max-width: 1180px; margin: 0 auto; padding: 1.5rem 1.5rem 3rem; }
+  .hd { font: 600 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--faint);
+        padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 1.1rem; display: flex; justify-content: space-between; gap: 1rem; }
+  .lede { color: var(--dim); max-width: 52rem; margin-bottom: 1.2rem; font-size: .95rem; }
+
+  /* ---- filters */
+  .filters { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: 1.3rem; align-items: center; }
+  .filters .lbl { font: 10px var(--mono); color: var(--faint); letter-spacing: .1em; text-transform: uppercase; margin-right: .2rem; }
+  .chip { font: 11.5px var(--mono); color: var(--dim); background: var(--panel); border: 1px solid var(--line);
+          border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+  .chip[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
+
+  /* ---- grid of simulation plates */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 1.1rem; }
+  .plate { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-3); overflow: hidden;
+           display: flex; flex-direction: column; cursor: pointer; text-align: left; color: inherit; font: inherit; padding: 0; }
+  .plate:hover, .plate:focus-visible { border-color: #44444a; outline: none; }
+  .plate .poster { aspect-ratio: 3 / 2; background: #000 center / cover no-repeat; position: relative; }
+  .plate .tier { position: absolute; top: 10px; left: 10px; }
+  .plate .body { padding: .9rem 1rem 1rem; display: flex; flex-direction: column; gap: .5rem; flex: 1; }
+  .plate h3 { font-size: 1.05rem; font-weight: 600; }
+  .plate .sub { color: var(--dim); font-size: .85rem; }
+  .plate .axes { font: 10.5px var(--mono); color: var(--faint); }
+  .plate .shelf { display: flex; gap: 6px; margin-top: auto; padding-top: .5rem; align-items: flex-end; }
+  .plate .shelf .pg { width: 34px; aspect-ratio: .77; border: 1px solid var(--line); border-radius: 2px; background: #111 center / cover; }
+  .plate .shelf .pg.cite { display: grid; place-items: center; font: 8px var(--mono); color: var(--faint); }
+  .plate .shelf .n { font: 10.5px var(--mono); color: var(--faint); margin-left: 4px; }
+
+  /* ---- badges */
+  .b { font: 600 9.5px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 4px 7px; border-radius: 3px;
+       border: 1px solid currentColor; background: rgba(5,5,5,.78); white-space: nowrap; }
+  .b.t-preregistered { color: var(--ok); } .b.t-executable-paper { color: var(--accent); }
+  .b.t-instrument { color: #7dd3fc; } .b.t-demo { color: var(--dim); } .b.t-unparseable { color: var(--alert); }
+  .b.f-exact, .b.f-discretized { color: var(--ok); } .b.f-approximation, .b.f-modified { color: var(--warn); }
+  .b.f-analog { color: var(--alert); }
+  .b.r-pd, .b.r-cc-by { color: var(--ok); } .b.r-free { color: #7dd3fc; } .b.r-closed, .b.r-book { color: var(--warn); }
+  .b.r-in-house { color: var(--accent); }
+
+  /* ---- detail view */
+  #detail { display: none; }
+  body.reading #detail { display: block; }
+  body.reading #index, body.reading #shelf { display: none; }
+  .back { font: 12px var(--mono); display: inline-block; margin-bottom: 1rem; }
+  .d-head { display: grid; grid-template-columns: 1.25fr 1fr; gap: 1.6rem; align-items: start; }
+  @media (max-width: 900px) { .d-head { grid-template-columns: 1fr; } }
+  .stage { aspect-ratio: 3 / 2; background: #000 center / contain no-repeat; border: 1px solid var(--line);
+           border-radius: var(--radius-3); position: relative; overflow: hidden; }
+  .stage iframe { width: 100%; height: 100%; border: 0; display: block; background: #000; }
+  .stage .run { position: absolute; inset: auto 12px 12px auto; font: 600 12px var(--mono); color: var(--fg);
+                background: rgba(5,5,5,.85); border: 1px solid var(--accent); border-radius: var(--radius-2); padding: 7px 12px; cursor: pointer; }
+  .d-meta h2 { font-size: 1.6rem; font-weight: 600; line-height: 1.25; }
+  .d-meta .subtitle { color: var(--dim); margin: .4rem 0 .9rem; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font: 12px var(--mono); margin: .8rem 0; }
+  .kv .k { color: var(--faint); } .kv .v { color: var(--fg); }
+  .claim { border-left: 2px solid var(--accent); padding: .2rem 0 .2rem .9rem; color: var(--dim); font-size: .92rem; margin: .8rem 0; }
+  .claim b { color: var(--fg); font-weight: 600; font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; display: block; margin-bottom: .3rem; }
+  .links { display: flex; flex-wrap: wrap; gap: 1rem; font-size: .9rem; margin-top: .6rem; }
+
+  .block { margin-top: 2.4rem; }
+  .eq { border: 1px solid var(--line); border-radius: var(--radius-3); background: var(--panel); padding: 1rem 1.1rem; margin-bottom: .8rem; }
+  .eq .top { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+  .eq .name { font-weight: 600; }
+  .eq .cls { font: 10.5px var(--mono); color: var(--faint); }
+  /* Display math can be wider than a phone. The scroller must be a block with
+     max-width:100% AND min-width:0 inside grid/flex parents, or its content
+     still widens the page even though the box itself clips. */
+  .eq { min-width: 0; }
+  .eq .math, article.essay .katex-display { display: block; max-width: 100%; min-width: 0;
+    overflow-x: auto; overflow-y: hidden; padding: .3rem 0; -webkit-overflow-scrolling: touch; }
+  .eq .math .katex-display { margin: 0; }
+  #detail, .block, article.essay, .d-head > * { min-width: 0; max-width: 100%; }
+  .eq .dev { font-size: .88rem; color: var(--dim); border-top: 1px dashed var(--line); padding-top: .6rem; margin-top: .4rem; }
+  .eq .foot { display: flex; flex-wrap: wrap; gap: .5rem 1.2rem; font: 11.5px var(--mono); color: var(--faint); margin-top: .6rem; align-items: center; }
+
+  .papers { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: .9rem; }
+  .paper { border: 1px solid var(--line); border-radius: var(--radius-3); background: var(--panel); overflow: hidden; display: flex; flex-direction: column; }
+  .paper .renders { display: flex; gap: 4px; padding: 10px 10px 0; background: #0f0f10; min-height: 120px; align-items: flex-end; }
+  .paper .renders img { width: calc(33.333% - 3px); aspect-ratio: .77; object-fit: cover; object-position: top; border: 1px solid #2a2a2e; background: #fff; }
+  .paper .renders img:first-child { width: 58%; }
+  .paper .card-cite { padding: 14px; background: #0f0f10; min-height: 120px; display: flex; flex-direction: column; justify-content: flex-end;
+                      font-family: Georgia, "Times New Roman", serif; color: #d8d8da; border-bottom: 1px solid var(--line); }
+  .paper .card-cite i { font-size: .95rem; line-height: 1.3; }
+  .paper .meta { padding: .75rem .9rem .9rem; display: flex; flex-direction: column; gap: .35rem; flex: 1; }
+  .paper .t { font-weight: 600; font-size: .92rem; line-height: 1.3; }
+  .paper .a { color: var(--dim); font-size: .82rem; }
+  .paper .v { color: var(--faint); font-size: .78rem; }
+  .paper .row { display: flex; gap: .8rem; flex-wrap: wrap; align-items: center; margin-top: auto; padding-top: .45rem; font: 11.5px var(--mono); }
+
+  article.essay { max-width: 46rem; font-size: 1.02rem; }
+  article.essay h1 { display: none; }
+  article.essay h2 { font-size: 1.2rem; margin: 2rem 0 .7rem; font-weight: 600; }
+  article.essay h3 { font-size: 1rem; margin: 1.4rem 0 .5rem; font-weight: 600; color: var(--fg); }
+  article.essay p, article.essay ul, article.essay ol { margin: .7rem 0; color: #d6d6d9; }
+  article.essay li { margin: .3rem 0 .3rem 1.2rem; }
+  /* bare URLs in Further reading are one unbreakable token: let them wrap */
+  article.essay a, article.essay li, article.essay p, .paper .v, .eq .dev { overflow-wrap: anywhere; }
+  article.essay code { font-size: .88em; background: #151517; padding: 1px 4px; border-radius: 3px; }
+  article.essay blockquote { border-left: 2px solid var(--line); padding-left: 1rem; color: var(--dim); margin: .8rem 0; }
+  .math-error { color: var(--alert); }
+  .none { color: var(--faint); font-style: italic; }
+
+  footer.site { max-width: 1180px; margin: 0 auto; padding: 2rem 1.5rem 3rem; color: var(--faint); font-size: .8rem; border-top: 1px solid var(--line); }
 </style>
 </head>
 <body>
+
+<header class="hero">
   <canvas data-myrgic-mark width="1080" height="1080" data-period="6000" data-decay="7000" data-parallax="0.35"></canvas>
-  <h1>eigen-form</h1>
-  <p class="tag">
-    Mathematical design primitives. Every visual element is a rigorously
-    defined mathematical object, parameterized at the level of its governing
-    equations. The mark above is a (2,&thinsp;3) torus knot: a wavefront
-    tracing its orbit against a fading substrate, its crossings emerging from
-    the drawing process itself.
+  <div>
+    <h1>eigen-form</h1>
+    <p>
+      Mathematical design primitives, and the lab that tests them. Every visual element is a
+      rigorously defined mathematical object, parameterized at the level of its governing
+      equations. The mark is a (2,&thinsp;3) torus knot, a wavefront tracing its orbit
+      against a fading substrate.
+    </p>
+    <p>
+      Below, every simulation in the lab sits beside the equations it implements and the
+      papers those equations come from. Each implementation links to the exact lines of code
+      it lives in, with a note on how faithfully the code follows the source.
+    </p>
+    <nav>
+      <a class="primary" href="hub/">open the lab</a>
+      <a href="#index">simulations</a>
+      <a href="#shelf">papers</a>
+      <a href="examples/configurator.html">configurator</a>
+      <a href="docs/api.md">api</a>
+      <a href="docs/construction.md">construction</a>
+      <a href="ROADMAP.md">roadmap</a>
+      <a href="https://github.com/myrgic/eigen-form">github</a>
+    </nav>
+  </div>
+</header>
+
+<section class="band" id="index">
+  <div class="hd"><span>simulations</span><span id="count"></span></div>
+  <p class="lede">
+    Tiers are computed from what each artifact actually contains, not from what its author claims.
+    A <b>demo</b> runs. An <b>instrument</b> declares its parameters and exposes a test port. An
+    <b>executable paper</b> adds a falsifiable claim. A <b>preregistered</b> study locked its
+    hypotheses before the first run.
   </p>
-  <nav>
-    <a href="examples/configurator.html">configurator</a>
-    <a href="examples/basic.html">basic example</a>
-    <a href="docs/api.md">api</a>
-    <a href="docs/construction.md">construction</a>
-    <a href="ROADMAP.md">roadmap</a>
-    <a href="hub/">lab</a>
-    <a href="https://github.com/myrgic/eigen-form">github</a>
-  </nav>
-  <footer>MIT &middot; Myrgic Labs</footer>
-  <script type="module" src="src/eigen-form.js"></script>
+  <div class="filters" id="filters"></div>
+  <div class="grid" id="grid"><p class="none">Loading&hellip;</p></div>
+</section>
+
+<section class="band" id="shelf">
+  <div class="hd"><span>the papers</span><span id="pcount"></span></div>
+  <p class="lede">
+    We host the full text only where that's legal: public-domain works (every US publication
+    from 1930 or earlier, plus US government works) and CC-BY papers. For others that are free
+    to read, we link the free copy. For paywalled papers and copyrighted books we give the full
+    citation, and the essay for each simulation says plainly that we worked without the full text.
+  </p>
+  <div class="papers" id="papers"></div>
+</section>
+
+<section class="band" id="detail"></section>
+
+<footer class="site">
+  MIT &middot; Myrgic Labs &middot; Generated from the cog equation and simulation registries.
+  Each equation is pinned to a commit and a hash of its code lines;
+  each literature source's DOI or ISBN was machine-resolved.
+</footer>
+
+<script>
+(async function () {
+  const $ = (s, r = document) => r.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const RIGHTS = { pd: 'public domain', 'cc-by': 'CC-BY', free: 'free to read', closed: 'paywalled', book: 'book', 'in-house': 'in-house' };
+  const FID = { exact: 'exact', discretized: 'discretized', approximation: 'approximation', modified: 'modified', analog: 'analog' };
+
+  let data;
+  try { data = await (await fetch('gallery/data.json')).json(); }
+  catch (e) { $('#grid').innerHTML = '<p class="none">Could not load gallery/data.json. Serve the repo root over HTTP.</p>'; return; }
+  const sims = data.simulations, papers = data.papers;
+  $('#count').textContent = sims.length + ' simulations · ' + sims.reduce((n, s) => n + s.equations.length, 0) + ' equation links';
+  $('#pcount').textContent = Object.keys(papers).length + ' sources · ' + Object.values(papers).filter((p) => p.pdf).length + ' full texts hosted';
+
+  function paperThumb(p) {
+    if (p && p.renders && p.renders.length) return '<span class="pg" style="background-image:url(' + esc(p.renders[0]) + ')" title="' + esc(p.title) + '"></span>';
+    return '<span class="pg cite" title="' + esc(p ? p.title : '') + '">' + esc(p ? String(p.year) : '?') + '</span>';
+  }
+
+  // ---- filters
+  const filt = { tier: null, family: null };
+  const uniq = (k) => [...new Set(sims.map((s) => s[k]))];
+  function chips(label, key, values) {
+    return '<span class="lbl">' + label + '</span>' + values.map((v) =>
+      '<button class="chip" data-k="' + key + '" data-v="' + esc(v) + '" aria-pressed="false">' + esc(v) + '</button>').join('');
+  }
+  $('#filters').innerHTML = chips('tier', 'tier', ['preregistered', 'executable-paper', 'instrument', 'demo'].filter((t) => uniq('tier').includes(t))) +
+    '<span style="width:1rem"></span>' + chips('family', 'family', uniq('family'));
+  $('#filters').addEventListener('click', (e) => {
+    const b = e.target.closest('.chip'); if (!b) return;
+    const k = b.dataset.k, v = b.dataset.v;
+    filt[k] = filt[k] === v ? null : v;
+    $('#filters').querySelectorAll('.chip[data-k="' + k + '"]').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.v === filt[k])));
+    renderGrid();
+  });
+
+  function renderGrid() {
+    const shown = sims.filter((s) => (!filt.tier || s.tier === filt.tier) && (!filt.family || s.family === filt.family));
+    $('#grid').innerHTML = shown.map((s) => {
+      const ps = s.papers.map((k) => papers[k]).filter(Boolean);
+      return '<button class="plate" data-id="' + s.id + '">' +
+        '<div class="poster" style="background-image:url(' + esc(s.poster) + ')"><span class="b tier t-' + s.tier + '">' + esc(s.tier) + '</span></div>' +
+        '<div class="body"><h3>' + esc(s.title) + '</h3>' +
+        (s.article && s.article.subtitle ? '<div class="sub">' + esc(s.article.subtitle) + '</div>' : '') +
+        '<div class="axes">' + esc(s.family) + ' · ' + esc(s.coupling) + ' · ' + esc(s.domain) + '</div>' +
+        '<div class="shelf">' + ps.slice(0, 6).map(paperThumb).join('') +
+        '<span class="n">' + s.equations.length + ' eq · ' + ps.length + ' src</span></div></div></button>';
+    }).join('') || '<p class="none">No simulations match.</p>';
+  }
+  $('#grid').addEventListener('click', (e) => { const p = e.target.closest('.plate'); if (p) location.hash = 'sim=' + p.dataset.id; });
+
+  function paperCard(key) {
+    const p = papers[key]; if (!p) return '';
+    const visual = p.renders && p.renders.length
+      ? '<div class="renders">' + p.renders.map((r, i) => '<img loading="lazy" src="' + esc(r) + '" alt="' + esc(p.title) + ', page ' + (i + 1) + '">').join('') + '</div>'
+      : '<div class="card-cite"><i>' + esc(p.title) + '</i><span style="font-size:.8rem;color:var(--faint);margin-top:.4rem">' + esc(p.authors) + ', ' + esc(p.year) + '</span></div>';
+    const links = [];
+    if (p.pdf) links.push('<a href="' + esc(p.pdf) + '">full text (PDF)</a>');
+    else if (p.link) links.push('<a href="' + esc(p.link) + '" rel="noopener">' + (p.rights === 'in-house' ? 'read' : 'free copy') + '</a>');
+    if (p.doi_url) links.push('<a href="' + esc(p.doi_url) + '" rel="noopener">doi</a>');
+    if (p.isbn) links.push('<span>ISBN ' + esc(p.isbn) + '</span>');
+    return '<div class="paper">' + visual + '<div class="meta"><div class="t">' + esc(p.title) + '</div>' +
+      '<div class="a">' + esc(p.authors) + ' (' + esc(p.year) + ')</div><div class="v">' + esc(p.venue) + '</div>' +
+      '<div class="row"><span class="b r-' + p.rights + '">' + esc(RIGHTS[p.rights] || p.rights) + '</span>' + links.join('') + '</div></div></div>';
+  }
+  $('#papers').innerHTML = Object.keys(papers)
+    .sort((a, b) => (papers[a].year || 0) - (papers[b].year || 0))
+    .map(paperCard).join('');
+
+  // ---- detail
+  function sandboxFor(kind) { return kind === 'frozen-golden' ? 'allow-scripts' : 'allow-scripts allow-same-origin'; }
+  function renderDetail(id) {
+    const s = sims.find((x) => x.id === id);
+    if (!s) { document.body.classList.remove('reading'); return; }
+    const a = s.article;
+    const eqs = s.equations.map((e) => {
+      const src = papers[e.source];
+      return '<div class="eq"><div class="top"><span class="name">' + esc(e.name) + '</span>' +
+        '<span class="b f-' + e.fidelity + '" title="how faithfully the code follows the source">' + esc(FID[e.fidelity] || e.fidelity) + '</span></div>' +
+        '<div class="cls">' + esc(e.cls) + (e.scheme ? ' · scheme: ' + esc(e.scheme) : '') + '</div>' +
+        '<div class="math">' + e.math + '</div>' +
+        (e.deviation ? '<div class="dev"><b>How the code departs.</b> ' + esc(e.deviation) + '</div>' : '') +
+        '<div class="foot"><a href="' + esc(e.code_url) + '" rel="noopener">' + esc(e.code_path) + ':' + e.code_lines[0] + '–' + e.code_lines[1] + '</a>' +
+        '<span>@' + esc(e.commit) + '</span>' +
+        (src ? '<span>source: ' + esc(src.authors.split(/[,&]/)[0].trim().split(' ').pop()) + ' ' + esc(src.year) + '</span>' : '') + '</div></div>';
+    }).join('');
+    $('#detail').innerHTML =
+      '<a class="back" href="#index">&larr; all simulations</a>' +
+      '<div class="d-head"><div class="stage" id="stage" style="background-image:url(' + esc(s.poster) + ')">' +
+      '<button class="run" id="run">&#9654; run live</button></div>' +
+      '<div class="d-meta"><h2>' + esc(a && a.title ? a.title : s.title) + '</h2>' +
+      (a && a.subtitle ? '<div class="subtitle">' + esc(a.subtitle) + '</div>' : '') +
+      '<span class="b t-' + s.tier + '">' + esc(s.tier) + '</span>' +
+      '<div class="kv"><span class="k">app</span><span class="v">' + esc(s.id) + '</span>' +
+      '<span class="k">family</span><span class="v">' + esc(s.family) + '</span>' +
+      '<span class="k">coupling</span><span class="v">' + esc(s.coupling) + '</span>' +
+      '<span class="k">domain</span><span class="v">' + esc(s.domain) + '</span>' +
+      '<span class="k">medium</span><span class="v">' + esc((s.medium || []).join(', ')) + '</span>' +
+      '<span class="k">state</span><span class="v">' + esc(s.state) + '</span>' +
+      '<span class="k">declared params</span><span class="v">' + (s.params || '—') + '</span></div>' +
+      (s.claim ? '<div class="claim"><b>the lab\'s claim</b>' + esc(s.claim) + '</div>' : '') +
+      '<div class="links"><a href="' + esc(s.hub) + '">open in the lab</a><a href="' + esc(s.app) + '" target="_blank" rel="noopener">open app directly &rarr;</a></div>' +
+      '</div></div>' +
+      '<div class="block"><div class="hd"><span>equations, and where they run</span><span>' + s.equations.length + '</span></div>' + (eqs || '<p class="none">No equations registered.</p>') + '</div>' +
+      '<div class="block"><div class="hd"><span>sources</span><span>' + s.papers.length + '</span></div><div class="papers">' + s.papers.map(paperCard).join('') + '</div></div>' +
+      '<div class="block"><div class="hd"><span>essay</span><span>' + (a ? a.words + ' words' : '') + '</span></div>' +
+      (a ? '<article class="essay">' + a.html + '</article>' : '<p class="none">Essay in preparation.</p>') + '</div>';
+    $('#run').addEventListener('click', () => {
+      const f = document.createElement('iframe');
+      f.src = s.app; f.title = s.title; f.sandbox = sandboxFor(s.kind);
+      const st = $('#stage'); st.innerHTML = ''; st.style.backgroundImage = 'none'; st.appendChild(f);
+    });
+    document.body.classList.add('reading');
+    window.scrollTo(0, 0);
+  }
+
+  function route() {
+    const m = /^#sim=([\w-]+)$/.exec(location.hash);
+    if (m) renderDetail(m[1]);
+    else document.body.classList.remove('reading');
+  }
+  window.addEventListener('hashchange', route);
+  renderGrid(); route();
+})();
+</script>
+<script type="module" src="src/eigen-form.js"></script>
 </body>
 </html>

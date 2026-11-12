@@ -3,85 +3,123 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Physarum Stigmergy Simulation</title>
+    <title>Slime-mould trails</title>
 <script type="application/cogdoc+yaml">
 id: paper-physarum-stigmergy
 type: paper
-title: "Physarum Stigmergy: sufficiency of a decaying shared trace for global coordination"
+title: "Slime-mould trails: a shared, fading trail is enough for dots to gather"
 description: >
-  8000 agents deposit into a diffusing, decaying pixel field and steer by three
-  samples each; global structure emerges with no direct communication. Executable
-  paper — parameters are sliders, and the deposit clamp is a reachable saturation
-  bound that flattens the gradient and stops coordination.
+  About 8000 dots (one per 30 grid cells) each lay scent on a grid that spreads
+  out and fades. Each dot sniffs three spots ahead and turns toward the strongest.
+  With no other contact between dots, they gather into one or a few trail
+  structures. This is the Jones (2010) Physarum model with changes, listed
+  under limitations. The world wraps around at the edges (a torus).
 sector: reference
 status: draft
 created: 2026-08-11
-updated: 2026-08-18
+updated: 2026-09-24
 salience: high
 authors:
   - chazmaniandinkle
 tags: [stigmergy, physarum, agent-coordination, decay, diffusion, eigen-form, executable-paper]
 claim: >
-  Deposit into a diffusing, decaying shared medium is sufficient for global
-  structure to emerge among agents that never communicate directly, hold no
-  model of each other, and read only three samples of the field per step.
+  Depositing into a shared grid that spreads and fades is enough to make agents
+  gather into trail structures, even though they never communicate directly,
+  hold no model of each other, and read only three samples of the grid per step.
+  Switching the fading trail off (keep-rate 0) or the turning off (turn angle 0)
+  removes the structure.
 method:
   - param: sa
-    label: sensor angle
+    label: sniff angle
     range: [10, 90]
     default: 45
     unit: degrees
-    meaning: angular offset of the left/right samples from heading
+    meaning: how far left and right of the heading the side samples are taken
   - param: ra
-    label: rotation angle
+    label: turn angle
     range: [10, 90]
     default: 45
     unit: degrees
-    meaning: turn applied per step when a flank sample wins
+    meaning: turn applied in one step when a side sample wins
   - param: decay
-    label: evaporation rate
+    label: scent kept per step
     range: [0.8, 0.999]
     default: 0.99
     meaning: >
-      per-frame multiplier on the field; trail half-life is
-      log(0.5)/log(decay) frames. This is the damping term.
+      per-step multiplier on the grid after the blur. Higher keeps scent longer
+      (it is a keep-rate, not an evaporation rate). Without other losses the
+      half-life would be log(0.5)/log(decay) steps; the 255 cap on deposit
+      removes more.
   - param: sensorDist
     default: 9
     fixed: true
-    meaning: lookahead distance, 9x the step size
+    meaning: how far ahead the samples are taken, 9 times the step length
+  - param: numParticles
+    default: 8000
+    fixed: true
+    meaning: >
+      one dot per 30 grid cells, so 8000 on the 600x400 grid of a 1500x800
+      window. Density no longer depends on window size.
 observables:
-  agents: 8000
-  field: Float32Array(width*height), 3x3 box blur then multiply by decay
-  read_cost: 3 samples per agent per frame, O(1) in field size
+  agents: "round(width*height/30), 8000 at the default grid"
+  field: "Float32Array(width*height); 3x3 mean filter with wrap-around, then multiply by decay"
+  boundary: "periodic in both directions (torus): position, sensing and the blur all wrap"
+  read_cost: "3 samples per agent per step; the blur pass is O(width*height) and dominates"
 findings:
   - >
-    The passive read is O(1) in field size: each agent samples three cells
-    regardless of grid dimensions, which is what makes a wide field affordable.
+    Each dot reads three grid cells per step whatever the grid size. The blur
+    over the whole grid still costs O(width*height) per step and dominates the
+    run time, so a wide grid is not cheap.
   - >
-    Motor logic is hysteresis. The incumbent heading is retained unless a flank
-    sample is strictly greater, so ties go to the incumbent — a displacement
-    ratio of exactly 1.0.
+    Turning rule, as coded: keep the heading only if the forward sample is
+    strictly greater than both side samples; if it is strictly less than both,
+    turn left or right at random; otherwise turn toward the larger side sample.
+    So when forward ties the larger side sample, the dot turns toward that side.
+    It keeps its heading on a tie only when all three samples are equal.
   - >
-    SATURATION IS REACHABLE AND DESTROYS COORDINATION. Equilibrium requires
-    H(1-decay) = N*deposit; at decay=0.99, N=8000, deposit=25 the field wants
-    ~20M units against a 255/cell clamp. Where cells pin at the clamp,
-    wF == wL == wR, every branch of the motor logic is false, and the field
-    stops steering. A field at its cap is flat, and a flat field carries no
-    gradient. Consequence for any budgeted attention layer: the budget needs a
-    lower bound (stay below saturation), not only an upper one.
+    The 255 cap truncates deposit and so caps contrast. At the defaults (600x400
+    grid, 3000 steps, seeds 1-3) about 97% of the deposit each step is cut off
+    by the cap, and 29-37% of dots have a capped cell straight ahead. It does not
+    flatten the field under the dots: 0% of dots saw three equal samples (seeds
+    1-3). An earlier version of this page said saturation "destroys
+    coordination"; that was not supported and is withdrawn.
+  - >
+    Wrap-around boundary (v1.2): with the old "wrap and turn back" edge rule,
+    8-38% of dots (uniform start, seeds 1-3, 3000 steps) and 74-75% in the
+    keep-rate-0 control sat within 1 cell of an edge. With the torus it is
+    0.3-0.8% and 0.6-0.8%, against 0.8% for dots spread evenly.
 limitations:
   - >
-    No robust normalization: render and sensing both read raw cell values
-    against a hard clamp. See app:welded_fields, which normalizes to the 99.5th
-    percentile and fixes mask coverage rather than level.
-  - The displacement ratio is implicit at 1.0 and not exposed as a parameter.
+    Modified Jones (2010). Implemented: sense-rotate-move-deposit, 3 samples,
+    SO=9, SA=RA=45 degrees, a 3x3 mean filter with decay, periodic boundary.
+    Not implemented: occupancy exclusion (one dot per cell) and depositing only
+    after a successful move, which Jones names as what prevents static
+    clustering; random update order. Deposit is 25 with a 255 cap, where Jones
+    uses 5 with no cap. As a result many dots stack on one cell and the usual
+    outcome is one contracted cluster, not the lacunar network in the paper.
+  - >
+    Structure is shown, not measured: the page has no clustering readout. Review
+    measurements (50% of dots in about 0.2-0.3% of the area at the defaults)
+    were made from outside the page.
+  - >
+    No robust normalisation: drawing and sensing read raw cell values against a
+    hard cap. See app:welded_fields, which normalises to the 99.5th percentile.
+  - >
+    One simulation step per animation frame, with no time step, so wall-clock
+    speed depends on the screen refresh rate. Per-step results do not.
 refs:
-  - uri: app:welded_fields
-    rel: corrected-by
+  - uri: https://doi.org/10.1162/artl.2010.16.2.16202
+    rel: implements-modified
     desc: >
-      Reallocates the image buffer inside reset (comment "unlike the original")
-      and floors dimensions with Math.max(64, ...); also supplies the metrology
-      this artifact lacks.
+      Jones, J. (2010). Characteristics of pattern formation and evolution in
+      approximations of Physarum transport networks. Artificial Life 16(2),
+      127-153. Source of the agent rule and parameters; see limitations for
+      what differs.
+  - uri: app:welded_fields
+    rel: related
+    desc: >
+      A descendant of this page that adds metrology (normalised masks, shape
+      counts). The imageData fix it annotates has since been applied here too.
   - uri: cog://rfc/058
     rel: demonstrates
     desc: >
@@ -110,22 +148,22 @@ refs:
 <body>
 
 <div id="sidebar">
-    <h2>Slime Mold Stigmergy</h2>
-    <p class="desc">Particles leave trails in a pixel grid. They sample the grid in front of them and steer toward the highest concentration. The grid continuously diffuses and decays.</p>
+    <h2>Slime-mould trails</h2>
+    <p class="desc">Each dot leaves scent on a grid. It sniffs three spots just ahead and turns toward the strongest. The scent spreads out and fades over time. The world wraps around: a dot that leaves one edge comes back at the opposite edge.</p>
     
     <div class="control-group">
-        <label>Sensor Angle (SA) <span id="val-sa">45°</span></label>
+        <label title="how far left and right each dot looks">Sniff angle <span id="val-sa">45°</span></label>
         <input type="range" id="ctrl-sa" min="10" max="90" step="1" value="45">
     </div>
     <div class="control-group">
-        <label>Rotation Angle (RA) <span id="val-ra">45°</span></label>
+        <label title="how sharply a dot turns">Turn angle <span id="val-ra">45°</span></label>
         <input type="range" id="ctrl-ra" min="10" max="90" step="1" value="45">
     </div>
     <div class="control-group">
-        <label>Evaporation Rate <span id="val-decay">0.99</span></label>
+        <label title="Scent kept per step (0.99 = fades slowly). A keep-rate: higher means slower fading.">Scent kept per step <span id="val-decay">0.99</span></label>
         <input type="range" id="ctrl-decay" min="0.8" max="0.999" step="0.001" value="0.99">
     </div>
-    <button id="btn-reset" style="padding:8px; background:#6ee7b7; border:none; cursor:pointer; font-weight:bold;">Reset Particles</button>
+    <button id="btn-reset" style="padding:8px; background:#6ee7b7; border:none; cursor:pointer; font-weight:bold;">Start over</button>
 </div>
 
 <div id="canvas-container">
@@ -148,7 +186,10 @@ refs:
     document.getElementById('ctrl-decay').addEventListener('input', e => { params.decay = parseFloat(e.target.value); document.getElementById('val-decay').textContent = e.target.value; });
 
     let particles = [];
-    const numParticles = 8000;
+    // Dot count scales with grid area so density does not depend on window size:
+    // 8000 dots on the 600x400 grid of a 1500x800 window (1 dot per 30 cells).
+    let numParticles = 8000;
+    const cellsPerParticle = 30;
 
     // `imageData` is reallocated HERE, with the grid — unlike the original, which
     // called createImageData once at top level immediately after the first
@@ -158,6 +199,9 @@ refs:
     // new dimensions while the image buffer kept the old ones. Dimensions are
     // floored at 64 so a zero-width parent cannot throw in the first place.
     let imageData;
+    // Spawn-disk radius: min(width, height)/4, so the disk always fits inside the grid
+    // (width/4 used to overflow vertically on wide windows).
+    const SPAWN_R = (w, h) => Math.min(w, h) / 4;
 
     function reset() {
         width = Math.max(64, Math.floor(canvas.parentElement.clientWidth / scale));
@@ -169,11 +213,13 @@ refs:
         nextGrid = new Float32Array(width * height);
         imageData = ctx.createImageData(width, height);
         
+        numParticles = Math.max(500, Math.round(width * height / cellsPerParticle));
         particles = [];
         const cx = width/2, cy = height/2;
+        const spawnR = SPAWN_R(width, height);
         for(let i=0; i<numParticles; i++) {
-            // Spawn in a circle
-            const r = Math.random() * (width/4);
+            // Spawn in a circle that fits inside the grid
+            const r = Math.random() * spawnR;
             const theta = Math.random() * Math.PI * 2;
             particles.push({
                 x: cx + r * Math.cos(theta),
@@ -193,10 +239,9 @@ refs:
                 let sum = 0;
                 for (let dy = -1; dy <= 1; dy++) {
                     for (let dx = -1; dx <= 1; dx++) {
-                        let nx = x + dx, ny = y + dy;
-                        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                            sum += grid[ny * width + nx];
-                        }
+                        // Periodic (torus): neighbours across an edge come from the opposite edge.
+                        const nx = (x + dx + width) % width, ny = (y + dy + height) % height;
+                        sum += grid[ny * width + nx];
                     }
                 }
                 nextGrid[y * width + x] = (sum / 9) * params.decay;
@@ -213,12 +258,12 @@ refs:
             // Sense
             const getVal = (angleOffset) => {
                 const a = p.angle + angleOffset;
-                const sx = Math.floor(p.x + Math.cos(a) * params.sensorDist);
-                const sy = Math.floor(p.y + Math.sin(a) * params.sensorDist);
-                if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
-                    return grid[sy * width + sx];
-                }
-                return 0;
+                // Periodic sensing: a sensor that reaches past an edge reads the opposite edge.
+                let sx = Math.floor(p.x + Math.cos(a) * params.sensorDist) % width;
+                let sy = Math.floor(p.y + Math.sin(a) * params.sensorDist) % height;
+                if (sx < 0) sx += width;
+                if (sy < 0) sy += height;
+                return grid[sy * width + sx];
             };
 
             const wF = getVal(0);
@@ -241,11 +286,13 @@ refs:
             p.x += Math.cos(p.angle) * params.stepSize;
             p.y += Math.sin(p.angle) * params.stepSize;
 
-            // Constrain
-            if (p.x < 0) { p.x = width-1; p.angle += Math.PI; }
-            if (p.x >= width) { p.x = 0; p.angle += Math.PI; }
-            if (p.y < 0) { p.y = height-1; p.angle += Math.PI; }
-            if (p.y >= height) { p.y = 0; p.angle += Math.PI; }
+            // Periodic boundary (torus): leave one edge, re-enter at the opposite edge with
+            // the same heading. (Before v1.2 the heading was also turned by pi, which sent the
+            // dot straight back across the edge and trapped it there.)
+            if (p.x < 0) p.x += width;
+            if (p.x >= width) p.x -= width;
+            if (p.y < 0) p.y += height;
+            if (p.y >= height) p.y -= height;
 
             // Deposit
             const idx = Math.floor(p.y) * width + Math.floor(p.x);

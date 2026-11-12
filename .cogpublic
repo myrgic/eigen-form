@@ -1,0 +1,65 @@
+# .cogpublic — Public release gate for myrgic/eigen-form
+# Defines what must never cross the boundary outward.
+#
+# ENFORCED BY: the org-level Public Release Gate workflow
+#   (myrgic/.github/.github/workflows/public-release-gate.yml), run in CI on
+#   every PR. Locally, from a checkout of myrgic/.github:
+#     python3 scripts/cogpublic-guard.py --root /path/to/eigen-form
+#
+# WHY THIS REPO HAS ONE: goldens/ holds captured output fixtures
+# (originals.txt, ops-v0.0.2.json) — the exact fixture class that leaked
+# private content in cogos #588, where a captured status board went public
+# for 3 days. Verified at adoption (2026-08-31): the current goldens contain
+# only sha256 content hashes and op counts, nothing personal. The gate keeps
+# future captured fixtures honest.
+
+version: 1
+
+content_guards:
+  - pattern: "/Users/slowbro"
+    description: "Hardcoded operator home directory (macOS)"
+  - pattern: "/home/slowbro"
+    description: "Hardcoded operator home directory (Linux)"
+  - pattern: "-Users-slowbro-"
+    description: "Claude project path encoding"
+  - pattern: "192404964621025291"
+    description: "Personal Discord user snowflake"
+  - pattern: 'sk-[a-zA-Z0-9]{20,}'
+    description: "OpenAI API key pattern"
+  - pattern: 'ghp_[a-zA-Z0-9]{20,}'
+    description: "GitHub personal access token"
+  - pattern: 'xoxb-[a-zA-Z0-9]+'
+    description: "Slack bot token"
+  - pattern: '@gmail\.com|@yahoo\.com|@hotmail\.com'
+    description: "Personal email address (git author emails exempt)"
+
+# DELIBERATELY NOT GUARDED, verified 2026-08-31 — recorded so the next person
+# does not "helpfully" add them:
+#
+#   "token" — the repo's design-system vocabulary (src/panel/tokens.css,
+#     docs/design-kit.md, hub/kit.html) uses "token" for CSS custom
+#     properties throughout. Guarding it would flag the public API surface.
+#
+#   Long-hex regex (a "leaked hash/key" catch-all) — goldens/originals.txt
+#     and goldens/ops-v0.0.2.json are BUILT from sha256 provenance hashes;
+#     that is their whole content and purpose. A hex guard would fire on
+#     every golden and get suppressed, taking real findings with it.
+#
+#   apps/commit_field/data/events.json contains real myrgic/cogos commit
+#     metadata (filenames, messages) — reviewed: it is public-repo commit
+#     data rendered by the visualization, not private capture.
+
+# Paths the scan skips. Vendored blobs and caches are not ours to sanitize,
+# and scanning them produces noise that trains people to ignore the gate.
+# apps/ast_diffusion/vendor holds a minified third-party d3 bundle.
+exclude:
+  - vendor/**
+  - "apps/*/vendor/**"
+  - node_modules/**
+  - dist/**
+  - .venv/**
+  - "*.onnx"
+  - "*.pt"
+  - "*.safetensors"
+  - package-lock.json
+  - uv.lock

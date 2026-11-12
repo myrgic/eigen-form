@@ -38,10 +38,17 @@ Models
               graph. Time and structure.
 
 The `random` row is the analytic expectation for ranking uniformly at
-random over N candidates, not a sampled run: MRR = H_N / N.
+random over N candidates, not a sampled run: a target ranked among N
+candidates has expected reciprocal rank H_N / N. It is averaged PER
+TARGET, like the models (a commit with k scored targets counts k times):
+MRR = sum(k * H_N / N) / sum(k). Extractor 1.0.0 averaged it per commit
+(n = scored commits) while the models were averaged per target, which
+made the baseline smaller than a like-for-like one and every ratio to it
+larger. The per-commit value is still reported as `mrr_per_commit`.
 
-Pre-registered expectation (written before the first run, see
-app.json's cogdoc `prereg` block): recency alone beats frequency, and
+Declared expectation (stated in the shipped page's cogdoc `prereg`
+block; it landed in the same commit as the first results, so it is not
+independently timestamped): recency alone beats frequency, and
 field does NOT beat recency by more than 0.02 MRR on this corpus. If
 field wins big, that is a surprise and should be treated as one.
 """
@@ -55,7 +62,7 @@ import subprocess
 import sys
 from collections import defaultdict
 
-EXTRACTOR_VERSION = "1.0.0"
+EXTRACTOR_VERSION = "1.1.0"
 
 # ---------------------------------------------------------------------
 # Model parameters. Declared here, copied into manifest.json, and read
@@ -237,6 +244,7 @@ def backtest(commits, params):
     unseen_touched = 0
     total_touched = 0
     candidate_sizes = []
+    target_counts = []
 
     for c in commits:
         idxs = c["idx"]
@@ -248,6 +256,7 @@ def backtest(commits, params):
             if target:
                 scored_commits += 1
                 candidate_sizes.append(len(field.seen))
+                target_counts.append(len(target))
                 scores = {
                     "frequency": field.score_frequency(c["t"]),
                     "recency": field.score_recency(c["t"]),
@@ -288,15 +297,25 @@ def backtest(commits, params):
             "hit50": a["hit50"] / n,
             "n": a["n"],
         }
-    # analytic random baseline: mean over scored commits of H_N / N
-    rr = 0.0
-    for N in candidate_sizes:
-        rr += harmonic(N) / N
+    # analytic random baseline, averaged PER TARGET like the models: a
+    # commit with k scored targets among N candidates contributes k times.
+    # MRR = sum(k * H_N / N) / sum(k). The per-commit mean (extractor
+    # 1.0.0's baseline) is kept as mrr_per_commit for the record.
+    rr = h10 = h50 = rr_c = 0.0
+    nt = 0
+    for N, k in zip(candidate_sizes, target_counts):
+        rr += k * harmonic(N) / N
+        h10 += k * min(10, N) / N
+        h50 += k * min(50, N) / N
+        rr_c += harmonic(N) / N
+        nt += k
+    nt1 = max(nt, 1)
     results["random"] = {
-        "mrr": rr / max(len(candidate_sizes), 1),
-        "hit10": sum(min(10, N) / N for N in candidate_sizes) / max(len(candidate_sizes), 1),
-        "hit50": sum(min(50, N) / N for N in candidate_sizes) / max(len(candidate_sizes), 1),
-        "n": len(candidate_sizes),
+        "mrr": rr / nt1,
+        "hit10": h10 / nt1,
+        "hit50": h50 / nt1,
+        "n": nt,
+        "mrr_per_commit": rr_c / max(len(candidate_sizes), 1),
         "analytic": True,
     }
     meta = {

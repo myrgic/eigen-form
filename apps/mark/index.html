@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Mark: eigen-form lab</title>
+<title>The Mark (the site's logo)</title>
 <!-- The SDK's canonical tokens + panel stylesheet (docs/params-panel-design.md,
      "One visual language" / "module principles"): this page no longer keeps
      its own hand-derived palette. Theme flows in entirely through the custom
@@ -81,7 +81,8 @@
     <div class="stage"><canvas id="mark" width="1080" height="1080"></canvas></div>
     <div class="meta">
       <div class="title">The Mark</div>
-      <div class="tagline">(2,3) torus knot, traced live against a fading substrate</div>
+      <div class="tagline" id="tagline">a knot-shaped loop, drawn live with a fading trail: the (2,3) trefoil</div>
+      <div class="tagline">(2, 3) gives the trefoil. If p and q share a factor you would get several loops, so the mark keeps the last pair that shares none. At each crossing the strand that is higher on the torus passes over.</div>
     </div>
   </div>
 
@@ -117,15 +118,19 @@ import { renderPanel } from '../../src/panel/render.js';
 // lightEnd:60) — the band is spectrum unless a viewer clamps it away
 // from that, never a menu of named brand presets.
 const schema = {
-  p:           { type: 'number', min: 1,      max: 7,      step: 1,   default: 2,    group: 'eigenmode',  label: 'p (angular)' },
-  q:           { type: 'number', min: 1,      max: 7,      step: 1,   default: 3,    group: 'eigenmode',  label: 'q (radial)' },
-  scale:       { type: 'number', min: 100,    max: 350,    step: 1,   unit: 'px',    default: 215,  group: 'orbit',      label: 'scale' },
-  period:      { type: 'number', min: 500,    max: 30000,  step: 100, unit: 'ms',    default: 3000, group: 'orbit',      label: 'period', scale: 'log' },
-  ballRadius:  { type: 'number', min: 2,      max: 60,     step: 1,   unit: 'px',    default: 18,   group: 'path',       label: 'ball radius' },
-  strokeWidth: { type: 'number', min: 1,      max: 100,    step: 1,   unit: 'px',    default: 36,   group: 'path',       label: 'thickness' },
-  decay:       { type: 'number', min: 500,    max: 60000,  step: 100, unit: 'ms',    default: 6000, group: 'path',       label: 'memory', scale: 'log' },
-  precession:  { type: 'number', min: -100000, max: 100000, step: 500, unit: 'ms',   default: 0,    group: 'precession', label: 'period' },
-  parallax:    { type: 'number', min: -2,     max: 4,      step: 0.1, default: 0,    group: 'hue parallax', label: 'detune' },
+  p:           { type: 'number', min: 1,      max: 7,      step: 1,   default: 2,    group: 'shape',      label: 'turns around (p)' },
+  q:           { type: 'number', min: 1,      max: 7,      step: 1,   default: 3,    group: 'shape',      label: 'turns through (q)' },
+  scale:       { type: 'number', min: 100,    max: 350,    step: 1,   unit: 'px',    default: 215,  group: 'size and time', label: 'size' },
+  period:      { type: 'number', min: 500,    max: 30000,  step: 100, unit: 'ms',    default: 3000, group: 'size and time', label: 'time per loop', scale: 'log' },
+  // ballRadius is not a knob here: this page always sets strokeWidth, and
+  // the engine only uses ballRadius for the default stroke width, so the
+  // slider did nothing visible (review). The engine option remains.
+  strokeWidth: { type: 'number', min: 1,      max: 100,    step: 1,   unit: 'px',    default: 36,   group: 'trail',      label: 'thickness' },
+  decay:       { type: 'number', min: 500,    max: 60000,  step: 100, unit: 'ms',    default: 6000, group: 'trail',      label: 'fade time', scale: 'log' },
+  precession:  { type: 'number', min: -100000, max: 100000, step: 500, unit: 'ms',   default: 0,    group: 'slow spin',  label: 'time per turn (0 = off)' },
+  // parallax >= 0: the hue period is period/(1 + parallax), so -1 is a
+  // division by zero and negative values reverse it; the engine clamps too.
+  parallax:    { type: 'number', min: 0,      max: 4,      step: 0.1, default: 0,    group: 'colour drift', label: 'colour drift' },
   hueStart:    { type: 'angle',  min: 0,      max: 360,    step: 1,   unit: 'deg',   default: 0,    group: 'hue', label: 'hue start' },
   hueEnd:      { type: 'angle',  min: 0,      max: 360,    step: 1,   unit: 'deg',   default: 360,  group: 'hue', label: 'hue end' },
   sat:         { type: 'number', min: 0,      max: 100,    step: 1,   unit: '%',     default: 70,   group: 'hue', label: 'saturation' },
@@ -134,6 +139,8 @@ const schema = {
 };
 
 const store = defineParams(schema);
+// The eigenmode actually handed to the mark: the last coprime (p,q).
+let knotP = Math.round(store.get('p')), knotQ = Math.round(store.get('q'));
 
 // store.values() keys line up 1:1 with createTrefoilMark's opts for
 // every param except the hue group, which the controller expects
@@ -154,6 +161,8 @@ function optsFromStore(overrides) {
   const values = store.values();
   const rest = { ...values };
   for (const k of HUE_KEYS) delete rest[k];
+  // The mark's eigenmode is the last coprime pair (see eigenmodeChanged).
+  rest.p = knotP; rest.q = knotQ;
   return { ...rest, gradient: bandFromStore(), ...overrides };
 }
 
@@ -164,9 +173,32 @@ let mark = createTrefoilMark(canvas, optsFromStore({ emergence: false }));
 // the controller through one subscription, no per-slider handlers. A
 // hue-group key folds through bandFromStore() into one `gradient` set;
 // every other key maps straight through to setParam.
+//
+// p and q are only a knot when gcd(p,q) = 1; a pair with a common factor
+// d closes after 1/d of a period and re-traces a (p/d, q/d) curve d times
+// (GH #35). The mark therefore only ever receives a coprime pair: a
+// non-coprime choice is held back and the tagline says why. The slider
+// yields fractional values between its declared integer steps, so p and
+// q are rounded to that step (step: 1) before they reach the mark.
+const tagline = document.getElementById('tagline');
+function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+function eigenmodeChanged() {
+  const p = Math.round(store.get('p')), q = Math.round(store.get('q')), d = gcd(p, q);
+  if (d !== 1) {
+    tagline.textContent = `(${p},${q}) share the factor ${d}: not a knot, so the mark stays at (${knotP},${knotQ})`;
+    return;
+  }
+  knotP = p; knotQ = q;
+  mark.setParam('p', p);
+  mark.setParam('q', q);
+  tagline.textContent = (p === 1 || q === 1)
+    ? `(${p},${q}): this is the unknot, a plain loop with no knotting`
+    : `(${p},${q}) torus knot, drawn live with a fading trail`;
+}
 store.subscribe((key, value) => {
   if (!mark || !mark.setParam) return;
   if (HUE_KEYS.includes(key)) mark.setParam('gradient', bandFromStore());
+  else if (key === 'p' || key === 'q') eigenmodeChanged();
   else mark.setParam(key, value);
 });
 

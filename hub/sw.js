@@ -10,7 +10,7 @@
 // app content even before an app's own SW has installed, and never
 // interferes with the plain-network fallback for the apps that carry no SW
 // of their own.
-const CACHE_NAME = 'eigen-form-lab-hub-shell-v1';
+const CACHE_NAME = 'eigen-form-lab-hub-shell-v2';  // v2: deep links + gallery link; bumped so installed shells drop the cached v1 index.html
 const SHELL_ASSETS = [
   './index.html',
   './manifest.webmanifest',

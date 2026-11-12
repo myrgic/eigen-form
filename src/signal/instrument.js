@@ -24,7 +24,7 @@
      });
      ?song=<url to an .oscine.json>   adds a third source to ANY app mounted here: Oscine's engine in this
                              page, playing that song's whole sequence on loop (src/signal/embedded.js;
-                             &oscine=<base url>, default /oscine; &from=<section> starts there).
+                             &oscine=<base url>; default /oscine on this machine, Oscine's public site anywhere else; &from=<section> starts there).
                              Space plays / pauses, comma and full stop step back / forward a section.
      inst.value(key)           // the EFFECTIVE value: knob + modulation
      inst.onFrame((now, frame) => { ... })   // called once per animation frame, after the router ticked
@@ -78,10 +78,15 @@ function mountInstrument({ store, defaultPatch, patchKey, trigger, onNote, onVal
 
   // ---- sources -------------------------------------------------------
   const q = new URLSearchParams(location.search);
+  // On this machine Oscine is served beside the page and its sidecar may be listening. On the open web
+  // neither is true: the engine comes from Oscine's public site, and the page does not go knocking on the
+  // visitor's localhost unless asked to (?source=oscine).
+  const local = /^(localhost|127\.|\[::1\]|.*\.local$)/.test(location.hostname) || location.protocol === 'file:';
+  const OSCINE_PUBLIC = 'https://chazmaniandinkle.github.io/oscine';
   const makers = { oscine: () => oscineSource(hooks), demo: () => demoSource(hooks) };
   const labels = [['oscine', 'Oscine'], ['demo', 'Built-in loop']];
   if (q.get('song')) {                                    // one tab that makes the sound and the picture
-    makers.song = () => embeddedOscineSource({ base: q.get('oscine') || '/oscine', songUrl: q.get('song'), from: q.get('from'), ...hooks });
+    makers.song = () => embeddedOscineSource({ base: q.get('oscine') || (local ? '/oscine' : OSCINE_PUBLIC), songUrl: q.get('song'), from: q.get('from'), ...hooks });
     labels.unshift(['song', 'Song']);
   }
   for (const [id, label] of labels) { const b = el('button', null, label); b.type = 'button'; b.dataset.src = id; b.setAttribute('aria-pressed', 'false'); $('.src').appendChild(b); }
@@ -108,6 +113,7 @@ function mountInstrument({ store, defaultPatch, patchKey, trigger, onNote, onVal
   for (const b of drawer.querySelectorAll('[data-src]')) b.addEventListener('click', () => { wanted = b.dataset.src; clearTimeout(fallbackTimer); use(wanted); });
   const asked = q.get('source') || (q.get('song') ? 'song' : null);
   if (asked && makers[asked] && asked !== 'oscine') { wanted = asked; use(asked); }
+  else if (!asked && !local) { wanted = 'demo'; use('demo'); }
   else {
     use('oscine');
     // Nobody chose: if Oscine isn't there, don't sit dark.

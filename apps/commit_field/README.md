@@ -22,31 +22,41 @@ built only from commits strictly before *t*.
 | `field` | yes | yes (one-hop co-change diffusion) |
 
 `random` is the analytic expectation of ranking uniformly at random over
-N candidates (H_N / N), not a sampled run.
+N candidates (H_N / N per target), not a sampled run. It is averaged per
+target, like the models: sum(k * H_N / N) / sum(k) over scored commits
+with k targets. (Extractor 1.0.0 averaged it per commit, which made it
+smaller and every ratio to it larger.)
 
 ## Result on myrgic/cogos
 
 ```
-random     MRR=0.0075
-frequency  MRR=0.0758
-recency    MRR=0.1029   <- best
-field      MRR=0.1024
+random     MRR=0.0082   (per target; 0.0075 per commit)
+frequency  MRR=0.0758   9.2x random
+recency    MRR=0.1029   12.5x random   <- best
+field      MRR=0.1024   12.4x random
 ```
 
-Diffusion adds a parameter and no predictive power. Recency alone is the
-whole signal. All three beat random by 10-14x, so the corpus *is*
-strongly local — that locality is simply already captured by decay.
+Diffusion adds no next-file prediction over recency: field - recency =
+-0.0005 MRR, paired bootstrap 95% CI [-0.0021, +0.0012] over the 627
+scored commits, well inside the declared 0.02 margin. Recency beats
+frequency (+0.027, CI [+0.020, +0.034]).
 
-This was pre-registered (see the `prereg` block in the page's cogdoc
-frontmatter) before the first run, precisely so the null result couldn't
-be quietly tuned away.
+The third declared statement, "all three > 10x random", fails for
+frequency (9.2x) on the like-for-like baseline, and the page says so.
+The ratio grows with the number of candidate files and moves with the
+bulk cutoff, so it is not comparable across corpora.
+
+The expectations are declared in the `prereg` block of the page's cogdoc
+frontmatter. They landed in the same commit as the first results, so
+they are not independently timestamped.
 
 ## The verdict badge
 
 `tools/extract.py` produces `data/results.json`: the pinned reference
 scores. The page re-implements the same models in JavaScript, re-runs the
 backtest in the browser, and reconciles its measured numbers against that
-file. The badge is that reconciliation, not a self-report.
+file. The badge shows only that the two implementations agree; the
+declared predictions are evaluated and listed separately under it.
 
 The JS is a deliberate port rather than a shared bundle — a shared
 implementation could only ever agree with itself. The port has already

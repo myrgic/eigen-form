@@ -3,7 +3,73 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>smoke rings — topographical</title>
+<title>Smoke rings</title>
+<script type="application/cogdoc+yaml">
+id: app-smoke-rings
+type: artifact
+title: "Smoke rings: particles orbit a wandering centre, drawn as contour lines"
+description: >
+  An art piece. About 190 invisible particles orbit a centre that wanders
+  slowly. Each particle leaves density on a grid; the grid spreads and fades,
+  and the page draws seven contour lines of it, like a map of a hill. It is
+  not a fluid simulation and there are no real smoke rings (vortex rings).
+sector: art
+status: active
+created: 2026-08-11
+updated: 2026-09-24
+authors: [chaz, cog]
+tags: [art, contour, marching-squares, orbit, density]
+claim: >
+  Damped orbits in a softened-gravity well around a wandering centre, drawn
+  as the contours of their density. This is an art piece, not physics. The
+  density picture no longer depends on the display refresh rate.
+method:
+  - name: MU
+    label: pull strength
+    range: [0.04, 1.32]
+    default: 0.45
+    meaning: >
+      Strength of the centre's pull. The force is softened (Plummer)
+      gravity, accel = -MU * r / (r^2 + 0.05)^1.5, not a spring. It has
+      little visible effect at the default.
+  - name: ASIG
+    label: centre wander
+    range: [0, 0.34]
+    default: 0.13
+    meaning: >
+      Noise strength of the centre's wander. Only the centre follows an
+      Ornstein-Uhlenbeck process (pull-back rate 0.7 per second). Its noise
+      is uniform, not Gaussian.
+  - name: DAMP
+    value: 0.085
+    fixed: true
+    meaning: >
+      Velocity damping on the particles. Weak: particles are recycled after
+      9 to 22 seconds. The central hump of the density comes from the
+      centre's wander, not from damping (setting DAMP to 0 gives the same picture).
+  - name: field
+    value: "132 x 132 grid clipped to the unit disk; per 1/60 s tick: two diffusion passes (0.19) then decay x0.992"
+    fixed: true
+    meaning: >
+      The field relaxes on a fixed 1/60 s clock (an accumulator), so its
+      memory is about 2 seconds at any refresh rate.
+observables:
+  harness: "window.TOPO: step(dt,n), stat() -> {max, mean, spike}, anchor(), tracers(), reset()"
+findings:
+  - >
+    Mean density after 12 simulated seconds agrees within about 10 percent
+    at 30, 60 and 144 frames per second (3 seeds; the rest is sampling noise). Before 2026-09-24 the field
+    relaxed once per frame and the mean differed about 4.7 times between
+    30 and 144 frames per second.
+  - >
+    The density lags the wandering centre it follows: its centroid best
+    matches where the centre was about 1.5 seconds earlier (measured at 60
+    frames per second in the 2026-09-23 review, 3 seeds).
+limitations:
+  - "Art piece: no fluid, no vortex rings, no pressure."
+  - "The contour levels are drawn relative to a slowly tracked maximum, so the picture shows shape, not absolute density."
+refs: []
+</script>
 <style>
   html,body{margin:0;padding:0;background:#0B0605;overflow:hidden;height:100%}
   #f{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
@@ -28,13 +94,13 @@
 </head>
 <body>
 <canvas id="f"></canvas>
-<div class="plate"><b>SMOKE RINGS</b><br>settling toward the center &mdash; drawn as the field&rsquo;s own contours</div>
+<div class="plate"><b>SMOKE RINGS</b><br>particles orbit a wandering centre, drawn as contour lines</div>
 <div class="rack" id="rack">
-  <div class="knob k-set"><label for="set">settle</label>
-    <input id="set" type="range" min="0" max="1" step="0.005" value="0.32" aria-label="anchor mass"></div>
-  <div class="knob k-wan"><label for="wan">wander</label>
-    <input id="wan" type="range" min="0" max="1" step="0.005" value="0.38" aria-label="center wander"></div>
-  <button id="reset" type="button" title="clear the field and re-seed; keeps your slider settings">reset</button>
+  <div class="knob k-set"><label for="set">pull strength</label>
+    <input id="set" type="range" min="0" max="1" step="0.005" value="0.32" aria-label="pull strength of the centre"></div>
+  <div class="knob k-wan"><label for="wan">centre wander</label>
+    <input id="wan" type="range" min="0" max="1" step="0.005" value="0.38" aria-label="centre wander"></div>
+  <button id="reset" type="button" title="clears the picture and restarts; keeps your settings">start over</button>
 </div>
 <script>
 (function(){
@@ -71,25 +137,28 @@
     out[0]=a[0]+(b[0]-a[0])*f;out[1]=a[1]+(b[1]-a[1])*f;out[2]=a[2]+(b[2]-a[2])*f;}
 
   // ---- knobs ----
-  // The center is a MASS, not a spring: a softened gravitational anchor.
-  // accel = -MU * pos / (r^2 + EPS2)^1.5. Orbits dephase with size (Kepler),
-  // so the population never phase-locks into the harmonic sputter — but they
-  // still (nearly) close, so the rings survive. EPS2 is the anchor's soft core.
+  // The center is a MASS, not a spring: a softened (Plummer) gravitational anchor.
+  // accel = -MU * pos / (r^2 + EPS2)^1.5. Orbital period grows with size, so the
+  // population does not phase-lock. Orbits are not closed: the anchor moves and
+  // the jitter kicks them. EPS2 is the anchor's soft core.
   var MU=0.34, EPS2=0.05, JITTER=0.012;
-  // THE DYAD: the anchor is the DRIVEN component -- it wanders (OU) off center and is
+  // THE DYAD: the anchor is the DRIVEN component -- it wanders (Ornstein-Uhlenbeck, uniform
+  // noise not Gaussian; this is the only OU process in the file) off center and is
   // pulled back "at intervals"; the orbiting tracers are the LISTENER, tracking the moving
   // well a beat late. ax,ay = anchor position; THETA = pull-back rate; ASIG = wander strength.
   var ax=0, ay=0, THETA=0.7, ASIG=0.05;
   // pointer becomes the DRIVER: hover = gentle lean, hold = firm grab of the anchor
   var px=0, py=0, pInside=false, pDown=false, STR_HOVER=0.6, STR_GRAB=4.4;
   var setEl=document.getElementById('set'),wanEl=document.getElementById('wan');
-  function readSet(){MU=0.04+parseFloat(setEl.value)*1.28;}       // near-zero anchor -> tight vortex
+  function readSet(){MU=0.04+parseFloat(setEl.value)*1.28;}       // pull strength MU of the anchor
   function readWan(){ASIG=parseFloat(wanEl.value)*0.34;}           // 0 = still center -> wild roaming
   setEl.addEventListener('input',readSet);wanEl.addEventListener('input',readWan);readSet();readWan();
 
-  // ---- tracers: Ornstein-Uhlenbeck in a harmonic well ----
-  // v += (-K*pos - DAMP*v)dt + noise ; pos += v dt.  Tangential velocity => orbits;
-  // damping slowly spirals them in; noise wanders. Closure is a completed orbit.
+  // ---- tracers: damped orbits in the softened-gravity well of the moving anchor ----
+  // v += (-g(r)*(pos-anchor) - DAMP*v)dt + uniform noise ; pos += v dt.
+  // Tangential start velocity => orbits. DAMP is weak (tracers are recycled after
+  // 9-22 s, before it matters); the central hump of the density comes from the
+  // anchor's wander, not from damping (DAMP=0 gives the same picture).
   var DAMP=0.085, NT=190, tr=[];
   function rnd(a,b){return a+Math.random()*(b-a);}
   function gmag(r2){var s=r2+EPS2;return MU/(s*Math.sqrt(s));}   // |accel|/r at radius^2=r2
@@ -138,7 +207,11 @@
   }
 
   // ---- field relaxation: diffuse + decay (a small relaxing density) ----
-  var DIFF=0.19, DEC=0.992, curMax=1;
+  // relax() is one fixed tick of RELAX_DT = 1/60 s. relaxFor(dt) runs it on a
+  // fixed-dt accumulator, so the field's memory is in seconds, not frames: the
+  // same picture at 30, 60 or 144 Hz (before this, relax ran once per frame while
+  // deposits scaled with dt, and mean density differed 4.7x between 30 and 144 Hz).
+  var DIFF=0.19, DEC=0.992, curMax=1, RELAX_DT=1/60, relaxAcc=0;
   function diffuseOnce(){   // one smoothing sub-pass, no decay
     for(var j=1;j<G-1;j++)for(var i=1;i<G-1;i++){
       var idx=j*G+i;if(!MASK[idx]){Dt[idx]=0;continue;}
@@ -151,6 +224,10 @@
     var m=0;
     for(var e=0;e<G*G;e++){ if(!MASK[e]){D[e]=0;continue;} var v=D[e]*DEC;D[e]=v;if(v>m)m=v; }
     curMax=m;
+  }
+  function relaxFor(dt){
+    relaxAcc+=dt;
+    while(relaxAcc>=RELAX_DT-1e-9){relax();relaxAcc-=RELAX_DT;}
   }
 
   // ---- marching squares: build the iso-contour ONCE per level into a Path2D,
@@ -235,9 +312,9 @@
 
   // reset: clear field + re-seed tracers + recenter anchor; DOES NOT touch the sliders
   function reset(){
-    D.fill(0);Dt.fill(0);refMax=1;ax=0;ay=0;
+    D.fill(0);Dt.fill(0);refMax=1;ax=0;ay=0;relaxAcc=0;
     tr.length=0;for(var s=0;s<NT;s++)tr.push(newTracer());
-    if(reduced){for(var w=0;w<400;w++){stepTracers(1/30);if(w%2)relax();}render();}
+    if(reduced){for(var w=0;w<400;w++){stepTracers(1/30);relaxFor(1/30);}render();}
   }
   document.getElementById('reset').addEventListener('click',reset);
   addEventListener('keydown',function(e){if((e.key==='r'||e.key==='R')&&!e.metaKey&&!e.ctrlKey)reset();});
@@ -245,16 +322,16 @@
   var last=null;
   function frame(ts){
     if(last===null)last=ts;var dt=Math.min((ts-last)/1000,0.05);last=ts;
-    stepTracers(dt);relax();render();
+    stepTracers(dt);relaxFor(dt);render();
     if(!reduced)requestAnimationFrame(frame);
   }
   if(reduced){
     document.getElementById('rack').style.display='none';
-    for(var w=0;w<400;w++){stepTracers(1/30);if(w%2)relax();}
+    for(var w=0;w<400;w++){stepTracers(1/30);relaxFor(1/30);}
     render();
   }else requestAnimationFrame(frame);
 
-  window.TOPO={step:function(dt,n){n=n||1;for(var q=0;q<n;q++){stepTracers(dt);relax();}},
+  window.TOPO={step:function(dt,n){n=n||1;for(var q=0;q<n;q++){stepTracers(dt);relaxFor(dt);}},
     render:render,max:fieldMax,tracers:function(){return tr.length;},
     anchor:function(){return {ax:ax,ay:ay,r:Math.sqrt(ax*ax+ay*ay)};},reset:reset,
     stat:function(){var s=0,m=0,c=0;for(var e=0;e<G*G;e++){if(!MASK[e])continue;var v=D[e];s+=v;if(v>m)m=v;c++;}

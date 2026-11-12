@@ -267,6 +267,7 @@ function deriveRegistry(entries) {
         pwa: { installable: !!(m.pwa && m.pwa.installable) }
       };
       if (m.kind === 'sdk-page' && m.sdk) entry.sdk = m.sdk;
+      if (m.vetted === false) entry.vetted = false;   /* unvetted shelf label */
       if (m.display && typeof m.display === 'object') {
         const d = {};
         if ('order' in m.display) d.order = m.display.order;

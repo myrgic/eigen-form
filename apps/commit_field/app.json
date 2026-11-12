@@ -2,14 +2,14 @@
   "id": "commit_field",
   "title": "Commit Field",
   "description": "A causal backtest: three stigmergic heat models replayed over real git history and scored on whether they predict the files each next commit actually touched.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "kind": "instrument-view",
   "entry": "index.html",
   "cogdoc": {
     "type": "paper",
     "id": "paper-commit-field",
     "embedded": "script[type=\"application/cogdoc+yaml\"]",
-    "claim": "Diffusion across a co-change graph does not improve next-touch prediction over exponentially decayed recency alone on this corpus; both beat raw frequency, and all three beat random by more than an order of magnitude.",
+    "claim": "On this corpus, diffusing co-change heat adds no next-file prediction over recency (field - recency = -0.0005 MRR, 95% CI [-0.0021, +0.0012]); recency beats frequency. Against a like-for-like random baseline frequency is 9.2x, so the declared 'all three > 10x random' fails for frequency.",
     "port": "window.__sim",
     "verify": ".cog/bin/tools/cogdoc_verify.py"
   },
@@ -21,8 +21,29 @@
     "generator": "tools/extract.py",
     "regenerate": "python3 tools/extract.py --repo <path> --label <name>"
   },
-  "sdk": { "eigen-form": ">=0.2.0" },
-  "capabilities": { "emits": [], "accepts": [] },
-  "pwa": { "installable": false },
-  "display": { "order": 2, "accent": "#ff7a4d" }
+  "sdk": {
+    "eigen-form": ">=0.2.0"
+  },
+  "capabilities": {
+    "emits": [],
+    "accepts": []
+  },
+  "pwa": {
+    "installable": false
+  },
+  "display": {
+    "order": 2,
+    "accent": "#ff7a4d"
+  },
+  "changelog": [
+    {
+      "version": "1.1.0",
+      "date": "2026-09-24",
+      "changes": [
+        "Random baseline averaged per target like the models (sum k*H_N/N / sum k), in both extract.py (1.1.0) and the in-browser port; results.json/manifest.json regenerated from the pinned cogos commit 6a8ad3857e (events.json byte-identical). random MRR 0.00755 -> 0.00824; ratios frequency 10.04x -> 9.19x, recency 13.6x -> 12.5x, field 13.6x -> 12.4x. Prediction 3 now shows failed for frequency; reconciliation still delta 0 on all four rows.",
+        "Claim adds the paired bootstrap CI for field - recency ([-0.0021, +0.0012], 2000 resamples of 627 commits). 'Pre-registered before the first run' -> 'declared in the shipped page; not independently timestamped'. Badge text says only that the two ports agree.",
+        "Limitation 4 corrected (renames split a file's history; they are not followed). Speed knob relabelled (it is changes per frame, not per second). UI wording per wording.md 3.7."
+      ]
+    }
+  ]
 }

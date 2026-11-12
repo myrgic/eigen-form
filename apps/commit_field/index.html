@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Commit Field — does repository heat predict the next commit?</title>
+<title>Commit Field: can recent changes predict the next one?</title>
 <script type="application/cogdoc+yaml">
 id: paper-commit-field
 type: paper
@@ -12,26 +12,30 @@ description: >
   Three field models are replayed strictly causally over a real commit
   log and scored on how highly they rank the files each next commit
   actually touched. The page re-runs the models in the browser and
-  reconciles its measured scores against a pinned reference produced by
-  tools/extract.py; the verdict badge is that reconciliation, not a
-  self-report.
+  checks its scores against a saved reference produced by
+  tools/extract.py. The green badge means only that the two
+  implementations agree; whether each prediction passed is listed
+  separately under it.
 sector: research
 status: active
 created: 2026-08-21
-updated: 2026-08-21
+updated: 2026-09-24
 salience: 0.7
 authors: [cog, chaz]
 tags: [stigmergy, git, prediction, backtest, second-order-observability]
 claim: >
-  Diffusion across a co-change graph does NOT improve next-touch
-  prediction over exponentially decayed recency alone on this corpus.
-  Both beat raw touch frequency, and all three beat random by more than
-  an order of magnitude — so the corpus does carry strong locality
-  signal, it is simply already captured by recency. The pre-registered
-  expectation (recency > frequency; field - recency <= 0.02 MRR) is
-  declared in `prereg` below and was written before the first run.
+  On this corpus, diffusing co-change heat adds no next-file prediction
+  over recency: field - recency = -0.0005 MRR, paired bootstrap 95% CI
+  [-0.0021, +0.0012] (2000 resamples of the 627 scored commits), well
+  inside the declared 0.02 margin. Recency beats frequency (+0.027 MRR,
+  CI [+0.020, +0.034]). Against a like-for-like random baseline (averaged
+  per target, like the models) the ratios are frequency 9.2x, recency
+  12.5x and field 12.4x, so the declared "all three > 10x random" fails
+  for frequency. The expectations are declared in `prereg` below, in the
+  shipped page; they landed in the same commit as the first results, so
+  they are not independently timestamped.
 prereg:
-  registered: 2026-08-21
+  declared: "2026-08-21, in the shipped page; not independently timestamped"
   statements:
     - "recency MRR > frequency MRR"
     - "field MRR - recency MRR <= 0.02 (field does not meaningfully beat recency)"
@@ -79,19 +83,19 @@ observables:
     calls:
       - "__sim.reference() -> the pinned scores from data/results.json"
       - "__sim.measured() -> the scores this page computed in-browser"
-      - "__sim.reconcile() -> {ok, deltas} — the verdict badge's source"
+      - "__sim.reconcile() -> {ok, deltas}: whether the browser port matches the saved reference (the badge's source)"
       - "__sim.manifest() -> dataset provenance and content hashes"
     cost: "reconcile() replays the full backtest; ~1-3s on this corpus"
 findings:
-  - "field (0.1024 MRR) does not beat recency (0.1029 MRR): diffusion adds a parameter and no predictive power on this corpus."
+  - "field (0.1024 MRR) does not beat recency (0.1029 MRR): adding partners did not improve the ranking score on this project (difference -0.0005, 95% CI [-0.0021, +0.0012])."
   - "recency (0.1029) clearly beats frequency (0.0758): when a file was touched matters more than how often."
-  - "all three beat random (0.0075) by 10-14x: repository work is strongly local, and cheap decay already captures that locality."
+  - "all three beat random guessing (0.0082 MRR, averaged per target like the models) by about 9-12x: frequency 9.2x, recency 12.5x, field 12.4x. The ratio grows with the number of candidate files and moves with the bulk cutoff, so it is not comparable across corpora. Up to v1.0 the page averaged random per commit (0.0075), which gave 10-14x and showed prediction 3 as passed."
   - "33% of touched files at score time had never been seen before, and are excluded from scoring rather than counted as misses."
 limitations:
   - "One corpus. A single repository's conventions may not generalise; the extractor takes --repo so this is testable, not assumed."
   - "One-hop diffusion only. A multi-hop or Laplacian formulation might behave differently; not tested, so not claimed either way."
   - "Ranking is over files ever seen, so the candidate set grows monotonically; MRR is therefore not comparable across corpora of different size without normalising, which is why random is reported analytically alongside."
-  - "Renames are followed to their destination path only; a file's history before a rename is attributed to the new path."
+  - "Renames are not followed. In a rename commit only the destination path is recorded; earlier commits keep the old path as a separate file, so a renamed file's history is split in two (cogos has 166 rename lines). This lowers every model's score about equally."
 refs:
   - uri: app:physarum
     rel: extends
@@ -158,52 +162,51 @@ refs:
     <canvas id="c"></canvas>
     <div id="overlay"></div>
     <div id="legend">
-      <span class="sw" style="background:#ff5a36"></span>hot (model rank high)<br>
-      <span class="sw" style="background:#fff3b0"></span>warm<br>
-      <span class="sw" style="background:#2a2a33"></span>cold<br>
-      <span class="sw" style="background:#ffffff"></span>touched by this commit
+      <span class="sw" style="background:#ff5a36"></span>ranked high<br>
+      <span class="sw" style="background:#fff3b0"></span>middle<br>
+      <span class="sw" style="background:#2a2a33"></span>low<br>
+      <span class="sw" style="background:#ffffff"></span>changed in this step
     </div>
-    <div id="busy">replaying history…</div>
+    <div id="busy">replaying…</div>
   </div>
 
   <div id="side">
     <div id="hdr">
       <h1>Commit Field</h1>
-      <p>Does repository heat predict the next commit? A strictly causal
-         backtest over real git history — the field never sees a commit
-         before it is scored on it.</p>
+      <p>Can you guess which files the next change to a code project will
+         touch? This replays a real project's 734 saved changes in order.
+         Each method guesses before it sees the change.</p>
     </div>
 
     <div class="sect">
-      <h2>Verdict</h2>
+      <h2>Result</h2>
       <div class="verdict">
-        <span class="ef-badge instrument" id="kindBadge">instrument</span>
         <span class="ef-badge pending" id="stateBadge">pending</span>
-        <span id="verdictText" style="color:var(--dim)">reconciling…</span>
+        <span id="verdictText" style="color:var(--dim)">checking…</span>
       </div>
       <div class="delta" id="deltaText"></div>
     </div>
 
     <div class="sect">
-      <h2>Measured, in this browser</h2>
+      <h2>Scores (recomputed in your browser)</h2>
       <table class="scores" id="scoreTable">
-        <thead><tr><th>model</th><th>MRR</th><th>hit@10</th><th>hit@50</th></tr></thead>
+        <thead><tr><th>method</th><th title="mean reciprocal rank, 0-1">ranking score</th><th>right file in top 10</th><th>in top 50</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
 
     <div class="sect">
-      <h2>Pre-registered, before the run</h2>
+      <h2>Predictions (declared in the shipped page; not independently timestamped)</h2>
       <ul class="prereg" id="preregList"></ul>
     </div>
 
     <div class="sect">
-      <h2>Parameters</h2>
+      <h2>Settings</h2>
       <div id="panel"></div>
     </div>
 
     <div class="sect">
-      <h2>Dataset</h2>
+      <h2>Project replayed</h2>
       <div class="hashline" id="provText"></div>
     </div>
   </div>
@@ -312,7 +315,7 @@ function backtest(events, params) {
   const acc = {};
   for (const m of MODELS) acc[m] = { rr: 0, h10: 0, h50: 0, n: 0 };
   let scored = 0, unseen = 0, total = 0;
-  const cand = [];
+  const cand = [], tcount = [];
 
   for (const ev of events) {
     const bulk = ev.f.length > params.bulk_commit_threshold;
@@ -323,6 +326,7 @@ function backtest(events, params) {
       if (target.length) {
         scored++;
         cand.push(field.seen.size);
+        tcount.push(target.length);
         const scores = {
           frequency: field.scoreFrequency(),
           recency: field.scoreRecency(ev.t),
@@ -354,10 +358,20 @@ function backtest(events, params) {
     const a = acc[m], n = Math.max(a.n, 1);
     models[m] = { mrr: a.rr / n, hit10: a.h10 / n, hit50: a.h50 / n, n: a.n };
   }
-  let rr = 0, h10 = 0, h50 = 0;
-  for (const N of cand) { rr += harmonic(N) / N; h10 += Math.min(10, N) / N; h50 += Math.min(50, N) / N; }
-  const cn = Math.max(cand.length, 1);
-  models.random = { mrr: rr / cn, hit10: h10 / cn, hit50: h50 / cn, n: cand.length, analytic: true };
+  /* Analytic random baseline, averaged PER TARGET like the models: a
+     commit with k scored targets among N candidates counts k times,
+     MRR = sum(k * H_N / N) / sum(k). (Up to v1.0 it was averaged per
+     commit while the models were averaged per target, which shrank the
+     baseline and inflated every ratio to it.) Same change in extract.py. */
+  let rr = 0, h10 = 0, h50 = 0, rrc = 0, nt = 0;
+  cand.forEach((N, c) => {
+    const k = tcount[c];
+    rr += k * harmonic(N) / N; h10 += k * Math.min(10, N) / N; h50 += k * Math.min(50, N) / N;
+    rrc += harmonic(N) / N; nt += k;
+  });
+  const nt1 = Math.max(nt, 1);
+  models.random = { mrr: rr / nt1, hit10: h10 / nt1, hit50: h50 / nt1, n: nt,
+                    mrr_per_commit: rrc / Math.max(cand.length, 1), analytic: true };
 
   return {
     models,
@@ -377,16 +391,19 @@ function backtest(events, params) {
    ------------------------------------------------------------------ */
 const params = defineParams({
   half_life_days: { type:'number', min:1, max:120, step:1, unit:'d',
-                    prereg: 14, label:'Heat half-life', group:'model' },
+                    prereg: 14, label:'Heat halves every (days)', group:'model' },
   alpha:          { type:'number', min:0, max:1, step:0.01,
-                    prereg: 0.35, label:'Diffusion gain', group:'model' },
+                    prereg: 0.35, label:'Share passed to partners', group:'model' },
   bulk_threshold: { type:'number', min:4, max:256, step:1, unit:'files',
-                    prereg: 32, label:'Bulk cutoff', group:'model' },
+                    prereg: 32, label:'Ignore changes touching more than N files', group:'model' },
   model:          { type:'select', options:['field','recency','frequency'],
-                    default:'field', label:'Render', group:'view' },
-  speed:          { type:'number', min:1, max:60, step:1, unit:'c/s',
-                    default:20, label:'Replay speed', group:'view' },
-  showEdges:      { type:'boolean', default:true, label:'Co-change edges', group:'view' },
+                    default:'field', label:'Show', group:'view' },
+  /* Not commits per second: the replay applies max(1, round(speed/20))
+     commits per animation frame, so 1-29 all give 1 per frame, 30-49 give
+     2, 50-60 give 3. Visual only; the scores are computed once at load. */
+  speed:          { type:'number', min:1, max:60, step:1,
+                    default:20, label:'Replay speed (1-29: 1 change per frame; 30+: 2; 50+: 3)', group:'view' },
+  showEdges:      { type:'boolean', default:true, label:'Lines between files that change together', group:'view' },
 });
 
 /* ------------------------------------------------------------------ */
@@ -408,7 +425,8 @@ function paintScores(measured) {
     const r = measured.models[m];
     const tr = document.createElement('tr');
     if (m === best) tr.className = 'win';
-    tr.innerHTML = `<td>${m}${m === 'random' ? ' *' : ''}</td>` +
+    const NAME = { random: 'random guess', frequency: 'most often', recency: 'most lately', field: 'lately plus partners' };
+    tr.innerHTML = `<td title="${m}">${NAME[m]}${m === 'random' ? ' *' : ''}</td>` +
                    `<td>${fmt(r.mrr)}</td><td>${fmt(r.hit10, 3)}</td><td>${fmt(r.hit50, 3)}</td>`;
     tb.appendChild(tr);
   }
@@ -454,22 +472,25 @@ function paintVerdict() {
   badge.className = 'ef-badge ' + (r.ok ? 'ok' : 'alert');
   badge.textContent = r.ok ? 'ok' : 'alert';
   if (r.ok) {
-    txt.textContent = 'browser scores match the pinned reference';
+    txt.textContent = 'scores recomputed in your browser match the saved results';
     txt.style.color = 'var(--ok)';
   } else {
-    txt.textContent = 'browser scores DISAGREE with the reference';
+    txt.textContent = "scores recomputed in your browser don't match the saved results";
     txt.style.color = 'var(--alert)';
   }
   const lines = Object.entries(r.deltas)
-    .map(([m, d]) => `${m}: Δmrr ${typeof d === 'number' ? d.toExponential(2) : d}`);
-  // The pre-registered comparison itself, evaluated against what we measured.
+    .map(([m, d]) => `${m}: difference from saved ${typeof d === 'number' ? d.toExponential(2) : d}`);
+  // The declared predictions themselves, evaluated against what was measured.
   const M = MEASURED.models;
   lines.push('');
-  lines.push(`prereg 1 (recency > frequency): ${M.recency.mrr > M.frequency.mrr ? 'HELD' : 'BROKEN'}`);
+  lines.push(`Prediction 1, "most lately" beats "most often": ${M.recency.mrr > M.frequency.mrr ? 'passed' : 'failed'}`);
   const gap = M.field.mrr - M.recency.mrr;
-  lines.push(`prereg 2 (field - recency <= 0.02): ${gap <= 0.02 ? 'HELD' : 'BROKEN'} (${gap >= 0 ? '+' : ''}${gap.toFixed(4)})`);
+  lines.push(`Prediction 2, adding partners gains less than 0.02: ${gap <= 0.02 ? 'passed' : 'failed'} (${gap >= 0 ? '+' : ''}${gap.toFixed(4)})`);
+  // Random is averaged per target, like the models (see backtest()).
+  const ratio = m => (M[m].mrr / M.random.mrr).toFixed(1);
   const tenx = Math.min(M.frequency.mrr, M.recency.mrr, M.field.mrr) > 10 * M.random.mrr;
-  lines.push(`prereg 3 (all > 10x random): ${tenx ? 'HELD' : 'BROKEN'}`);
+  lines.push(`Prediction 3, all beat random by 10x: ${tenx ? 'passed' : 'failed'} ` +
+             `(most often ${ratio('frequency')}x, most lately ${ratio('recency')}x, plus partners ${ratio('field')}x)`);
   del.textContent = lines.join('\n');
   del.style.whiteSpace = 'pre';
 }
@@ -661,11 +682,11 @@ async function boot() {
 
   const panel = renderPanel(params, $('#panel'), {
     gauges: [
-      { label: 'field MRR', group: 'measured', read: () => MEASURED.models.field.mrr.toFixed(4) },
-      { label: 'recency MRR', group: 'measured', read: () => MEASURED.models.recency.mrr.toFixed(4) },
-      { label: 'field − recency', group: 'measured',
+      { label: 'partners score', group: 'measured', read: () => MEASURED.models.field.mrr.toFixed(4) },
+      { label: 'lately score', group: 'measured', read: () => MEASURED.models.recency.mrr.toFixed(4) },
+      { label: 'difference', group: 'measured',
         read: () => (MEASURED.models.field.mrr - MEASURED.models.recency.mrr).toFixed(4) },
-      { label: 'commits scored', group: 'measured', read: () => MEASURED.meta.scored_commits },
+      { label: 'changes scored', group: 'measured', read: () => MEASURED.meta.scored_commits },
     ],
   });
   params.subscribe(() => { panel.refresh(); });

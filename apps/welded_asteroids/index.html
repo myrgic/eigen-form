@@ -1,0 +1,2701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welded Asteroids: trails on glued shapes</title>
+<script type="application/cogdoc+yaml">
+id: paper-welded-asteroids
+type: paper
+title: "Welded Asteroids: slime-mould trails on squares with glued edges (torus, Klein bottle, projective plane, Möbius strip)"
+description: >
+  welded_fields (Chaz Dinkle) re-homed onto the quotient surfaces of
+  topo-asteroids (Chaz Dinkle). The simulation is the artifact: the physarum
+  agents, their trail and their agent-deposited momentum all obey the
+  surface's gluing rule (mirrored re-entry on Klein/projective/Möbius,
+  walls on the strip's free edges). The pieces-and-holes census (b0, b1)
+  is computed on the glued surface (since v2.12.0). The asteroids game
+  survives only as a hidden Easter egg: press X once b1 >= 42 and a
+  nav-lighted ship spawns riding the agents' own wind.
+sector: reference
+status: draft
+created: 2026-09-19
+updated: 2026-09-24
+salience: high
+authors:
+  - cog (agent, myrgic/eigen-form)
+  - chazmaniandinkle
+tags: [stigmergy, advection, topology, quotient-space, physarum, betti, closed-loop, eigen-form, executable-paper, gluing-rule]
+claim: >
+  Agents and their trails obey each surface's gluing rule: an agent that
+  crosses an edge re-enters with position and heading mirrored together,
+  and trail and momentum diffuse and are sensed across that edge by the
+  same map (checked cell by cell on every seam). The pieces-and-holes
+  census (b0, b1 with Z/2 coefficients) is computed on the glued surface
+  itself, not on the flat square: it matches an independent GF(2)
+  homology calculation on 2468 test masks across the four surfaces.
+method:
+  - param: surface
+    label: quotient surface
+    range: [torus, klein, projective, mobius]
+    default: torus
+    meaning: "which fundamental polygon the sim square is glued into. Agent positions, headings, trail and momentum diffusion, field reads and the census all use the same rule (flipX: x→W−x, vx→−vx, a→π−a; flipY: y→H−y, vy→−vy, a→−a; cell i→W−1−i), applied only to the axis each seam names"
+  - param: levelMode
+    label: level script
+    range: [manual, tour]
+    default: tour
+    meaning: "manual = the knobs are yours; tour = each level loads a surface and a parameter preset. A level is done when the bright part has joined into at most 3 pieces (b0 on the glued surface) for 3 measures in a row. Advancing is manual (the next-level button). Before v2.12.0 the gate was a b1 target, which structureless random walkers met and the physarum did not (see limitations)"
+  - param: N
+    label: agents
+    range: [1000, 12000]
+    default: 7000
+    meaning: agent count, scaled down from the ancestor's 9000 so the sim and the 3D projection share a frame honestly
+  - param: sa
+    label: sensor angle
+    range: [5, 90]
+    default: 60
+    unit: degrees
+    meaning: angular offset of the left/right trail samples from heading (inherited verbatim from the ancestor)
+  - param: ra
+    label: rotation angle
+    range: [5, 90]
+    default: 18
+    unit: degrees
+    meaning: turn applied per step when a flank sample wins
+  - param: so
+    label: sensor distance
+    range: [1, 30]
+    default: 5
+    unit: cells
+    meaning: lookahead distance of the three trail samples
+  - param: dec
+    label: evaporation
+    range: [0.900, 0.999]
+    default: 0.990
+    meaning: per-frame trail decay; trail half-life is log(0.5)/log(dec)
+  - param: dep
+    label: deposit
+    range: [1, 60]
+    default: 25
+    meaning: trail written per agent per frame
+  - param: adv
+    label: advection (transport)
+    range: [0, 2]
+    default: 0.02
+    meaning: gain with which local momentum displaces the agent
+  - param: ali
+    label: alignment (rheotaxis)
+    range: [0, 1]
+    default: 0.02
+    meaning: gain with which the agent rotates its heading toward the local momentum direction
+  - param: exclR
+    label: exclusion radius
+    range: [0, 3]
+    default: 0
+    meaning: v2.11.5 Pauli-analog — occupancy-blockade radius in cells (lagged occupancy of the BASE image; 0 = off, no cost). At 0 every prior result must reproduce bit-identical.
+  - param: exclMode
+    label: exclusion mode
+    range: [excl, jitter]
+    default: excl
+    meaning: ABLATION CONTROL (not an operator knob in normal use) — 'excl' applies the occupancy force; 'jitter' applies a random-direction kick of IDENTICAL magnitude from the same dedicated stream. If the jitter control reproduces the exclusion arm's band behavior, the measured effect is lateral noise, not exclusion coupling.
+  - param: exclK
+    label: exclusion stiffness
+    range: [0, 1]
+    default: 0
+    meaning: "0-0.7 soft — steering force away from coincident-heading occupied cells (weighted by momentum-field heading dot, seam-aware); >= 0.75 hard — veto the chosen move if the target cell is occupied (fallback: second-choice sensor direction, stochastic); occupancy alone (no heading clause) in the hard limit."
+  - param: mass
+    label: self-field mass
+    range: [0, 2]
+    default: 1.00
+    meaning: read gain on the normalised momentum field (every agent deposits a unit heading vector whatever mass is); 0 switches the momentum field off and leaves plain stigmergy
+  - param: mdec
+    label: momentum decay
+    range: [0.700, 0.995]
+    default: 0.940
+    meaning: per-step momentum decay. The momentum lattice is 30x30 blocks of 10 cells (MS divides W since v2.12.0)
+  - param: ng
+    label: noise gain (exogenous)
+    range: [0, 2]
+    default: 0.00
+    meaning: the ONLY exogenous driver; at 0 the loop is fully closed
+  - param: ns
+    label: noise scale
+    range: [0.001, 0.03]
+    default: 0.0060
+    meaning: spatial frequency of the exogenous noise
+  - param: dr
+    label: drift rate
+    range: [0, 0.05]
+    default: 0.0050
+    meaning: temporal advance of the exogenous noise
+  - param: thr
+    label: mask coverage
+    range: [1, 40]
+    default: 8
+    unit: percent
+    meaning: TARGET COVERAGE, not a level. The cut is the exact quantile of the trail values (since v2.12.0), so this share of cells is in the mask up to ties
+  - param: relief
+    label: 3D relief amplitude
+    range: [0, 1]
+    default: 0.6
+    meaning: how far the 3D surface displaces along its normal by the folded trail height — ridges are the swarm's built loops, valleys the evaporated field; the topology is the terrain the field deforms
+  - param: shell
+    label: 3D shell rendering
+    values: [solid, translucent, wireframe]
+    default: translucent
+    meaning: how the surface itself is drawn. A closed quotient surface hides its own far side when opaque, so the default is translucent (the mesh stops writing depth and the whole shape — including contours and agents on the far side — reads at once); wireframe exposes the 64×64 parametrization grid; solid is the lit opaque shell
+  - param: proj3d
+    label: 3D view
+    range: [0, 1]
+    default: 1
+    meaning: 1 renders the live field as a texture on the surface's parametrization (vendored three.js, figure-8 Klein, Bryant–Kusner Boy's surface), plus marching-squares contours pushed through Pxy
+observables:
+  port: window.__welded
+  state: >
+    __welded.state() -> {surface, shell, b0, b1, coverage, agents, level,
+    joinMax, solved}. b0/b1 are counted on the glued surface (union-find
+    over glued pixel corners, b1 = b0 + b2 - chi of the glued cubical
+    complex, b2 = 1 only when the mask covers a closed surface). solved =
+    the level's join-up gate held. __welded.setShell(mode) drives the shell.
+  field: >
+    __welded.fieldAt(x, y, out) -> [dirX, dirY, weight] — the combined
+    exogenous+endogenous field at square coordinates, folded by the
+    surface's gluing rule (this is the read the AGENTS use).
+  fold: >
+    __welded.fold(x, y) -> {x, y} — image a square point through one
+    boundary crossing of the current gluing rule; the invariant the 3D
+    pipeline and the tests both consume.
+  grid: >
+    __welded.grid / __welded.W / __welded.H — the trail field and its
+    square dimensions (the surface's fundamental polygon).
+  setSurface: >
+    __welded.setSurface(id) — switch quotient surface mid-run; the agents,
+    their headings and the fields re-read under the new rule immediately.
+  levels: >
+    __welded.LEVELS / __welded.loadLevel(i) — the tour: each entry binds a
+    surface and a parameter preset into one level.
+refs:
+  - uri: app:welded_fields
+    rel: derives-from
+    desc: >
+      The entire simulation: agents, trail, momentum field, hormone
+      weather, robust percentile normalization, coverage-fixed mask, β₀/χ
+      measurement. The boundary conditions changed (wrapPos, foldRead and
+      the diffusion stencils apply the surface's gluing rule instead of
+      plain torus wrapping) and the census was generalised from the
+      periodic census of welded_fields (#44) to mirrored seams and walls.
+  - uri: app:topo-asteroids
+    rel: derives-from
+    desc: >
+      The quotient-space machinery: the gluing-rule flips (flipX/flipY on
+      position, velocity and heading together), the surface catalogue
+      (torus, Klein, projective plane, Möbius), the 3D panel with vendored
+      three.js and the real embeddings (figure-8 Klein, Bryant–Kusner Boy's
+      surface), and the fold protocol the field texture and contours are
+      pushed through.
+  - uri: cog://rfc/058
+    rel: demonstrates
+    desc: >
+      Declared observables as a decaying deposit medium; the tour binds
+      parameter presets to a join-up gate on the glued-surface census.
+limitations:
+  - >
+    Sphere and disk are not offered, exactly as v1 argued: the field's
+    wrap-on-both-axes semantics have no honest image under the envelope
+    fold or a walled square. Möbius is the one surface where the sim is
+    clipped (the strip's free edges are walls; agents bounce, the field
+    stops): since v2.11.8 an agent reflects off a wall (y and heading
+    mirrored), trail and momentum diffuse with no-flux edges, and a sensor
+    past an edge reads the edge row. Before v2.11.8 agents were clamped to
+    the edge and the field diffused and was read periodically across y, so
+    the field lived on a Klein bottle.
+    Side effect of the edge-row convention (measured, 150 s soaks, seeds
+    11/22/33): trail accumulates near the walls to 5-10x the mean row mass.
+    A mirrored-read ablation (a read past a wall reflects back inside) removes
+    most of it through 5400 steps (single seed), so the accumulation comes
+    mainly from the sensor convention, not from the no-flux wall itself.
+  - >
+    b0/b1 are exact Z/2 Betti numbers of the union of bright pixel squares
+    on the glued surface, at one threshold (not persistent homology). On
+    a surface, b1 counts essential loops (a band all the way round) as well
+    as enclosed holes, and says nothing about feature size. Before v2.12.0
+    the census read the flat square with zero padding on every surface: a
+    band round the torus read b1 = 0, a ring across a seam read as 2 pieces
+    and 0 holes (independent check: 1999 of 2468 test masks wrong).
+  - >
+    Levels. Before v2.12.0 each level had a b1 target. A null run (seeds
+    5/6/7, 1200 steps, every level, quotient census) showed structureless
+    random walkers (no steering, no arrows, uniform start) reach b1 13-19
+    on every surface while the physarum settles at b1 0-7, so the target
+    rewarded speckle. The gate is now "joined into at most 3 pieces for 3
+    measures in a row": the physarum passes it on 18/18 runs (6 levels x
+    3 seeds; its end state is 1-3 pieces on 15/18 and 7-12 on 3/18), the
+    walkers pass it on 0/18 (they stay above 2000 pieces). This is a check that a network formed, not a
+    topological target.
+  - >
+    Mirror map and seams (v2.12.0). Trail and momentum diffusion across the
+    left/right seam of the projective plane and Möbius strip used to mirror
+    both axes, so mass stayed in column 0 instead of crossing to column
+    W-1 (seam probe: 86/86 boundary cells wrong), and sensing used
+    W-1-x on continuous coordinates, one cell off from re-entry on every
+    mirrored seam. Now one cell map (cellFold) is used by trail diffusion,
+    momentum diffusion and the momentum read, and foldRead uses the same
+    x -> W - x as re-entry: 0 mismatches on all seams of all surfaces.
+  - >
+    The Möbius edge-row trail excess described above predates v2.12.0 and
+    was not re-measured after the seam fix.
+  - >
+    The Easter egg is asserted but lightly verified: ship spawn, wind ride
+    and hand-mirroring reuse v1's tested code paths, but the β₁ ≥ 42 gate
+    was smoke-tested once, not given a dedicated test.
+</script>
+<style>
+  :root {
+    --bg:#07060b; --panel:#100d18; --line:#241d33; --fg:#e8e3f2; --dim:#9a92ae; --faint:#655c7a;
+    --accent:#a78bfa; --trail:#6ee7b7; --warn:#fbbf24; --good:#6bff9a;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);display:flex;height:100vh;overflow:hidden;
+       font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+  #panel{width:280px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+         padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:13px;scrollbar-width:thin}
+  #stage{flex:1;display:flex;min-width:0;min-height:0}
+  #sq{position:relative;flex:1 1 50%;min-width:0;display:flex;align-items:center;justify-content:center;background:#000}
+  #sqbox{position:relative;width:100%;aspect-ratio:1/1;max-height:100%;flex:none}
+  canvas#sim{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
+  canvas#over{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  #v3{flex:1 1 50%;position:relative;min-width:0;background:#000;border-left:1px solid var(--line)}
+  #stageTabs{display:none}  /* mobile-only tab bar; un-hidden inside the fold media query */
+  canvas#c3{width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+  canvas#c3:active{cursor:grabbing}
+  #hint3d{position:absolute;right:10px;bottom:8px;font-size:11px;color:var(--faint);pointer-events:none;font-family:var(--mono)}
+  #verBadge{position:absolute;left:10px;top:8px;font-size:10px;color:var(--faint);pointer-events:none;font-family:var(--mono);opacity:0.7}
+
+  h1{margin:0;font-size:15px;font-weight:650;color:var(--accent);letter-spacing:-.01em}
+  h1 small{display:block;font-weight:400;font-size:11px;color:var(--faint);letter-spacing:0;margin-top:3px}
+  .grp{display:flex;flex-direction:column;gap:8px}
+  .grp>.hd{font:600 9.5px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--faint);
+           padding-bottom:5px;border-bottom:1px solid var(--line)}
+  .ctl{display:flex;flex-direction:column;gap:3px}
+  .ctl label{display:flex;justify-content:space-between;font-size:11.5px;color:var(--dim)}
+  .ctl label b{font:11px var(--mono);color:var(--fg);font-weight:500}
+  input[type=range]{width:100%;accent-color:var(--accent);height:16px}
+  select{width:100%;font:12px var(--mono);background:#1a1526;color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:5px 7px}
+  button{width:100%;padding:7px;border:1px solid var(--line);border-radius:5px;background:#1a1526;
+         color:var(--fg);font:inherit;font-size:12px;cursor:pointer}
+  button:hover{background:#241d33;border-color:#3a3050}
+  .row{display:flex;gap:8px;align-items:center;font-size:11.5px;color:var(--dim)}
+  .read{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font:11.5px var(--mono)}
+  .read .k{color:var(--faint)}
+  .read .v{color:var(--fg);text-align:right}
+  .read .v.big{font-size:15px;font-weight:700;color:var(--trail)}
+  .lvl{font-size:11px;color:var(--dim);line-height:1.5}
+  .lvl b{color:var(--accent)}
+  .lvl .done{color:var(--good)}
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
+         background:#1a1526;border:1px solid var(--accent);border-radius:8px;
+         padding:9px 16px;font:12.5px var(--mono);color:var(--fg);opacity:0;transition:opacity .4s;pointer-events:none;z-index:9}
+  .note{font-size:10.5px;line-height:1.45;color:var(--faint);margin:0}
+  .note b{color:var(--dim);font-weight:600}
+
+/* ── mobile / fold layout ─────────────────────────────────────────────
+   Narrow or coarse-pointer: the three fixed panels become a stacked,
+   tabbed stage (sim ⇄ 3D full-width) with the control sidebar as a
+   slide-in drawer behind a toggle. One-handed: drag the 3D, swipe the
+   tabs, tap the drawer. */
+#panelToggle{display:none}
+@media (max-width: 900px), (pointer: coarse) and (max-width: 1100px){
+  #stage{flex-direction:column}
+  #sq, #v3{flex:1 1 50%; border-left:none; border-top:1px solid var(--line)}
+  /* tab bar: two buttons to switch which stage pane is shown */
+  #stageTabs{display:flex; flex:0 0 auto; gap:0; border-bottom:1px solid var(--line)}
+  #stageTabs button{flex:1; padding:10px 0; background:none; color:var(--faint);
+    border:none; border-bottom:2px solid transparent; font:inherit; font-size:13px; cursor:pointer}
+  #stageTabs button.on{color:var(--text); border-bottom-color:var(--accent)}
+  .mobile-sim #sq{display:flex} .mobile-sim #v3{display:none}
+  .mobile-3d #sq{display:none} .mobile-3d #v3{display:flex}
+  /* drawer */
+  #panel{position:fixed; z-index:30; top:0; left:0; bottom:0; width:min(78vw, 340px);
+    transform:translateX(-102%); transition:transform .22s ease; overflow-y:auto;
+    box-shadow:0 0 40px rgba(0,0,0,.6); background:inherit}
+  body.panel-open #panel{transform:translateX(0)}
+  #panelToggle{display:flex; position:fixed; z-index:31; top:10px; left:10px;
+    width:40px; height:40px; align-items:center; justify-content:center;
+    border-radius:8px; border:1px solid var(--line); background:rgba(10,10,18,.85);
+    color:var(--faint); font-size:18px; cursor:pointer}
+  #stage{padding-left:0}
+}
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>Welded Asteroids<small>slime-mould trails on a square with glued edges</small></h1>
+
+  <div class="grp">
+    <div class="hd">Shape</div>
+    <select id="topo"></select>
+    <div class="lvl" id="surf-note"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Level</div>
+    <div class="row">
+      <select id="levelMode"><option value="tour">guided levels</option><option value="manual">free play</option></select>
+      <button id="btnLevel" style="width:auto;padding:6px 10px">next level</button>
+    </div>
+    <div class="lvl" id="lvl-note"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Dots</div>
+    <div class="ctl"><label>Sniff angle <b id="v-sa">60°</b></label>
+      <input type="range" id="sa" min="5" max="90" step="1" value="60"></div>
+    <div class="ctl"><label>Turn angle <b id="v-ra">18°</b></label>
+      <input type="range" id="ra" min="5" max="90" step="1" value="18"></div>
+    <div class="ctl"><label>Sniff distance <b id="v-so">5</b></label>
+      <input type="range" id="so" min="1" max="30" step="1" value="5"></div>
+    <div class="ctl"><label>Number of dots <b id="v-N">7000</b></label>
+      <input type="range" id="N" min="1000" max="12000" step="500" value="7000"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Scent</div>
+    <div class="ctl"><label>Scent kept per step <b id="v-dec">0.990</b></label>
+      <input type="range" id="dec" min="0.900" max="0.999" step="0.001" value="0.990"></div>
+    <div class="ctl"><label>Scent per step <b id="v-dep">25</b></label>
+      <input type="range" id="dep" min="1" max="60" step="1" value="25"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Arrows</div>
+    <div class="ctl"><label>Carried by arrows <b id="v-adv">0.02</b></label>
+      <input type="range" id="adv" min="0" max="2" step="0.02" value="0.02"></div>
+    <div class="ctl"><label>Turn to follow arrows <b id="v-ali">0.02</b></label>
+      <input type="range" id="ali" min="0" max="1" step="0.01" value="0.02"></div>
+    <div class="ctl"><label>No-crowding distance (0 = off) <b id="v-exclR">0</b></label>
+      <input type="range" id="exclR" min="0" max="3" step="1" value="0"></div>
+    <div class="ctl"><label>No-crowding strength <b id="v-exclK">0.00</b></label>
+      <input type="range" id="exclK" min="0" max="1" step="0.05" value="0"></div>
+    <div class="ctl"><label>Arrow strength <b id="v-mass">1.00</b></label>
+      <input type="range" id="mass" min="0" max="2" step="0.02" value="1"></div>
+    <div class="ctl"><label>Arrows kept per step <b id="v-mdec">0.940</b></label>
+      <input type="range" id="mdec" min="0.700" max="0.995" step="0.005" value="0.940"></div>
+    <div class="ctl"><label>3D bump height <b id="v-relief">0.60</b></label>
+      <input type="range" id="relief" min="0" max="1" step="0.05" value="0.6"></div>
+    <div class="ctl"><label>3D surface</label>
+      <select id="shell">
+        <option value="translucent">see-through</option>
+        <option value="wireframe">wire</option>
+        <option value="solid">solid</option>
+      </select></div>
+    <div class="ctl"><label>3D view</label>
+      <select id="view3dmode">
+        <option value="globe">glued shape</option>
+        <option value="map">flat map</option>
+      </select></div>
+    <div class="ctl"><label>Speed <b id="v-tspeed">1.0×</b></label>
+      <input type="range" id="tspeed" min="0" max="3" step="0.1" value="1"></div>
+    <div class="ctl"><label>Outside noise <b id="v-ng">0.00</b></label>
+      <input type="range" id="ng" min="0" max="2" step="0.02" value="0"></div>
+    <div class="ctl"><label>Noise swirl size <b id="v-ns">0.0060</b></label>
+      <input type="range" id="ns" min="0.001" max="0.03" step="0.001" value="0.006"></div>
+    <div class="ctl"><label>Noise drift speed <b id="v-dr">0.0050</b></label>
+      <input type="range" id="dr" min="0" max="0.05" step="0.0005" value="0.005"></div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Advanced ▸ Horizontal slice</div>
+    <div class="ctl"><label>slice height <b id="v-slc">0.00</b></label>
+      <input type="range" id="slc" min="-0.44" max="0.44" step="0.01" value="0"></div>
+    <div class="ctl"><label><input type="checkbox" id="slcOn"> show</label></div>
+    <canvas id="sliceCv" width="280" height="120" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px"></canvas>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Advanced ▸ Tilted slice (Villarceau circles)</div>
+    <div class="ctl"><label>tilt angle <b id="v-vls">45°</b> <b id="v-vls-reg"></b></label>
+      <input type="range" id="vls" min="0" max="89.9" step="0.5" value="45"></div>
+    <div class="ctl"><label><input type="checkbox" id="vlsOn"> show</label></div>
+    <canvas id="villCv" width="280" height="130" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px"></canvas>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Advanced ▸ Outside guiding field</div>
+    <div class="ctl"><label>mode <b id="v-cfm">closed</b></label>
+      <select id="cfm" style="width:100%">
+        <option value="closed" selected>field: off</option>
+        <option value="field-on">field: on</option>
+        <option value="field-decaying">field: switching off</option>
+      </select></div>
+    <div class="ctl"><label>field twist (turns one way per turn the other) <b id="v-cfq">1.00</b></label>
+      <input type="range" id="cfq" min="0.2" max="5" step="0.05" value="1"></div>
+    <div class="ctl"><label>how hard the field steers <b id="v-cfk">0.00</b></label>
+      <input type="range" id="cfk" min="0" max="1" step="0.01" value="0"></div>
+    <div class="ctl"><label>sideways drift <b id="v-cfn">0.000</b></label>
+      <input type="range" id="cfn" min="0" max="0.5" step="0.005" value="0"></div>
+    <div class="ctl"><label><input type="checkbox" id="cfShow"> show field arrows</label></div>
+    <canvas id="qHistCv" width="280" height="90" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px"></canvas>
+    <div style="font:9px monospace;color:rgba(255,255,255,0.6)" id="cfRead">τ=— W=— P_in=— P_loss=—</div>
+  </div>
+
+  <div class="grp">
+    <div class="hd">Measurements</div>
+
+  <div class="grp">
+    <div class="hd">Advanced ▸ Four quarters</div>
+    <div class="ctl"><label><input type="checkbox" id="qOn"> show</label></div>
+    <canvas id="quadCv" width="280" height="240" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px"></canvas>
+
+    <canvas id="bpmCv" width="280" height="200" style="width:100%;border:1px solid rgba(255,255,255,0.08);border-radius:4px;margin-top:6px"></canvas>
+  </div>
+    <div class="ctl"><label>Bright part = top share of cells <b id="v-thr">8%</b></label>
+      <input type="range" id="thr" min="1" max="40" step="1" value="8"></div>
+    <div class="read">
+      <span class="k">holes, on the glued shape (β₁)</span><span class="v big" id="r-b1">–</span>
+      <span class="k">pieces, on the glued shape (β₀)</span><span class="v" id="r-b0">–</span>
+      <span class="k">bright share</span><span class="v" id="r-cov">–</span>
+      <span class="k">scent half-life</span><span class="v" id="r-th">–</span>
+      <span class="k">arrow half-life</span><span class="v" id="r-tm">–</span>
+      <span class="k">arrows ÷ scent lifetime</span><span class="v" id="r-mratio">–</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <button id="btnReset">Start over</button>
+    <button id="btn3d">3D: on</button>
+  </div>
+  <p class="note"><b>Closed loop:</b> with outside noise at 0, every pattern comes from dots reading their own scent and arrows. Pieces and holes are counted on the glued shape: a trail that crosses an edge counts once, and a band that goes all the way round counts as a hole. A level is done when the bright part has joined up into a few pieces; random wandering dots never do that.</p>
+</div>
+
+<button id="panelToggle" aria-label="controls">☰</button>
+<div id="stage">
+  <div id="stageTabs">
+    <button id="tabSim" class="on">sim</button>
+    <button id="tab3d">3D</button>
+  </div>
+  <div id="sq"><div id="sqbox"><canvas id="sim"></canvas><canvas id="over"></canvas><div id="verBadge">v2.12.0</div></div></div>
+  <div id="v3"><canvas id="c3"></canvas><div id="hint3d">drag to orbit · wheel to zoom</div></div>
+</div>
+<div id="toast"></div>
+<script>
+'use strict';
+/* =====================================================================
+ * Welded Asteroids v2 — welded_fields' simulation on topo-asteroids'
+ * quotient surfaces. No game: the field IS the artifact. The asteroids
+ * game survives as an Easter egg (press X when β1 >= 42).
+ * ===================================================================== */
+
+/* ── topologies: the gluing rules, from topo-asteroids ─────────────── */
+const TOPOLOGIES = [
+  { id:'torus', name:'Torus', word:'a b a⁻¹ b⁻¹', orientable:true,
+    x:{wrap:true, flip:null}, y:{wrap:true, flip:null},
+    note:'Donut (torus): both pairs of edges joined straight, the same as Welded Fields.' },
+  { id:'klein', name:'Klein bottle', word:'a b a b⁻¹', orientable:false,
+    x:{wrap:true, flip:null}, y:{wrap:true, flip:'x'},
+    note:'Klein bottle: top and bottom joined with a flip. Dots crossing that edge come back mirrored, and so do their trail and arrows.' },
+  { id:'projective', name:'Projective plane', word:'a b a b', orientable:false,
+    x:{wrap:true, flip:'y'}, y:{wrap:true, flip:'x'},
+    note:'Projective plane: both pairs of edges joined with a flip.' },
+  { id:'mobius', name:'Möbius strip', word:'a b a c', orientable:false,
+    x:{wrap:true, flip:'y'}, y:{wrap:false, flip:null},
+    note:'Möbius strip: one pair of edges joined with a flip, the other pair are walls. Dots bounce off the walls and the scent does not cross them.' },
+];
+let topo = TOPOLOGIES[0];
+
+/* flip a point-heading pair through one crossing (from topo-asteroids) */
+function flipP(p, which) {
+  if (which === 'x') { p.x = W - p.x; p.a = Math.PI - p.a; }
+  else               { p.y = H - p.y; p.a = -p.a; }
+}
+/* fold a field VECTOR through one crossing: the mirrored read */
+function flipV(vx, vy, which) {
+  if (which === 'x') return [-vx, vy];
+  return [vx, -vy];
+}
+
+/* ── sim state (ancestor's structure, fixed square dims) ───────────── */
+const W = 300, H = 300;                  // fundamental polygon, in cells
+const SCALE = 2;
+let grid, tmp, mask, img;
+let parts = [], time = 0, frame = 0;
+const hist = [];
+const CS = 3, cW = W/CS, cH = H/CS;
+let coarse;
+/* v2.12.0: MS must divide W and H. MS=8 gave mW=floor(300/8)=37 blocks
+   covering 296 of 300 cells, so the last 4 columns/rows deposited into
+   block 0 and the mirrored block pairing at the seams was off by up to 4
+   cells. 10 divides 300: 30x30 blocks tile the square exactly. */
+const MS = 10, mW = W/MS, mH = H/MS;
+if (W % MS || H % MS) throw new Error('momentum block size must divide the square');
+let momX, momY, mtX, mtY, momRef = 1;
+/* v2.11.5 exclusion: LAGGED occupancy of the base image (foldRead folds
+   all seam images onto the base square — correct: mirror images are the
+   same physical place on the quotient). Built from PREVIOUS frame
+   positions before the agent loop; no mid-loop scatter (order-invariance
+   preserved). Pressure readout: rejected moves per agent-step. */
+let occ, exclReject = 0, exclPins = 0, exclSteps = 0;
+/* review M3: dedicated RNG stream — exclusion's random draws must not
+   consume the shared physarum stream, or treatment arms and controls
+   decorrelate after the first veto. */
+let rndExcl = null;
+const EXCL_SEED = 0x5e1a;
+let horm, hormRef = 1;
+
+/* defaults: the ancestor's operator regime */
+const P = { relief:0.6, shell:'translucent', view3dmode:'globe', tspeed:1.0, sa:60*Math.PI/180, ra:18*Math.PI/180, so:5,
+            dec:0.99, dep:25, adv:0.02, ali:0.02, ns:0.006, dr:0.005, thr:0.08,
+            mass:1, mdec:0.94, ng:0, N:7000, levelMode:'tour',
+            exclR:0, exclK:0, exclMode:'excl' };
+
+/* ── THE WELD: wrap + fold under the gluing rule ─────────────────────
+   The ancestor's wrap was plain torus. Here every crossing transforms
+   position AND heading by the surface's rule, and every field READ of a
+   mirrored sample flips the vector it reads back into the square's frame. */
+function wrapPos(p) {                     // p has {x, y, a}
+  /* Each axis folds its own coordinate exactly once per crossing. The
+     while-loops used to re-enter the OTHER axis's branch after a flip
+     (y-fold sets x = W−nx, which can leave [0,W) → the x-loop then
+     flipped AGAIN: double flip = agent teleported to the far edge with
+     a mangled heading — the seam accumulator). One pass per axis. */
+  if (topo.x.wrap) {
+    /* k = floor division (rounds toward −∞), which is exactly the wrap
+       count for both signs: x=−4.5 → k=−1 → x += 300 ✓; x=320 → k=1 ✓ */
+    let k = Math.floor(p.x / W);
+    if (k !== 0) { p.x -= k * W; if (topo.x.flip) for (let j = 0; j < Math.abs(k); j++) flipP(p, topo.x.flip); }
+  } else {
+    if (p.x < 0) { p.x = 0; }
+    if (p.x >= W) { p.x = W - 1e-4; }
+  }
+  if (topo.y.wrap) {
+    let k = Math.floor(p.y / H);
+    if (k !== 0) { p.y -= k * H; if (topo.y.flip) for (let j = 0; j < Math.abs(k); j++) flipP(p, topo.y.flip); }
+  } else {
+    /* v2.11.8 (#39): a wall REFLECTS — position mirrored back inside and
+       heading reflected (a -> -a). The old clamp pinned the agent on the
+       edge row with its heading still into the wall, so it re-hit the
+       wall every step (52-88% of the Möbius population sat on the two
+       wall rows after 2500 steps, against 0.7% for a uniform spread). */
+    if (p.y < 0) { p.y = -p.y; p.a = -p.a; }
+    if (p.y >= H) { p.y = 2*H - p.y; p.a = -p.a; }
+    if (p.y < 0 || p.y >= H) p.y = Math.min(H - 1e-4, Math.max(0, p.y));
+  }
+}
+/* fold a square sample point for field reads: mirrored cells read the
+   field through the mirror (the read is of the SAME deposit, seen
+   through the seam's rule) */
+/* topo.<axis>.flip NAMES THE AXIS THAT MIRRORS — Klein is y:{flip:'x'},
+   i.e. crossing the y-seam mirrors the x coordinate. wrapPos (agent
+   re-entry) and diffuseDecay's nbT (trail diffusion) both read it that
+   way; foldRead did not, and mirrored the crossed axis instead. So an
+   agent sensing across the weld read the field from a point its own
+   deposits never reach, and the momentum path flipped vx while folding
+   in y. 'legacy' preserves that behaviour as an ablation control. */
+let seamFold='named';
+/* continuous mirror of a coordinate in [0, L): L - c. On a wrapped axis
+   L is the same point as 0; on a walled axis stay strictly inside. */
+function mirC(c, L, wraps){ const m = L - c; return wraps ? (m >= L ? m - L : m) : Math.min(L - 1e-4, m); }
+/* CELL version of the same gluing, for diffusion stencils on a Wc x Hc
+   lattice that tiles the square (the trail grid, or the momentum blocks).
+   (x, y) may be one step outside. Returns the glued cell index and the
+   sign each vector component picks up: crossing a seam that mirrors x
+   flips vx, one that mirrors y flips vy. topo.<axis>.flip NAMES the axis
+   that mirrors, so only that coordinate is reflected (cell i -> Wc-1-i,
+   the cell image of x -> W - x). A walled axis is no-flux: the neighbour
+   past the wall is the cell itself. */
+const _cf = [0, 1, 1];
+function cellFold(x, y, Wc, Hc){
+  let fx = x, fy = y, sx = 1, sy = 1;
+  if (fx < 0 || fx >= Wc) {
+    fx = ((fx % Wc) + Wc) % Wc;
+    if (topo.x.flip === 'y') { fy = Hc - 1 - fy; sy = -1; }
+    else if (topo.x.flip === 'x') { fx = Wc - 1 - fx; sx = -1; }
+  }
+  if (fy < 0 || fy >= Hc) {
+    if (!topo.y.wrap) fy = fy < 0 ? 0 : Hc - 1;
+    else {
+      fy = ((fy % Hc) + Hc) % Hc;
+      if (topo.y.flip === 'x') { fx = Wc - 1 - fx; sx = -sx; }
+      else if (topo.y.flip === 'y') { fy = Hc - 1 - fy; sy = -sy; }
+    }
+  }
+  _cf[0] = fy * Wc + fx; _cf[1] = sx; _cf[2] = sy;
+  return _cf;
+}
+function foldRead(x, y) {
+  let fx = ((x % W) + W) % W, fy = ((y % H) + H) % H;
+  /* v2.11.8 (#39): across a WALL (Möbius y) there is no other side — a
+     read past the edge sees the edge row, never the opposite edge. */
+  if (!topo.y.wrap) fy = Math.min(H - 1e-4, Math.max(0, y));
+  /* v2.11.5 (review H3): negative coords missed the mirror — use the
+     momRead/crossed() double-mod form so x=-0.5 folds to the mirrored
+     image like every other read path. */
+  const xc = topo.x.flip && Math.floor((((x % (2*W)) + 2*W) % (2*W)) / W) === 1;
+  const yc = topo.y.flip && Math.floor((((y % (2*H)) + 2*H) % (2*H)) / H) === 1;
+  if (seamFold === 'legacy') {
+    if (xc) fx = W - 1 - fx;
+    if (yc) fy = H - 1 - fy;
+    return [fx, fy];
+  }
+  /* v2.12.0: the continuous mirror is x -> W - x, the SAME map wrapPos
+     applies to a re-entering agent (flipP). The old W - 1 - x sampled the
+     cell next to the one the agent's deposit lands in, on every mirrored
+     seam (lane-1 seam probe: 86-172 of 172 boundary cells off by one).
+     Cell i maps to cell W-1-i under this map, which is what cellFold uses
+     for diffusion, so sensing, re-entry and diffusion now agree. */
+  if (xc) { if (topo.x.flip === 'x') fx = mirC(fx, W, topo.x.wrap); else fy = mirC(fy, H, topo.y.wrap); }
+  if (yc) { if (topo.y.flip === 'x') fx = mirC(fx, W, topo.x.wrap); else fy = mirC(fy, H, topo.y.wrap); }
+  return [fx, fy];
+}
+/* trail read at a (possibly out-of-square) point, honoring the rule */
+function trailRead(x, y) {
+  const [fx, fy] = foldRead(x, y);
+  return grid[(Math.floor(fy) % H) * W + (Math.floor(fx) % W)];
+}
+/* momentum read: bilinear in the square, folded + vector-flipped */
+const _fm=[0,0];
+function momRead(x, y, out) {
+  const [fx, fy] = foldRead(x, y);
+  const fxp=fx/MS-0.5, fyp=fy/MS-0.5;
+  const i0=Math.floor(fxp), j0=Math.floor(fyp);
+  const tx=fxp-i0, ty=fyp-j0;
+  /* v2.12.0: the bilinear stencil's corners go through the SAME cell
+     gluing as diffusion (cellFold): a corner past a mirrored seam is read
+     from its mirrored block with the named vector component flipped; past
+     a wall it is the edge block. The old stencil wrapped straight across
+     every seam. */
+  let vx=0, vy=0;
+  const corner=(i, j, w)=>{ if(w===0) return; const c=cellFold(i, j, mW, mH); vx+=w*c[1]*momX[c[0]]; vy+=w*c[2]*momY[c[0]]; };
+  corner(i0, j0, (1-tx)*(1-ty)); corner(i0+1, j0, tx*(1-ty));
+  corner(i0, j0+1, (1-tx)*ty);   corner(i0+1, j0+1, tx*ty);
+  /* the folded read: a sample on a mirrored image is read through the
+     seam, and the vector component along the axis that seam NAMES flips
+     (Klein y-seam and projective y-seam mirror x -> vx flips; projective
+     and Möbius x-seams mirror y -> vy flips). */
+  if (topo.y.flip && Math.floor(((y % (2*H)) + 2*H) % (2*H) / H) === 1) [vx, vy] = flipV(vx, vy, topo.y.flip);
+  if (topo.x.flip && Math.floor(((x % (2*W)) + 2*W) % (2*W) / W) === 1) [vx, vy] = flipV(vx, vy, topo.x.flip);
+  out[0]=vx; out[1]=vy;
+}
+const _m=[0,0];
+function fieldAt(x, y, out) {
+  let fx=0, fy=0;
+  if (P.ng>0) { const a=Noise.get(((x%W)+W)%W*P.ns, ((y%H)+H)%H*P.ns, time)*Math.PI*2;
+                fx+=Math.cos(a)*P.ng; fy+=Math.sin(a)*P.ng; }
+  if (P.mass>0) { momRead(x, y, _m); const s=P.mass/momRef; fx+=_m[0]*s; fy+=_m[1]*s; }
+  const m=Math.hypot(fx,fy);
+  if (m<1e-9) { out[0]=0; out[1]=0; out[2]=0; return; }
+  out[0]=fx/m; out[1]=fy/m; out[2]=m<1?m:1;
+}
+
+/* Every stochastic draw in the sim goes through rnd(), so a run is
+   reproducible from its seed alone. run() swaps in a seeded stream;
+   interactive use keeps Math.random. */
+let rnd = Math.random;
+let curSeed = 0;   /* v2.11.5: remembered per-run seed (rndExcl stream derivation) */
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0;
+  let t=Math.imul(a^a>>>15, 1|a); t=t+Math.imul(t^t>>>7, 61|t)^t;
+  return ((t^t>>>14)>>>0)/4294967296; }; }
+
+/* noise (ancestor, verbatim) */
+const Noise = {
+  seed: Math.random()*100,
+  hash(x,y,z){ const h=Math.sin(x*12.9898+y*78.233+z*37.719+this.seed)*43758.5453; return h-Math.floor(h); },
+  get(x,y,z){
+    const xi=Math.floor(x), yi=Math.floor(y), zi=Math.floor(z);
+    const xf=x-xi, yf=y-yi, zf=z-zi;
+    const u=xf*xf*(3-2*xf), v=yf*yf*(3-2*yf), w=zf*zf*(3-2*zf);
+    const h=this.hash.bind(this);
+    const v1=h(xi,yi,zi), v2=h(xi+1,yi,zi), v3=h(xi,yi+1,zi), v4=h(xi+1,yi+1,zi);
+    const v5=h(xi,yi,zi+1), v6=h(xi+1,yi,zi+1), v7=h(xi,yi+1,zi+1), v8=h(xi+1,yi+1,zi+1);
+    const i1=v1+u*(v2-v1), i2=v3+u*(v4-v3), i3=v5+u*(v6-v5), i4=v7+u*(v8-v7);
+    const f1=i1+v*(i2-i1), f2=i3+v*(i4-i3);
+    return (f1+w*(f2-f1))*2-1;
+  }
+};
+
+/* ── diffusion + decay (ancestor, torus) ───────────────────────────── */
+/* neighbor index across a boundary, honoring the surface's gluing:
+   a mirrored seam samples the MIRRORED cell of the opposite row (the
+   pullback of a scalar on the Klein bottle is mirror-periodic, so the
+   y-neighbour of (x,0) is (W−1−x, H−1)). Plain torus wrap here was the
+   slow accumulator: flux at a mirrored seam never cancels, and mass
+   got pumped into the two seam rows over ~a minute. */
+function nb(x, y){ return grid[cellFold(x, y, W, H)[0]]; }
+function diffuseDecay(){
+  for(let y=0;y<H;y++){
+    const r=y*W;
+    for(let x=0;x<W;x++){
+      const l = nb(x-1,y), rt = nb(x+1,y);
+      tmp[r+x]=(l+grid[r+x]+rt)/3;
+    }
+  }
+  const d=P.dec;
+  const nbT = (x, y) => tmp[cellFold(x, y, W, H)[0]];
+  for(let y=0;y<H;y++){
+    const r=y*W;
+    for(let x=0;x<W;x++){
+      const up = nbT(x,y-1), dn = nbT(x,y+1);
+      grid[r+x]=((up+tmp[r+x]+dn)/3)*d;
+    }
+  }
+}
+function diffuseDecayMom(){
+  /* momentum: same glued neighbor sampling, and across a mirrored seam
+     the VECTOR carries the mirror too — the x-component flips when the
+     seam mirrors x, the y-component flips when the seam mirrors y */
+  const mnb = (F, x, y, cx) => {
+    if (x >= 0 && x < mW && y >= 0 && y < mH) return F[y * mW + x];
+    const c = cellFold(x, y, mW, mH);
+    return (cx === 'x' ? c[1] : c[2]) * F[c[0]];
+  };
+  for(let y=0;y<mH;y++){
+    const r=y*mW;
+    for(let x=0;x<mW;x++){
+      mtX[r+x]=(mnb(momX,x-1,y,'x')+momX[r+x]+mnb(momX,x+1,y,'x'))/3;
+      mtY[r+x]=(mnb(momY,x-1,y,'y')+momY[r+x]+mnb(momY,x+1,y,'y'))/3;
+    }
+  }
+  const d=P.mdec; let acc=0;
+  for(let y=0;y<mH;y++){
+    const r=y*mW;
+    for(let x=0;x<mW;x++){
+      const vx=((mnb(mtX,x,y-1,'x')+mtX[r+x]+mnb(mtX,x,y+1,'x'))/3)*d;
+      const vy=((mnb(mtY,x,y-1,'y')+mtY[r+x]+mnb(mtY,x,y+1,'y'))/3)*d;
+      momX[r+x]=vx; momY[r+x]=vy; acc+=Math.hypot(vx,vy);
+    }
+  }
+  const mean=acc/(mW*mH);
+  momRef += ((mean>1e-9?mean:1e-9)-momRef)*0.05;
+}
+
+/* ── agents (ancestor's physarum + welded wrap) ────────────────────── */
+const wrapc = (v,m) => v<0 ? v+m : (v>=m ? v-m : v);
+function angDiff(t,c){ let d=(t-c)%(Math.PI*2); if(d>Math.PI)d-=Math.PI*2; if(d<-Math.PI)d+=Math.PI*2; return d; }
+const _f=[0,0,0];
+/* ── confinement field (v2.11): external, agent-independent, billed ───
+   Tokamak analog: the coil set. Field lines are straight slopes on the
+   (u,v) quotient chart — q = toroidal turns per poloidal turn = the
+   safety factor as an exact slope of the flat torus. Rational q closes;
+   irrational covers ergodically. Three knobs: q, coupling κ, cross-field
+   drift ν. Three modes: closed (v2.10.1 behavior, byte-identical),
+   field-on (open system, P_in billed), field-decaying (shutoff protocol
+   for measuring τ_sim from a single run). Energy ledger: P_in (injected),
+   P_loss (dissipation: leakage + trail evaporation), W_stored (trail
+   contrast + momentum alignment), τ_sim = W_stored / P_loss (v2.11.8). */
+const CF = { mode:'closed', q:1.0, kappa:0.0, drift:0.0, shutdecay:0.97, arrows:false };
+/* per-step ledger + field-decay envelope for the τ_sim protocol */
+const CLEDGER = { P_in:0, P_loss:0, W_stored:0, tauSim:0, crossField:0, history:[] };
+function confDir(gx, gy){
+  /* v2.11.2: seam-aware field direction. The field is a uniform slope-q
+     in the BASE image; an agent sitting on a mirrored image of the chart
+     must read the direction transformed through its seam rule, else the
+     field contradicts itself across the weld (slope q maps to −q under
+     the x-flip). Uses the sim's own crossed() logic: count the agent's
+     mirrored images and apply flipV per crossing. Uniform in the base
+     image; position-Dependent only through the fold — the (gx,gy) args
+     are now load-bearing. */
+  const [f0x, f0y] = [1, CF.q];
+  let vx = f0x, vy = f0y;
+  const L0 = Math.hypot(vx, vy) || 1; vx/=L0; vy/=L0;
+  /* which image is (gx,gy) on? mirror the vector per flip crossing */
+  if (topo.y.flip && Math.floor(((gy % (2*H)) + 2*H) % (2*H) / H) === 1) [vx, vy] = flipV(vx, vy, topo.y.flip);
+  if (topo.x.flip && Math.floor(((gx % (2*W)) + 2*W) % (2*W) / W) === 1) [vx, vy] = flipV(vx, vy, topo.x.flip);
+  const L = Math.hypot(vx, vy) || 1;
+  return [vx/L, vy/L];
+}
+function confLedgerStep(){
+  /* one measure of the energy ledger.
+     v2.11.3: compute in ALL modes. The old early-return in closed mode
+     zeroed W_stored, which made the shutoff/bootstrap experiment
+     unobservable exactly when it mattered (the field is OFF and we want
+     to watch the structure die or persist). Only the INPUT is zero in
+     closed mode; stored structure and losses are always measurable. */
+  const dec = P.dec, dt = 1;
+  /* trail mass + decay loss: what evaporates this step is (1-dec)×mass */
+  let mass = 0;
+  for(let i=0;i<grid.length;i++) mass += grid[i];
+  const mean = mass / grid.length;
+  const P_evap = (1 - dec) * mass;
+  /* v2.11.3 structure contrast: excess mass above uniform baseline */
+  let contrast = 0;
+  for(let i=0;i<grid.length;i++){ const ex = grid[i] - mean; if(ex > 0) contrast += ex; }
+  /* v2.11.3: W_stored must measure STRUCTURE, not trail mass. The old
+     coherent*0.01 saturates (~175k) for ANY uniform trail field — the
+     bootstrap control run read the same value cold as field-on steady
+     state, so the metric couldn't distinguish a flux band from fog.
+     New definition: trail CONTRAST = coherent mass above the uniform
+     baseline, i.e. sum over cells of max(0, grid[i] - mean). A uniform
+     field scores 0; a concentrated band scores its excess. Momentum
+     alignment keeps its own term. */
+  /* v2.11.2: momentum coherence = true ALIGNMENT of the population's
+     momentum field (v2.11.0 summed raw magnitudes — mislabeled, scaled
+     with intensity not alignment, contaminating W_stored). Mean of
+     |mom| / (cell mass) = order parameter in [0,1]: 1 = all deposits
+     moving the same way, 0 = random. */
+  /* v2.11.3 (Opus): the old mean-|mom|/(cn*P.mass) was a density proxy
+     that saturated to 1 — a latch, not an order parameter. True global
+     alignment: |vector sum| / (sum of magnitudes), in [0,1]. */
+  let sxm = 0, sym = 0, smag = 0, coh = 0;
+  if(P.mass > 0){
+    for(let i=0;i<momX.length;i++){
+      const w = Math.hypot(momX[i], momY[i]); if(w<1e-9) continue;
+      sxm += momX[i]; sym += momY[i]; smag += w;
+    }
+    coh = smag>1e-9 ? Math.hypot(sxm, sym)/smag : 0;
+  }
+  /* v2.11.2: leakage from ACTUAL cross-field heading error (v2.11.0
+     billed the drift DIAL value — ~2 orders under the real transport).
+     |sin(angle between heading and local field)| per agent, averaged:
+     that is the fraction of motion not along the field. */
+  /* v2.11.3 (Opus): cross-field error is only defined against an ACTIVE
+     field. In closed mode confDir is a phantom — measuring against it
+     produced the bogus cf=0.65-in-closed. In decaying mode the error
+     must scale with the applied coupling. No field, no leak term. */
+  let xf = 0, xn = 0, crossField = 0, P_leak = 0;
+  const fieldActive = CF.mode === 'field-on' ||
+    (CF.mode === 'field-decaying' && CLEDGER.P_in > 1e-6);
+  if(fieldActive){
+    const effK = CF.mode === 'field-on' ? CF.kappa
+               : CF.kappa * Math.sqrt(Math.min(1, CLEDGER.P_in / Math.max(1e-9, CLEDGER.P_in0 || 1e-9)));
+    for(let i=0;i<parts.length;i++){
+      const p = parts[i];
+      const [fdx, fdy] = confDir(p.x, p.y);
+      const fa = Math.atan2(fdy, fdx);
+      xf += Math.abs(Math.sin(fa - p.a)); xn++;
+    }
+    crossField = xn>0 ? (xf/xn) * effK : 0;
+    P_leak = parts.length * crossField * 2;
+  }
+  /* v2.11.3: input semantics per mode — closed bills 0; decaying carries
+     the seeded P_in down; field-on re-bills each measure. */
+  if(CF.mode === 'closed') CLEDGER.P_in = 0;
+  else if(CF.mode === 'field-on'){ CLEDGER.P_in = CF.kappa * 40 / CF.q; CLEDGER.P_in0 = CLEDGER.P_in; }
+  else { CLEDGER.P_in = CLEDGER.P_in * CF.shutdecay; if(!CLEDGER.P_in0) CLEDGER.P_in0 = CLEDGER.P_in || 1e-9; }
+  CLEDGER.P_loss = P_evap * 0.01 + P_leak;
+  CLEDGER.W_stored = contrast * 0.01 + coh * 100;   /* v2.11.3: structure contrast, not mass */
+  /* v2.11.3 (Opus): tau only at constant P_in (field-on).
+     v2.11.8 (#39): tau_E = W / P_loss, the power actually dissipated —
+     W / P_in divided by the dial constant 40κ/q, so it was W rescaled by
+     q/(40κ), and P_loss runs ~100-400× P_in here (the books never
+     balance), so the two are not interchangeable. */
+  CLEDGER.tauSim = (CF.mode === 'field-on' && CLEDGER.P_loss > 1e-9) ? CLEDGER.W_stored / CLEDGER.P_loss : 0;
+  CLEDGER.history.push(CLEDGER.W_stored);
+  if(CLEDGER.history.length > 600) CLEDGER.history.shift();
+  CLEDGER.crossField = +crossField.toFixed(3);
+}
+
+function stepAgents(){
+  const so=P.so, dep=P.dep, adv=P.adv, ali=P.ali;
+  for(let i=0;i<parts.length;i++){
+    const p=parts[i];
+    /* Sense through the fold, chirality-aware: a sample that crosses a
+       mirrored seam reads the sheet through the mirror, which swaps its
+       left/right meaning relative to the agent's square frame. Without
+       this, near-seam agents turn the wrong way and pin at the edge —
+       the seam-wall accumulator. F stays F; L and R swap iff the agent's
+       current y-image (and x-image) is mirrored. */
+    const sense=(off)=>{
+      const a=p.a+off;
+      return trailRead(p.x + Math.cos(a)*so, p.y + Math.sin(a)*so);
+    };
+    /* the agent's own image: mirrored iff it sits on a fold image != base
+       (always false for wrapped agents) — the samples are what matter */
+    const crossed = (dx, dy) => {
+      const x2 = p.x + dx, y2 = p.y + dy;
+      let m = false;
+      if (topo.y.flip && Math.floor(((y2 % (2*H)) + 2*H) % (2*H) / H) === 1) m = !m;
+      if (topo.x.flip && Math.floor(((x2 % (2*W)) + 2*W) % (2*W) / W) === 1) m = !m;
+      return m;
+    };
+    const mF = crossed(Math.cos(p.a)*so, Math.sin(p.a)*so);
+    const mL = crossed(Math.cos(p.a - P.sa)*so, Math.sin(p.a - P.sa)*so);
+    const mR = crossed(Math.cos(p.a + P.sa)*so, Math.sin(p.a + P.sa)*so);
+    const F=sense(0), L=sense(-P.sa), R=sense(P.sa);
+    /* samples on mixed images have incompatible chirality; the honest
+       comparison is between samples in the SAME image as the front.
+       When front and a flank disagree in image, mirror the flank's
+       reading by swapping L/R roles in the rule. */
+    const swapLR = mF !== mL ? 1 : (mF !== mR ? 1 : 0);
+    const Ls = swapLR ? R : L, Rs = swapLR ? L : R;
+    if(F>Ls && F>Rs)      { /* straight */ }
+    else if(F<Ls && F<Rs) { p.a += rnd()<0.5 ? P.ra : -P.ra; }
+    else if(Ls>Rs)        { p.a -= P.ra; }
+    else if(Rs>Ls)        { p.a += P.ra; }
+    else                  { p.a += rnd()<0.5 ? P.ra : -P.ra; }
+
+    let nx, ny;
+    /* v2.11: confinement field coupling — only when mode != closed.
+       Steer heading toward the field direction with gain κ; add
+       cross-field drift ν (random heading kick perpendicular-ish).
+       The field is agent-independent: confDir doesn't read the grid. */
+    if(CF.mode !== 'closed' && CF.kappa > 0){
+      /* v2.11.2 (Astra finding): coupling strength must decay WITH the
+         billed power in field-decaying mode — otherwise the mode bills
+         zero power while still steering at full κ (free field = worse
+         than the bug it replaced). effKappa = κ × sqrt(P_in/P_in0). */
+      const effKappa = CF.mode === 'field-on' ? CF.kappa
+                     : CF.kappa * Math.sqrt(Math.min(1, CLEDGER.P_in / Math.max(1e-9, CLEDGER.P_in0 || 1)));
+      const [fdx, fdy] = confDir(p.x, p.y);
+      const fa = Math.atan2(fdy, fdx);
+      p.a += angDiff(fa, p.a) * effKappa;
+      /* v2.11.3 (Opus): cross-field drift = kick toward +/-90 deg of
+         the field line (transport ACROSS flux surfaces) */
+      if(CF.drift > 0) p.a += angDiff(fa + (rnd()<0.5 ? Math.PI/2 : -Math.PI/2), p.a) * CF.drift;
+    }
+    if((ali>0 || adv>0) && (P.ng>0 || P.mass>0)){
+      fieldAt(p.x, p.y, _f);
+      const w=_f[2];
+      if(ali>0 && w>0) p.a += angDiff(Math.atan2(_f[1],_f[0]), p.a)*ali*w;
+      nx = p.x + Math.cos(p.a)*1 + _f[0]*adv*w;
+      ny = p.y + Math.sin(p.a)*1 + _f[1]*adv*w;
+    } else {
+      nx = p.x + Math.cos(p.a);
+      ny = p.y + Math.sin(p.a);
+    }
+    /* v2.11.5 EXCLUSION — two regimes, one gate. Gated on exclR>0; at 0
+       this whole block vanishes and the step is bit-identical to 2.11.4. */
+    if(P.exclR > 0 && P.exclK > 0){
+      /* -- SOFT (exclK < 0.75): steering force away from occupied cells,
+            weighted by heading-coincidence via the momentum field.
+            Grid-local (3x3..7x7 stencil = O(N)), seam-aware through
+            foldRead; momentum read seam-aware through momRead. */
+      if(P.exclK < 0.75){
+        const R = P.exclR|0;  /* review nit: integer coercion */
+        let px=0, py=0, hits=0, wsum=0;
+        for(let oy=-R; oy<=R; oy++) for(let ox=-R; ox<=R; ox++){
+          if(ox===0 && oy===0) continue;
+          const [fx, fy] = foldRead(nx+ox, ny+oy);
+          const idx = (((Math.floor(fy)%H)+H)%H)*W + (((Math.floor(fx)%W))+W)%W;
+          if(idx === p._oc) continue;  /* C1 fix: never repel self */
+          const cnt = occ[idx];
+          if(!(cnt > 0)) continue;  /* review nit: NaN/undefined-safe */
+          hits++;
+          /* heading-coincidence: same-state repels. Compare the agent's
+             heading with the cell's momentum vector, in the cell's OWN
+             image (momRead flips components per mirror, matching the
+             agent's chart frame). */
+          momRead(nx+ox, ny+oy, _m);
+          const mw = Math.hypot(_m[0], _m[1]);
+          let w;
+          if(mw > 1e-6){
+            const cosh = (Math.cos(p.a)*_m[0] + Math.sin(p.a)*_m[1]) / mw;
+            w = Math.max(0, cosh);          // parallel = repel; anti/orthogonal = ignore
+          } else w = 0.5;                   // no momentum info: mild repulsion
+          px -= ox * w * cnt;
+          py -= oy * w * cnt;
+          wsum += w * cnt;
+          hits++;
+        }
+        if(hits > 0 && wsum > 1e-9){
+          exclReject++;
+          /* NORMALIZED: unit-magnitude direction — occupancy saturation
+             (thousands of neighbors inside a dense band) must not scale
+             the kick to teleport-level magnitudes. */
+          const pl = Math.hypot(px, py);
+          if (isFinite(pl) && pl > 1e-9) {
+            if (P.exclMode === 'jitter') {
+              /* reviewer control #2: identical-magnitude random direction */
+              const ja = rndExcl()*Math.PI*2;
+              nx += Math.cos(ja) * P.exclK * 1.2;
+              ny += Math.sin(ja) * P.exclK * 1.2;
+            } else {
+              nx += px / pl * P.exclK * 1.2;
+              ny += py / pl * P.exclK * 1.2;
+            }
+          }
+        }
+      }
+      /* -- HARD (exclK >= 0.75): veto the move if the target cell is
+            occupied. Fallback: second-choice sensor direction, else keep
+            heading (pin). Stochastic among allowed choices, seeded. */
+      else {
+        const R = P.exclR|0;
+        const [gfx, gfy] = foldRead(nx, ny);
+        const gi = (((Math.floor(gfy)%H)+H)%H)*W + (((Math.floor(gfx)%W))+W)%W;
+        if(occ[gi] > 0 && gi !== p._oc){  /* C1 fix: self cell is not a collision */
+          exclReject++;
+          /* try the two flank directions, in randomized order (seeded by
+             rnd() so reproducibility holds) */
+          const first = rndExcl()<0.5 ? -P.sa : P.sa;
+          let done = false;
+          for(const off of [first, -first]){
+            const a2 = p.a + off;
+            const tx = p.x + Math.cos(a2)*1, ty = p.y + Math.sin(a2)*1;
+            const [tfx, tfy] = foldRead(tx, ty);
+            const ti = ((Math.floor(tfy)%H)+H)%H*W + (((Math.floor(tfx)%W))+W)%W;
+            if(occ[ti] === 0){ nx = tx; ny = ty; done = true; break; }
+          }
+          if(!done){ exclPins++; nx = p.x; ny = p.y; }  // pinned: stay put
+        }
+      }
+    }
+    /* the weld: position AND heading transform together through the rule
+       (topo-asteroids' flipP protocol — mirroring the heading without
+       mirroring the position strands the agent at the wrong image of
+       itself, which used to trap it at the seam) */
+    if(!isFinite(nx) || !isFinite(ny)){ nx = p.x; ny = p.y; exclReject++; }  /* v2.11.5 NaN guard */
+    if(!isFinite(p.a)) p.a = rnd()*Math.PI*2;  /* review M4: NaN heading = invisible pinned depositor */
+    const q = { x:nx, y:ny, a:p.a };
+    wrapPos(q);
+    p.x = q.x; p.y = q.y; p.a = q.a;
+    const [gx, gy] = foldRead(p.x, p.y);
+    grid[(Math.floor(gy)%H)*W + (Math.floor(gx)%W)] += dep;
+    if (P.mass>0){
+      /* v2.11.8 (#39): on a walled y the last partial block (gy >= mH*MS)
+         belongs to the bottom row, not (mod mH) to the top one */
+      const mj = topo.y.wrap ? ((Math.floor(gy/MS)%mH)+mH)%mH : Math.min(mH - 1, Math.floor(gy/MS));
+      const mi = mj*mW + (((Math.floor(gx/MS)%mW)+mW)%mW);
+      momX[mi]+=Math.cos(p.a); momY[mi]+=Math.sin(p.a);
+    }
+  }
+}
+
+/* ── robust refs: exact quantiles (v2.12.0, same code as welded_fields
+   v1.3.0). ref = 99.5th percentile, cut = the level that puts P.thr of
+   cells in the mask. The ancestor's 1024-bin linear histogram put most
+   cells in bin 0 and could miss a 20-40% coverage target badly. ── */
+const NB=1024; const histo=new Int32Array(NB);
+const LOGSPAN=Math.log(1e7);                 // bins cover [max*1e-7, max]; lower values share bin 0
+let selBuf=new Float32Array(0);
+function binOf(v, lmax){ if(v<=0) return 0; const b=((Math.log(v)-lmax)/LOGSPAN+1)*(NB-1); return b<=0?0:(b>=NB-1?NB-1:b|0); }
+/* value of rank k (0 = largest) */
+function selectRank(k, lmax){
+  let acc=0, b=NB-1;
+  for(; b>0; b--){ if(acc+histo[b]>k) break; acc+=histo[b]; }
+  if(selBuf.length<histo[b]) selBuf=new Float32Array(histo[b]);
+  /* cheap value window around the bin; binOf() decides at the edges */
+  const lo = b===0 ? -Infinity : Math.exp(lmax+(b/(NB-1)-1)*LOGSPAN)*0.999;
+  const hi = Math.exp(lmax+((b+1)/(NB-1)-1)*LOGSPAN)*1.001;
+  let n=0;
+  for(let i=0;i<grid.length;i++){ const v=grid[i]; if(v>=lo && v<=hi && binOf(v,lmax)===b) selBuf[n++]=v; }
+  const sub=selBuf.subarray(0,n); sub.sort();       // ascending
+  return sub[n-1-(k-acc)];
+}
+function refs(){
+  let max=0; for(let i=0;i<grid.length;i++) if(grid[i]>max) max=grid[i];
+  if(max<=0) return {ref:1, cut:Infinity, max:0};
+  histo.fill(0);
+  const lmax=Math.log(max);
+  for(let i=0;i<grid.length;i++) histo[binOf(grid[i],lmax)]++;
+  const total=grid.length;
+  const kRef=Math.min(total-1, Math.floor(total*0.005));
+  const kCut=Math.min(total-1, Math.max(0, Math.round(total*P.thr)));
+  const ref=selectRank(kRef, lmax), cut=selectRank(kCut, lmax);
+  return {ref:Math.max(ref,1e-6), cut, max};
+}
+
+/* ── topology readout ON THE GLUED SURFACE (v2.12.0) ─────────────────
+   The mask is a union of closed pixel squares. Glue the square's edges by
+   the surface's rule and count the cubical complex that results:
+   vertices, edges and faces are identified across each seam (mirrored
+   where the rule mirrors), then
+     b0 = connected pieces (union-find over glued vertices),
+     chi = V - E + F of the glued complex,
+     b2 = 1 only when the mask covers a CLOSED surface completely
+          (torus, Klein, projective; the Möbius strip has walls, so 0),
+     b1 = b0 + b2 - chi   (Z/2 coefficients, so non-orientable surfaces
+          have no torsion problem).
+   Checked against an independent GF(2) rank computation of the same
+   complexes (scripts in the lane-1 PR): 0 mismatches on random masks per
+   surface. Before v2.12.0 this readout was the FLAT square's count. */
+let GC = null;
+function ufFind(p, i){ while(p[i]!==i){ p[i]=p[p[i]]; i=p[i]; } return i; }
+function glueClasses(){
+  const VW=W+1, VH=H+1;
+  const pv=new Int32Array(VW*VH), ph=new Int32Array(W*VH), pe=new Int32Array(VW*H);
+  for(let i=0;i<pv.length;i++) pv[i]=i;
+  for(let i=0;i<ph.length;i++) ph[i]=i;
+  for(let i=0;i<pe.length;i++) pe[i]=i;
+  const un=(p,a,b)=>{ a=ufFind(p,a); b=ufFind(p,b); if(a!==b) p[a]=b; };
+  /* x-seam: the point (W, t) is the point (0, t) — or (0, H−t) when the
+     seam mirrors y (flipP: crossing x mirrors the named axis) */
+  if(topo.x.wrap){
+    const m = topo.x.flip==='y';
+    for(let j=0;j<=H;j++) un(pv, j*VW+W, (m?H-j:j)*VW);
+    for(let j=0;j<H;j++)  un(pe, j*VW+W, (m?H-1-j:j)*VW);
+  }
+  /* y-seam: (t, H) is (t, 0) — or (W−t, 0) when the seam mirrors x */
+  if(topo.y.wrap){
+    const m = topo.y.flip==='x';
+    for(let i=0;i<=W;i++) un(pv, H*VW+i, m?W-i:i);
+    for(let i=0;i<W;i++)  un(ph, H*W+i,  m?W-1-i:i);
+  }
+  const compress=(p)=>{ const id=new Int32Array(p.length).fill(-1), out=new Int32Array(p.length); let n=0;
+    for(let i=0;i<p.length;i++){ const r=ufFind(p,i); if(id[r]<0) id[r]=n++; out[i]=id[r]; } return [out,n]; };
+  const [vC,nV]=compress(pv), [hC,nH]=compress(ph), [eC,nE]=compress(pe);
+  GC={ key:topo.id+':'+W+'x'+H, vC, hC, eC, nV, nH, nE,
+       closed: !!(topo.x.wrap && topo.y.wrap),
+       sv:new Uint8Array(nV), sh:new Uint8Array(nH), se:new Uint8Array(nE), uf:new Int32Array(nV) };
+}
+function census(){
+  if(!GC || GC.key!==topo.id+':'+W+'x'+H) glueClasses();
+  const {vC,hC,eC,sv,sh,se,uf}=GC, VW=W+1;
+  sv.fill(0); sh.fill(0); se.fill(0);
+  for(let i=0;i<uf.length;i++) uf[i]=i;
+  let F=0;
+  for(let y=0;y<H;y++) for(let x=0;x<W;x++){
+    if(!mask[y*W+x]) continue;
+    F++;
+    const a=vC[y*VW+x], b=vC[y*VW+x+1], c=vC[(y+1)*VW+x], d=vC[(y+1)*VW+x+1];
+    sv[a]=1; sv[b]=1; sv[c]=1; sv[d]=1;
+    sh[hC[y*W+x]]=1; sh[hC[(y+1)*W+x]]=1; se[eC[y*VW+x]]=1; se[eC[y*VW+x+1]]=1;
+    const ra=ufFind(uf,a);
+    for(const v of [b,c,d]){ const r=ufFind(uf,v); if(r!==ra) uf[r]=ra; }
+  }
+  let V=0, E=0, b0=0;
+  for(let i=0;i<sv.length;i++) if(sv[i]){ V++; if(ufFind(uf,i)===i) b0++; }
+  for(let i=0;i<sh.length;i++) E+=sh[i];
+  for(let i=0;i<se.length;i++) E+=se[i];
+  const chi=V-E+F, b2=(GC.closed && F===W*H)?1:0;
+  return { b0, b1:b0+b2-chi, b2, chi };
+}
+/* /census */
+let B = {b0:0, b1:0, coverage:0};
+function measure(t){
+  let on=0;
+  for(let i=0;i<grid.length;i++){ const m=grid[i]>t?1:0; mask[i]=m; on+=m; }
+  const c=census();
+  B = {b0:c.b0, b1:c.b1, b2:c.b2, chi:c.chi, coverage:+(100*on/grid.length).toFixed(2)};
+  hist.push(B.b1); if(hist.length>240) hist.shift();
+  document.getElementById('r-b1').textContent=B.b1;
+  document.getElementById('r-b0').textContent=B.b0;
+  document.getElementById('r-cov').textContent=B.coverage.toFixed(1)+'%';
+  checkLevel();
+}
+
+/* ── levels ─────────────────────────────────────────────────────────
+   v2.12.0: a level is DONE when the bright part has joined up into at
+   most JOIN_MAX pieces (β₀, counted on the glued surface) for 3 measures
+   in a row. The old gate was a β₁ target, and a null run showed it
+   measured speckle: structureless random walkers (no steering, no
+   arrows) reach β₁ 13-19 on every surface while the physarum settles at
+   β₁ 0-7, so the walkers met the low targets and the physarum met none
+   (levels I-VI x seeds 5/6/7, 1200 steps, quotient census). The piece
+   count separates them: the physarum passes this gate on 18/18 runs,
+   the walkers on 0/18 (they stay above 2000 pieces). β₁ is still shown, as a readout. */
+const JOIN_MAX = 3;
+const LEVELS = [
+  { name:'1. The donut', surface:'torus',
+    note:'Same setup as Welded Fields. Wait for the trails to join up into one network.',
+    set:{ mass:1, adv:0.02, ali:0.02, ng:0, dec:0.99, mdec:0.94, sa:60, ra:18, so:5 } },
+  { name:'2. The Klein bottle', surface:'klein',
+    note:'Same dots, but the top edge joins the bottom with a flip. Watch trails come back mirrored.',
+    set:{ mass:1, adv:0.02, ali:0.02, ng:0, dec:0.99, mdec:0.94, sa:60, ra:18, so:5 } },
+  { name:'3. The projective plane', surface:'projective',
+    note:'Both pairs of edges flip.',
+    set:{ mass:1.4, adv:0.05, ali:0.05, ng:0, dec:0.985, mdec:0.92, sa:70, ra:22, so:6 } },
+  { name:'4. The Möbius strip', surface:'mobius',
+    note:'One flipped join and two walls.',
+    set:{ mass:1, adv:0.02, ali:0.02, ng:0, dec:0.99, mdec:0.94, sa:60, ra:18, so:5 } },
+  { name:'5. Storm', surface:'klein',
+    note:'The Klein bottle with outside noise turned on.',
+    set:{ mass:1, adv:0.08, ali:0.06, ng:0.6, ns:0.006, dr:0.005, dec:0.99, mdec:0.94, sa:60, ra:18, so:5 } },
+  { name:'6. Closed loop', surface:'torus',
+    note:'Outside noise off, strong arrows that outlast the scent.',
+    set:{ mass:1.6, adv:0.10, ali:0.10, ng:0, dec:0.993, mdec:0.975, sa:60, ra:18, so:5 } },
+];
+let levelIdx = 0, levelSolved = false, lastSolve = -1, solveStreak = 0;
+function applySet(set){
+  for (const [k, v] of Object.entries(set)) {
+    if (k==='sa'||k==='ra') { P[k]=v*Math.PI/180; const el=document.getElementById(k); el.value=v; document.getElementById('v-'+k).textContent=v+'°'; }
+    else if (k in P) { P[k]=v; const el=document.getElementById(k); if(el){ el.value=v; const out=document.getElementById('v-'+k);
+      if(out) out.textContent = (k==='dec'||k==='mdec') ? v.toFixed(3) : (k==='ns'||k==='dr') ? v.toFixed(4) : (k==='adv'||k==='ali'||k==='mass') ? v.toFixed(2) : String(v); } }
+  }
+}
+function loadLevel(i){
+  levelIdx = ((i % LEVELS.length) + LEVELS.length) % LEVELS.length;
+  const L = LEVELS[levelIdx];
+  levelSolved = false; solveStreak = 0;
+  setSurface(L.surface, true);
+  applySet(L.set);
+  resetField();
+  updateLevelNote();
+  toast(L.name);
+}
+function updateLevelNote(){
+  const L = LEVELS[levelIdx];
+  const st = document.getElementById('levelMode').value;
+  document.getElementById('lvl-note').innerHTML =
+    `<b>${L.name}</b> · done when the bright part is ${JOIN_MAX} pieces or fewer<br>${L.note}` +
+    (levelSolved ? ' <span class="done">— joined up</span>' : '');
+  document.getElementById('r-mratio').parentElement && void 0;
+}
+function checkLevel(){
+  if (P.levelMode !== 'tour') return;
+  if (levelSolved) return;
+  if (B.b0 >= 1 && B.b0 <= JOIN_MAX) { solveStreak++; } else { solveStreak = 0; }
+  /* done only when it holds for 3 consecutive measures (20 steps apart),
+     so a transient does not count */
+  if (solveStreak >= 3) {
+    levelSolved = true; lastSolve = frame;
+    updateLevelNote(); toast(`${LEVELS[levelIdx].name}: joined up (${B.b0} piece${B.b0>1?'s':''}, β₁ ${B.b1})`);
+  }
+}
+document.getElementById('btnLevel').addEventListener('click', ()=>loadLevel(levelIdx+1));
+document.getElementById('levelMode').addEventListener('change', e=>{ P.levelMode=e.target.value; updateLevelNote(); });
+
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.style.opacity=1;
+  clearTimeout(toast._h);
+  toast._h=setTimeout(()=>t.style.opacity=0, 2600);
+}
+
+/* ── controls (ancestor's bind pattern) ────────────────────────────── */
+/* bind is DOM→P. CONTROLS is the inverse, so a schedule that moves a
+   parameter also moves the slider: a panel showing 60° while the sim runs
+   at 90° is the same class of lie as an unrecorded mid-run change. */
+const CONTROLS={};
+const bind=(id,key,fmt,xf,inv)=>{
+  const el=document.getElementById(id), out=document.getElementById('v-'+id);
+  const apply=()=>{ const raw=parseFloat(el.value); P[key]=xf?xf(raw):raw; out.textContent=fmt(raw); };
+  el.addEventListener('input', apply); apply();
+  CONTROLS[key]={el, out, fmt, inv: inv || (v=>v)};
+};
+function syncControls(){
+  for(const k in CONTROLS){
+    const c=CONTROLS[k], raw=c.inv(P[k]);
+    c.el.value=raw; c.out.textContent=c.fmt(raw);
+  }
+}
+bind('sa','sa', v=>v+'°', v=>v*Math.PI/180, v=>Math.round(v*180/Math.PI));
+bind('ra','ra', v=>v+'°', v=>v*Math.PI/180, v=>Math.round(v*180/Math.PI));
+bind('so','so', v=>String(v));
+bind('N','N', v=>String(v|0));
+bind('dec','dec',v=>v.toFixed(3));
+bind('dep','dep',v=>String(v));
+bind('adv','adv',v=>v.toFixed(2));
+bind('ali','ali',v=>v.toFixed(2));
+bind('exclR','exclR',v=>v.toFixed(0));
+bind('exclK','exclK',v=>v.toFixed(2));
+bind('mass','mass',v=>v.toFixed(2));
+bind('mdec','mdec',v=>v.toFixed(3));
+bind('relief','relief', v=>v.toFixed(2));
+bind('tspeed','tspeed', v=>v.toFixed(1)+'×');
+document.getElementById('view3dmode').addEventListener('change', e=>{
+  P.view3dmode = e.target.value;
+  if(P.view3dmode==='map' && window.__weldedCam){ window.__weldedCam.set({theta:0, phi:0.35, dist:3.0}); }  /* top-down onto the sheet */
+});
+bind('ng','ng', v=>v.toFixed(2));
+bind('ns','ns', v=>v.toFixed(4));
+bind('dr','dr', v=>v.toFixed(4));
+bind('thr','thr',v=>v+'%', v=>v/100, v=>Math.round(v*100));
+document.getElementById('slc').addEventListener('input', e=>{
+  SL.c = parseFloat(e.target.value);
+  document.getElementById('v-slc').textContent = SL.c.toFixed(2);
+  if(SL.on) drawSlice();
+});
+document.getElementById('slcOn').addEventListener('change', e=>{
+  SL.on = e.target.checked;
+  if(SL.on) drawSlice();
+});
+document.getElementById('vls').addEventListener('input', e=>{
+  VLS.alpha = parseFloat(e.target.value);
+  document.getElementById('v-vls').textContent = VLS.alpha.toFixed(1)+'°';
+  if(VLS.on) drawVill();
+});
+document.getElementById('vlsOn').addEventListener('change', e=>{
+  VLS.on = e.target.checked;
+  if(VLS.on) drawVill();
+});
+/* ── confinement field wiring (v2.11) ── */
+document.getElementById('cfm').addEventListener('change', e=>{
+  CF.mode = e.target.value;
+  /* v2.11.3 (Opus): seed the decay reference with the CURRENT P_in so
+     the first decaying measure divides by the true field-on value. */
+  CLEDGER.P_in0 = CLEDGER.P_in > 1e-9 ? CLEDGER.P_in : 0;
+  document.getElementById('v-cfm').textContent = CF.mode;
+  if(CF.mode === 'field-decaying' && CLEDGER.P_in === 0){
+    /* entering decay with no prior field: seed from a field-on steady state */
+    CLEDGER.P_in = CF.kappa * 40 / CF.q;
+  }
+  drawConf();
+});
+document.getElementById('cfq').addEventListener('input', e=>{
+  CF.q = parseFloat(e.target.value);
+  document.getElementById('v-cfq').textContent = CF.q.toFixed(2);
+  if(CF.mode !== 'closed') drawConf();
+});
+document.getElementById('cfk').addEventListener('input', e=>{
+  CF.kappa = parseFloat(e.target.value);
+  document.getElementById('v-cfk').textContent = CF.kappa.toFixed(2);
+});
+document.getElementById('cfn').addEventListener('input', e=>{
+  CF.drift = parseFloat(e.target.value);
+  document.getElementById('v-cfn').textContent = CF.drift.toFixed(3);
+});
+document.getElementById('cfShow').addEventListener('change', e=>{ CF.arrows = e.target.checked; });
+document.getElementById('qOn').addEventListener('change', e=>{
+  QS.on = e.target.checked;
+  if(!QS.on) QS.hist.length = 0;
+});
+document.getElementById('btnReset').addEventListener('click', ()=>{ resetField(); updateLevelNote(); });
+document.getElementById('btn3d').addEventListener('click', ()=>setView3d(!view3d));
+/* mobile tabs + drawer */
+const bodyCl=document.body.classList;
+if(matchMedia('(max-width: 900px), (pointer: coarse) and (max-width: 1100px)').matches) bodyCl.add('mobile-sim');
+document.getElementById('tabSim').addEventListener('click', ()=>{ bodyCl.add('mobile-sim'); bodyCl.remove('mobile-3d');
+  document.getElementById('tabSim').classList.add('on'); document.getElementById('tab3d').classList.remove('on'); });
+document.getElementById('tab3d').addEventListener('click', ()=>{ bodyCl.add('mobile-3d'); bodyCl.remove('mobile-sim');
+  document.getElementById('tab3d').classList.add('on'); document.getElementById('tabSim').classList.remove('on');
+  if(typeof setView3d==='function') setView3d(true); });
+document.getElementById('panelToggle').addEventListener('click', ()=> bodyCl.toggle('panel-open'));
+/* assigned by the 3D module once the mesh exists; stays a no-op if 3D is unavailable */
+let applyShell=()=>{};
+document.getElementById('shell').addEventListener('change', e=>{ P.shell=e.target.value; applyShell(); });
+
+const sel = document.getElementById('topo');
+TOPOLOGIES.forEach((t,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=`${t.name} · ${t.word}`; sel.appendChild(o); });
+sel.addEventListener('change', ()=>setSurface(+sel.value, false));
+function setSurface(i, fromLevel){
+  if (typeof i === 'string') i = TOPOLOGIES.findIndex(t=>t.id===i);
+  topo = TOPOLOGIES[i]; sel.value = i;
+  document.getElementById('surf-note').textContent = topo.note;
+  if (!fromLevel) toast(topo.name);
+}
+
+/* ── setup + render ────────────────────────────────────────────────── */
+const cv=document.getElementById('sim'), ctx=cv.getContext('2d', {willReadFrequently:true});
+const ov=document.getElementById('over'), octx=ov.getContext('2d');
+function resetField(spawn){
+  grid=new Float32Array(W*H); tmp=new Float32Array(W*H); mask=new Uint8Array(W*H);
+  coarse=new Float32Array(cW*cH);
+  momX=new Float32Array(mW*mH); momY=new Float32Array(mW*mH);
+  occ=new Int16Array(W*H);
+  mtX=new Float32Array(mW*mH); mtY=new Float32Array(mW*mH);
+  horm=new Float32Array(mW*mH);
+  momRef=1; hormRef=1;
+  img=ctx.createImageData(W,H);
+  parts=new Array(P.N|0);
+  /* v2.11.2: clear winding accumulators — stale qPrev after reseed
+     produced ghost deltas on the first measure */
+  qAccum.length = 0; qPrev.length = 0;
+  /* review C2: exclusion counters + dedicated stream reset per run */
+  exclReject = 0; exclPins = 0; exclSteps = 0;
+  rndExcl = mulberry32(EXCL_SEED ^ curSeed);
+  /* 'disc' is the ancestor's spawn and the interactive default. 'uniform'
+     seeds the whole fundamental polygon, so a measurement at the seam is not
+     really measuring how far a central blob has spread. */
+  spawnMode = spawn || spawnMode || 'disc';
+  const cx=W/2, cy=H/2, R=Math.min(W,H)/4;
+  for(let i=0;i<parts.length;i++){
+    if(spawnMode==='uniform'){
+      parts[i]={x:rnd()*W, y:rnd()*H, a:rnd()*Math.PI*2};
+    } else {
+      const r=Math.sqrt(rnd())*R, th=rnd()*Math.PI*2;
+      parts[i]={x:cx+r*Math.cos(th), y:cy+r*Math.sin(th), a:rnd()*Math.PI*2};
+    }
+  }
+  hist.length=0;
+}
+let spawnMode='disc';
+window.addEventListener('resize', fitCanvases);
+/* grid→overlay scale, committed once per fit. Every draw path uses these.
+   Re-reading devicePixelRatio at draw time is the bug: the buffer and the
+   transform are stamped with the DPR that was live at fit time, so a later
+   DPR that disagrees puts the whole overlay at 1/DPR scale, top-left. */
+let ovSX=1, ovSY=1;
+function fitCanvases(){
+  const sq=document.getElementById('sq'), box=document.getElementById('sqbox');
+  cv.width=W; cv.height=H;
+  /* the fundamental polygon is square — render it as a square, letterboxed */
+  const s=Math.min(sq.clientWidth, sq.clientHeight);
+  box.style.width=s+'px'; box.style.height=s+'px';
+  const DPR=Math.min(window.devicePixelRatio||1,2);
+  ov.width=Math.round(s*DPR); ov.height=Math.round(s*DPR);
+  octx.setTransform(DPR,0,0,DPR,0,0);
+  ovSX=s/W; ovSY=s/H;
+  watchDPR();
+}
+/* a window dragged to a display of different pixel density changes
+   devicePixelRatio without changing the window's CSS size, so `resize`
+   never fires. This is the only reliable signal for it. */
+let dprMQ=null;
+function watchDPR(){
+  if(dprMQ) dprMQ.removeEventListener('change', fitCanvases);
+  dprMQ=matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  dprMQ.addEventListener('change', fitCanvases);
+}
+/* layout can change without a window resize (panel reflow, font settle) */
+if(window.ResizeObserver) new ResizeObserver(fitCanvases).observe(document.getElementById('sq'));
+
+/* render + contours (ancestor's pipeline) */
+const RAMP=[[70,52,120],[124,92,200],[167,139,250],[200,180,255],[236,230,255]];  /* violet family — distinct from the green chemical field */
+const LEVELS_C=[0.06,0.11,0.18,0.28,0.42,0.60,0.82];
+let refMax=1;
+function pool(){
+  coarse.fill(0);
+  for(let y=0;y<cH*CS;y++){
+    const cy=(y/CS)|0, r=y*W, cr=cy*cW;
+    for(let x=0;x<cW*CS;x++) coarse[cr+((x/CS)|0)]+=grid[r+x];
+  }
+  const inv=1/(CS*CS);
+  for(let i=0;i<coarse.length;i++) coarse[i]*=inv;
+}
+const lerp=(L,va,vb,pa,pb)=>pa+(pb-pa)*((L-va)/(vb-va));
+const segStore=[];   // contour segments reused for the 3D push
+function buildContour(L, path){
+  segStore.length=0;
+  const at=(x,y)=>coarse[(((y%cH)+cH)%cH)*cW + (((x%cW)+cW)%cW)];
+  for(let j=0;j<cH;j++){
+    const yT=j*CS, yB=(j+1)*CS, row=j*cW;
+    for(let i=0;i<cW;i++){
+      const k=row+i, tl=at(i,j), tr=at(i+1,j), br=at(i+1,j+1), bl=at(i,j+1);
+      const c=(tl>L?8:0)|(tr>L?4:0)|(br>L?2:0)|(bl>L?1:0);
+      if(c===0||c===15) continue;
+      const xL=i*CS, xR=(i+1)*CS;
+      let Tx=0,Ty=0,Rx=0,Ry=0,Bx=0,By=0,Lx=0,Ly=0;
+      if((tl>L)!==(tr>L)){ Tx=lerp(L,tl,tr,xL,xR); Ty=yT; }
+      if((tr>L)!==(br>L)){ Rx=xR; Ry=lerp(L,tr,br,yT,yB); }
+      if((bl>L)!==(br>L)){ Bx=lerp(L,bl,br,xL,xR); By=yB; }
+      if((tl>L)!==(bl>L)){ Lx=xL; Ly=lerp(L,tl,bl,yT,yB); }
+      const push=(ax,ay,bx,by)=>{ path.moveTo(ax,ay); path.lineTo(bx,by); segStore.push([ax,ay,bx,by]); };
+      switch(c){
+        case 1: case 14: push(Lx,Ly,Bx,By); break;
+        case 2: case 13: push(Bx,By,Rx,Ry); break;
+        case 3: case 12: push(Lx,Ly,Rx,Ry); break;
+        case 4: case 11: push(Tx,Ty,Rx,Ry); break;
+        case 6: case 9:  push(Tx,Ty,Bx,By); break;
+        case 7: case 8:  push(Lx,Ly,Tx,Ty); break;
+        case 5:  push(Lx,Ly,Tx,Ty); push(Bx,By,Rx,Ry); break;
+        case 10: push(Lx,Ly,Bx,By); push(Tx,Ty,Rx,Ry); break;
+      }
+    }
+  }
+}
+let contourSegs=[];
+function drawContours(max){
+  octx.clearRect(0,0,ov.width,ov.height);
+  pool();
+  const inst=max<1e-6?1e-6:max;
+  refMax += (inst-refMax)*0.02;
+  const sx=ovSX, sy=ovSY;
+  octx.globalCompositeOperation='lighter';
+  octx.lineCap='round'; octx.lineJoin='round';
+  contourSegs=[];
+  /* buildContour works in GRID units (0..W) because segStore is reused for
+     the 3D push, which needs grid coordinates. The strokes therefore have to
+     carry the grid→CSS scale themselves — without this the contours draw one
+     grid unit per CSS pixel, i.e. a W-sized patch in the top-left of an
+     s-sized box. Line widths are authored in CSS px, so divide them back out. */
+  octx.save(); octx.scale(sx,sy);
+  for(const p of LEVELS_C){
+    const t=0.30+0.70*p, x=t*(RAMP.length-1), i=Math.min(RAMP.length-2, Math.floor(x)), f=x-i;
+    const a=RAMP[i], b=RAMP[i+1];
+    const col=`${(a[0]+(b[0]-a[0])*f)|0},${(a[1]+(b[1]-a[1])*f)|0},${(a[2]+(b[2]-a[2])*f)|0}`;
+    const path=new Path2D();
+    buildContour(p*refMax, path);
+    /* seam continuation: a segment touching an edge repeats shifted by
+       the wrap so closed loops read continuously across the weld */
+    const pathW=new Path2D();
+    for(const s of segStore){
+      const nearL=s[0]<CS||s[2]<CS, nearR=s[0]>W-CS||s[2]>W-CS;
+      const nearT=s[1]<CS||s[3]<CS, nearB=s[1]>H-CS||s[3]>H-CS;
+      if(nearL){ pathW.moveTo(s[0]+W,s[1]); pathW.lineTo(s[2]+W,s[3]); }
+      if(nearR){ pathW.moveTo(s[0]-W,s[1]); pathW.lineTo(s[2]-W,s[3]); }
+      if(nearT && topo.y.wrap){ pathW.moveTo(s[0],s[1]+H); pathW.lineTo(s[2],s[3]+H); }
+      if(nearB && topo.y.wrap){ pathW.moveTo(s[0],s[1]-H); pathW.lineTo(s[2],s[3]-H); }
+    }
+    contourSegs.push({level:p, segs:segStore.slice()});
+    octx.strokeStyle=`rgba(${col},${(0.06+0.13*p).toFixed(3)})`; octx.lineWidth=(3.2-1.5*p)/sx;
+    octx.stroke(path); octx.stroke(pathW);
+    octx.strokeStyle=`rgba(${col},${(0.42+0.58*p).toFixed(3)})`; octx.lineWidth=(0.8+0.6*p)/sx;
+    octx.stroke(path); octx.stroke(pathW);
+  }
+  octx.restore();
+  octx.globalCompositeOperation='source-over';
+}
+function render(max){
+  const d=img.data, inv=max>0?1/max:0;
+  for(let i=0;i<grid.length;i++){
+    let v=Math.sqrt(grid[i]*inv); if(v>1) v=1;
+    const px=i*4;
+    d[px]=v*40; d[px+1]=v*255; d[px+2]=v*140;
+    d[px+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  /* vector-field overlay on the square */
+  octx.strokeStyle='rgba(167,139,250,0.30)'; octx.lineWidth=0.6;
+  const s=Math.max(14, Math.round(W/44)), o=[0,0,0];
+  const vsx=ovSX, vsy=ovSY;
+  octx.beginPath();
+  for(let y=s/2;y<H;y+=s) for(let x=s/2;x<W;x+=s){
+    fieldAt(x,y,o);
+    if(o[2]<=0) continue;
+    const L=s*0.42*(0.35+0.65*o[2]);
+    octx.moveTo(x*vsx, y*vsy); octx.lineTo((x+o[0]*L)*vsx, (y+o[1]*L)*vsy);
+  }
+  octx.stroke();
+}
+
+/* agent dots: cyan-white, distinct from the green chemical — sparse
+   sample so the swarm reads as a flow, not noise */
+function drawAgents2D(){
+  octx.fillStyle='rgba(140,240,255,0.85)';
+  const stride=Math.max(1, Math.floor(parts.length/1400));
+  const rx=ovSX, ry=ovSY;
+  octx.beginPath();
+  for(let i=0;i<parts.length;i+=stride){
+    const a=parts[i], x=a.x*rx, y=a.y*ry;
+    octx.moveTo(x+1.1,y); octx.arc(x,y,1.1,0,7);
+  }
+  octx.fill();
+}
+
+
+/* ── slice scope: planar section of the torus ────────────────────────
+   A plane z = c cuts the torus in two circles. Sample the trail on both,
+   take the per-θ difference, normalize by the CLAMPED DIMENSIONAL RADIUS
+   ρc = R + sqrt(max(0, r²−c²)) — the section's radial reach at height c.
+   Readout: flat ~0 toroidally uniform; +mean outer-wall loop; −mean bore
+   loop; sinusoidal = tilted/Villarceau band (phase = plane orientation).
+   Δ̄/ρc is the scalar summary (trail per radius). */
+const SL = { c: 0.0, on: false };
+const SLN = 128;
+function sliceSample(){
+  const R=1.0, r=0.45, c=Math.max(-r+1e-4, Math.min(r-1e-4, SL.c));
+  const phi=Math.asin(c/r), rhoC=R+Math.sqrt(Math.max(0, r*r-c*c));
+  const data=[], dout=[];
+  for(let k=0;k<SLN;k++){
+    const th=TAU*k/SLN;
+    const phis=[phi, Math.PI-phi];
+    const vals=phis.map(pp=>{
+      const v=((pp/TAU)+1)%1, u=th/TAU;
+      const gx=Math.min(W-1, (u*W)|0), gy=Math.min(H-1, (v*H)|0);
+      return grid[gy*W+gx];
+    });
+    const d=vals[0]-vals[1];
+    data.push(th, vals[0], vals[1], d); dout.push(d);
+  }
+  let mean=0; for(const d of dout) mean+=d; mean/=SLN;
+  let re=0, im=0;
+  for(let k=0;k<SLN;k++){ const d=dout[k], a=TAU*k/SLN; re+=d*Math.cos(a); im+=d*Math.sin(a); }
+  re/=SLN; im/=SLN;
+  return { rhoC, mean, norm: mean/rhoC, amp: 2*Math.hypot(re,im), phase: Math.atan2(im,re), data, c };
+}
+function drawSlice(){
+  const cv=document.getElementById('sliceCv'); if(!cv) return;
+  const g=cv.getContext('2d'), w=cv.width, h=cv.height;
+  g.clearRect(0,0,w,h);
+  const s=sliceSample();
+  let mx=1e-9; for(let k=0;k<s.data.length;k++) mx=Math.max(mx, Math.abs(s.data[k]));
+  const rows=[['hi','#4fe08a'],['lo','#2a9a5a'],['diff','#e0b04f']];
+  const rh=h/3;
+  rows.forEach((row,ri)=>{
+    const [lab,col]=row, y0=ri*rh;
+    g.strokeStyle='rgba(255,255,255,0.08)'; g.beginPath(); g.moveTo(0,y0+rh/2); g.lineTo(w,y0+rh/2); g.stroke();
+    g.strokeStyle=col; g.lineWidth=1.2; g.beginPath();
+    for(let k=0;k<SLN;k++){
+      const v=s.data[4*k+(ri===2?3:ri===0?1:2)], x=k*w/SLN, y=y0+rh/2-(v/mx)*(rh/2-3);
+      k? g.lineTo(x,y) : g.moveTo(x,y);
+    }
+    g.stroke();
+    g.fillStyle='rgba(255,255,255,0.55)'; g.font='10px monospace'; g.fillText(lab, 4, y0+12);
+  });
+  g.fillStyle='#e0b04f'; g.font='10px monospace';
+  g.fillText('\u03c1c='+s.rhoC.toFixed(2)+'  \u0394\u0304='+s.mean.toFixed(2)+'  \u0394\u0304/\u03c1c='+s.norm.toFixed(3)+'  amp='+s.amp.toFixed(2)+'  ph='+((s.phase*180/Math.PI).toFixed(0))+'\u00b0', 4, h-6);
+}
+function stepSlice(){ if(SL.on) drawSlice(); }
+
+/* ── Villarceau scope: the third slice family — oblique sections ──────
+   A plane tilted α from the equator (about the y axis through the torus
+   center, offset d along its normal) cuts the torus in a loop pair whose
+   topology depends on α vs the critical angle:
+
+       sin α* = r/R        (sim torus R=1, r=0.45 → α* = 26.744°)
+
+   Correct section semantics (v2.10.1, post adversarial review):
+   α < α*:  nested disjoint loops · α = α*: the two circles CROSS
+   TRANSVERSELY at two points ('tangent' = plane-torus contact, not
+   circle-circle tangency; crossing angle 53.49° here, orthogonal on the
+   Clifford image) · α > α*: non-nested disjoint loops.
+   LINKING: same-plane sections are coplanar — linking number 0 or
+   undefined (they intersect at α*). The famous linked Villarceau pair
+   consists of same-handed circles from DIFFERENT rotated critical planes
+   (verified: Gauss linking number −1 for azimuth 60° apart).
+
+   Trail readout: per-v traces on both branch curves + difference, first
+   harmonic (amp/phase), geometry normalization, uncentered cosine
+   similarity ('agree' — NOT a linking number), and minimum 3D loop
+   separation ('sep'). */
+const VLS = { on:false, alpha:45 };  /* transition tracking deferred: needs
+  a persistent per-band field-structure detector — the v2.10 doc's 'transition
+  detection' claim was unimplemented (review defect #5); reintroduce with a
+  real design, not a stub flag */
+const VN = 96;                                 /* tube-angle samples */
+const VALPHA_STAR = Math.asin(0.45/1.0);       /* critical tilt, radians */
+
+function villSection(alphaRad, d){
+  /* plane tilted α about y-axis, offset d along its normal:
+     n̂ = (sin α, 0, cos α);  condition: sinα·x + cosα·z = d
+     with torusXYZ(u,v) = ((1+ρ cos v)cos u, (1+ρ cos v)sin u, ρ sin v), ρ=0.45.
+     Substituting: sinα·(1+ρ cos v)·cos u + cosα·ρ·sin v = d.
+     NOTE (v2.10.1 fix): B = cosα·ρ·sin v does NOT multiply sin u — the z-term
+     is constant in u. The v2.10.0 solver treated it as a sin-u coefficient
+     (atan2/acos phase-shift form) and sampled near-misses of the true plane
+     (plane residual up to ~0.7 at α=45°). Correct roots:
+        u = ±arccos((d − B)/A),  A = sinα·(1+ρ cos v),  B = cosα·ρ·sin v
+     when |d − B| ≤ A; no solution otherwise.
+     At α=0 (and α=90° at v=0,π) A=0: the section is degenerate — handled by
+     the caller via the d=0 special case in villSample. */
+  const r=0.45, sA=Math.sin(alphaRad), cA=Math.cos(alphaRad);
+  const uA=[], uB=[], solv=[];
+  for(let k=0;k<VN;k++){
+    const v=TAU*k/VN, cv=Math.cos(v), sv=Math.sin(v);
+    const A=sA*(1+r*cv), B=cA*r*sv;
+    const t=(d-B)/A;
+    if(A<1e-9 || Math.abs(t)>1+1e-12){ solv.push(0); uA.push(NaN); uB.push(NaN); continue; }
+    const acc=Math.acos(Math.max(-1,Math.min(1,t)));
+    let u1=acc, u2=-acc;
+    u1=((u1%TAU)+TAU)%TAU; u2=((u2%TAU)+TAU)%TAU;
+    /* double root at acc=0 or acc=π: record ONE root, not two identical ones */
+    const same = Math.abs(((u1-u2)/TAU)%1) < 1e-9 || Math.abs(Math.abs(u1-u2)-TAU) < 1e-9;
+    solv.push(same?1:2); uA.push(u1); uB.push(same?NaN:u2);
+  }
+  return {uA, uB, solv};
+}
+function villRegime(alphaRad){
+  /* classification by α vs α* (v2.10.1, post-review semantics):
+     α < α*:  nested disjoint loops (v2.10 "separate")
+     α = α*:  the two Villarceau circles CROSS TRANSVERSELY at two points —
+              'tangent' describes the plane's contact with the torus, NOT
+              circle-circle tangency (the crossing angle is 53.49° here,
+              orthogonal on the Clifford image). Linking number undefined —
+              the curves intersect.
+     α > α*:  non-nested disjoint loops (v2.10 "interlaced" — misleading;
+              the loops separate again, they do not interlace).
+     A ±0.5° dial interval can't resolve the exact critical angle; label it
+     'near α*' and keep the exact value readable. */
+  const star=VALPHA_STAR, eps=0.5*Math.PI/180;
+  if(alphaRad < star-eps) return 'separate';
+  if(alphaRad <= star+eps) return 'near α*';
+  return 'separated';
+}
+function villSample(){
+  let alpha=Math.min(89.9*Math.PI/180, Math.max(0, VLS.alpha*Math.PI/180));
+  /* plane offset d=0: the centered section family (classic pair). Snap the
+     dial onto the exact critical angle so the crossing configuration is
+     reachable (the ±0.5° regime band can't resolve it). */
+  const starDeg=VALPHA_STAR*180/Math.PI;
+  const snapped = Math.abs(VLS.alpha - starDeg) <= 0.5;
+  if(snapped) alpha=VALPHA_STAR;
+  const d=0;
+  const sec=villSection(alpha, d);
+  const data=[];
+  /* α=0 degeneracy (v2.10.1): the centered section is the two equatorial
+     circles — every u at v=0 and v=π. Reduce to the slice-scope section so
+     villSample(α=0) ≡ sliceSample(c=0) (design-doc verification #1, which
+     FAILED in v2.10.0: mean diff 2 vs 0 on the 1+cos v test field). */
+  if(alpha < 1e-9){
+    const savedC = SL.c; SL.c = 0;
+    const s0 = sliceSample();
+    SL.c = savedC;
+    const out = { alphaDeg:VLS.alpha, alphaStarDeg:starDeg, regime:'separate',
+      mean:s0.mean, norm:s0.norm, amp:s0.amp, phase:s0.phase,
+      agree:1, sep:2*(1-0.45), data:s0.data, c:0, equatorial:true };
+    return out;
+  }
+  let mx=1e-9;
+  for(let k=0;k<VN;k++){
+    const v=TAU*k/VN;
+    const val=u=>{
+      if(isNaN(u)) return NaN;
+      const gx=Math.min(W-1,(((u/TAU)%1+1)%1*W)|0), gy=Math.min(H-1,((v/TAU)%1*H)|0);
+      return grid[gy*W+gx];
+    };
+    const a=val(sec.uA[k]), b=val(sec.uB[k]);
+    const dd=(isNaN(a)||isNaN(b))?NaN:a-b;
+    data.push(v, a, b, dd);
+    if(!isNaN(a)) mx=Math.max(mx,Math.abs(a));
+    if(!isNaN(b)) mx=Math.max(mx,Math.abs(b));
+    if(!isNaN(dd)) mx=Math.max(mx,Math.abs(dd));
+  }
+  /* first harmonic of the difference (computed over VALID samples only —
+     v2.10.0 divided the mean by VN while pushing NaN→0, biasing stats by
+     valid-sample coverage) */
+  let mean=0,re=0,im=0,n=0;
+  for(let k=0;k<VN;k++){ const dd=data[4*k+3];
+    if(isNaN(dd)) continue;
+    mean+=dd; const a=TAU*k/VN; re+=dd*Math.cos(a); im+=dd*Math.sin(a); n++; }
+  if(n>0){ mean/=n; re/=n; im/=n; }
+  const amp=2*Math.hypot(re,im), phase=Math.atan2(im,re);
+  /* v2.10.1: 'agree' = uncentered cosine similarity of the two traces
+     (was 'link' — NOT a linking number; Pearson was claimed but the code
+     never subtracted means; baseline shifts dominate it; scene-dependent).
+     Added: 'sep' = minimum 3D separation between the two branch curves
+     (geometric proximity — the honest substitute for a linkage meter;
+     linking number is only defined for disjoint curves and same-plane
+     sections are coplanar, so its value here is always 0 or undefined). */
+  let sab=0,sa2=0,sb2=0,na=0;
+  for(let k=0;k<VN;k++){ const a=data[4*k+1], b=data[4*k+2];
+    if(!isNaN(a)&&!isNaN(b)){ sab+=a*b; sa2+=a*a; sb2+=b*b; na++; } }
+  const agree=na>0&&sa2>0&&sb2>0 ? sab/Math.sqrt(sa2*sb2) : 0;
+  let sep=Infinity;
+  for(let k=0;k<VN;k++){
+    const a=data[4*k+1], b=data[4*k+2];
+    if(isNaN(a)||isNaN(b)) continue;
+    const v=TAU*k/VN;
+    const p=torusXYZ(sec.uA[k]/TAU, v/TAU), q=torusXYZ(sec.uB[k]/TAU, v/TAU);
+    const dist=Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2]);
+    if(dist<sep) sep=dist;
+  }
+  if(!isFinite(sep)) sep=0;
+  const norm = mean/ (1 + Math.sqrt(Math.max(0,0.45*0.45-d*d)));  /* ρc at obliquity α≈equivalent */
+  const reg=villRegime(alpha);
+  return { alphaDeg:VLS.alpha, alphaStarDeg:starDeg, regime:reg, snapped,
+           mean, norm, amp, phase:phase*180/Math.PI, agree, sep, data, c:d };
+}
+function drawVill(){
+  const cv=document.getElementById('villCv'); if(!cv) return;
+  const g=cv.getContext('2d'), w=cv.width, h=cv.height;
+  g.clearRect(0,0,w,h);
+  const s=villSample();
+  /* v2.10.1: mx computed in villSample over AMPLITUDE entries only
+     (v2.10.0 maxed over the whole data array including the angle column,
+     so a field near TAU*0.99 dominated the scale of weak traces). */
+  let mx=s.amp>1e-9 ? s.amp : 1e-9;
+  mx=Math.max(mx, 1e-9);
+  // also cover raw a/b magnitudes so the trace rows don't clip
+  for(let k=0;k<VN;k++){
+    const a=s.data[4*k+1], b=s.data[4*k+2], dd=s.data[4*k+3];
+    if(!isNaN(a)) mx=Math.max(mx,Math.abs(a));
+    if(!isNaN(b)) mx=Math.max(mx,Math.abs(b));
+    if(!isNaN(dd)) mx=Math.max(mx,Math.abs(dd));
+  }
+  const rows=[['loop A','#4fe08a'],['loop B','#4f9fe0'],['diff','#e0b04f']];
+  const rh=(h-16)/3;
+  rows.forEach((row,ri)=>{
+    const [lab,col]=row, y0=ri*rh;
+    g.strokeStyle='rgba(255,255,255,0.08)'; g.beginPath(); g.moveTo(0,y0+rh/2); g.lineTo(w,y0+rh/2); g.stroke();
+    g.strokeStyle=col; g.lineWidth=1.2; g.beginPath(); let started=false;
+    for(let k=0;k<VN;k++){
+      const raw=s.data[4*k+(ri===2?3:ri===0?1:2)];
+      if(isNaN(raw)){ started=false; continue; }
+      const x=k*w/VN, y=y0+rh/2-(raw/mx)*(rh/2-3);
+      started? g.lineTo(x,y) : g.moveTo(x,y); started=true;
+    }
+    g.stroke();
+    g.fillStyle='rgba(255,255,255,0.55)'; g.font='10px monospace'; g.fillText(lab,4,y0+12);
+  });
+  /* v2.10.1: two shorter readout lines (v2.10.0's single line overflowed the
+     280px canvas — 'link=' began at char 52 and ran past the edge) */
+  g.fillStyle='#e0b04f'; g.font='9px monospace';
+  const regimeColor = s.regime==='near α*' ? '#ffd166' : s.regime==='separated' ? '#ef476f' : '#4fe08a';
+  g.fillStyle=regimeColor;
+  g.fillText('α='+s.alphaDeg.toFixed(1)+'° α*='+s.alphaStarDeg.toFixed(2)+'° '+s.regime+(s.snapped?' [snap]':''), 4, h-15);
+  g.fillStyle='#e0b04f';
+  g.fillText('Δ̄='+s.mean.toFixed(1)+' norm='+s.norm.toFixed(2)+' amp='+s.amp.toFixed(1), 4, h-15+9);
+  g.fillStyle='rgba(255,255,255,0.7)';
+  g.fillText('agree='+s.agree.toFixed(2)+' sep='+s.sep.toFixed(3)+' ph='+s.phase.toFixed(0)+'°', 4, h-4);
+  const regEl=document.getElementById('v-vls-reg');
+  if(regEl){ regEl.textContent=s.regime;
+    regEl.style.color = regimeColor; }
+}
+function stepVill(){ if(VLS.on) drawVill(); }
+
+/* ── q-histogram + confinement readout (v2.11) ───────────────────────
+   Per-agent winding number over a rolling window: q_agent = Δv/Δu of its
+   path in chart coords. Histogram peaks at the driving rational q when
+   the field confines (rational-surface analog). Coherence order parameter
+   = mean |cos(angle between heading and local field)|. */
+const QW = 64;                       /* window length (steps) */
+const qAccum = [];                   /* per-agent [du, dv] accumulators */
+const qPrev = [];                    /* per-agent previous position [x, y] */
+function qHistSample(){
+  const n = parts.length;
+  while(qAccum.length < n){ qAccum.push([0,0]); qPrev.push([NaN,NaN]); }
+  qAccum.length = n; qPrev.length = n;
+  /* v2.11.1 FIX: accumulate ACTUAL chart-position deltas, wrap-aware, not
+     heading vectors. v2.11.0 summed cos(a),sin(a) with a decay — but agents
+     parked ON the field direction have the front/back degeneracy (a and
+     a+π give the same tan) and the decay drives the distribution onto a
+     fixed attractor (~1.8) DECOUPLED from the driving q. The sweep showed
+     qPeak ~1.7-1.9 regardless of q at full coherence — impossible if the
+     instrument tracked the field. Position deltas give the path's TRUE
+     winding number q_agent = Δv/Δu; the front/back ambiguity is gone
+     because the displacement vector is what's summed, unambiguously. */
+  for(let i=0;i<n;i++){
+    const p = parts[i];
+    if(!isNaN(qPrev[i][0])){
+      let dx = p.x - qPrev[i][0], dy = p.y - qPrev[i][1];
+      /* wrap-aware: nearest image on the chart (period W in x, H in y) */
+      if(dx >  W/2) dx -= W; else if(dx < -W/2) dx += W;
+      if(dy >  H/2) dy -= H; else if(dy < -H/2) dy += H;
+      /* v2.11.2: mirror the displacement per seam crossing (the step's
+         nearest-image wrap is in PAGE coords; the chart-space displacement
+         on a flip surface also transforms by the seam rule) */
+      if(topo.y.flip && Math.abs(p.y - qPrev[i][1]) > H/2) [dx, dy] = flipV(dx, dy, topo.y.flip);
+      if(topo.x.flip && Math.abs(p.x - qPrev[i][0]) > W/2) [dx, dy] = flipV(dx, dy, topo.x.flip);
+      qAccum[i][0] += dx; qAccum[i][1] += dy;
+      /* rolling window: exponential decay keeps ~QW effective steps */
+      const m2 = qAccum[i][0]*qAccum[i][0] + qAccum[i][1]*qAccum[i][1];
+      if(m2 > QW*QW){ qAccum[i][0]*=0.9; qAccum[i][1]*=0.9; }
+    }
+    qPrev[i][0] = p.x; qPrev[i][1] = p.y;
+  }
+  /* histogram of q_agent = atan2-summed ratio, bucketed over [0.2,5] */
+  const NB2 = 96, hist = new Array(NB2).fill(0);
+  let coherence = 0, cn = 0;
+  const [fdx0, fdy0] = confDir(0,0); const fa0 = Math.atan2(fdy0, fdx0);
+  for(let i=0;i<n;i++){
+    const [du, dv] = qAccum[i];
+    if(Math.abs(du) < 1e-6) continue;
+    const qa = dv/du;
+    if(qa < 0.2 || qa > 5) continue;
+    const b = Math.min(NB2-1, Math.max(0, ((qa-0.2)/4.8*NB2)|0));
+    hist[b]++;
+    const [fx, fy] = confDir(parts[i].x, parts[i].y);
+    coherence += Math.abs(Math.cos(Math.atan2(fy,fx) - parts[i].a)); cn++;
+  }
+  return { hist, NB2, qmin:0.2, qmax:5, coherence: cn>0 ? coherence/cn : 0 };
+}
+function drawConf(){
+  const cv = document.getElementById('qHistCv'); if(!cv) return;
+  const g = cv.getContext('2d'), w = cv.width, h = cv.height;
+  g.clearRect(0,0,w,h);
+  if(CF.mode === 'closed'){
+    g.fillStyle='rgba(255,255,255,0.4)'; g.font='10px monospace';
+    g.fillText('closed system — no field ledger', 4, h/2);
+    return;
+  }
+  /* v2.11.2: field-arrow overlay (the checkbox now does something) */
+  if(CF.arrows){
+    g.strokeStyle = 'rgba(120,180,255,0.35)'; g.lineWidth = 1;
+    const step = 30;
+    for(let ay = step/2; ay < h; ay += step) for(let ax = step/2; ax < w; ax += step){
+      const gx = ax/w*W, gy = ay/h*H;
+      const fd = confDir(gx, gy);
+      g.beginPath(); g.moveTo(ax-fd[0]*8, ay-fd[1]*8); g.lineTo(ax+fd[0]*8, ay+fd[1]*8); g.stroke();
+      g.beginPath(); g.moveTo(ax+fd[0]*8, ay+fd[1]*8);
+      g.lineTo(ax+fd[0]*5-fd[1]*3, ay+fd[1]*5+fd[0]*3); g.stroke();
+    }
+  }
+  const s = qHistSample();
+  const mhist = Math.max(1, ...s.hist);
+  /* rational markers at q=1, 3/2, 2, 5/2, 3 */
+  g.strokeStyle='rgba(255,209,102,0.4)'; g.font='8px monospace';
+  [[1,'1'],[1.5,'3/2'],[2,'2'],[2.5,'5/2'],[3,'3']].forEach(([q,lab])=>{
+    const x = (q-s.qmin)/(s.qmax-s.qmin)*w;
+    g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke();
+    g.fillStyle='rgba(255,209,102,0.7)'; g.fillText(lab, x+2, 8);
+  });
+  g.fillStyle='#4fe08a';
+  for(let b=0;b<s.NB2;b++){
+    const x = b*w/s.NB2, bh = s.hist[b]/mhist*(h-14);
+    g.fillRect(x, h-bh, w/s.NB2-1, bh);
+  }
+  g.fillStyle='rgba(255,255,255,0.7)'; g.font='9px monospace';
+  g.fillText('q-hist  coherence='+s.coherence.toFixed(2), 4, h-2);
+  /* ledger line */
+  const rd = document.getElementById('cfRead');
+  if(rd) rd.textContent = 'τ='+CLEDGER.tauSim.toFixed(1)+' W='+CLEDGER.W_stored.toFixed(1)+
+    ' P_in='+CLEDGER.P_in.toFixed(1)+' P_loss='+CLEDGER.P_loss.toFixed(2);
+}
+
+
+
+/* ── quadrant scope: two 90° planes + the gyroscopic readout ─────────
+
+   Two orthogonal planes through the torus axis (the meridian pair at
+   φ_cut and φ_cut+90°) carve the ring into four quarter-sections. Each
+   quarter carries trail mass; the four masses are the vector components
+   of a first moment.
+
+   The field's center of mass is computed EVERY FRAME directly from the
+   grid: sample every cell, map it through the torus embedding to xyz,
+   weight by trail. The torus is the reference frame — the COM comes out
+   in toroidal coordinates, no external reference needed:
+
+     C      the COM in xyz (torus frame)
+     rho    radial offset of the COM from the torus's central ring
+     omega  the angular rate of the COM's precession about the axis,
+             measured frame-to-frame (theta COM(t) − theta COM(t−dt))
+
+   Precession/gyroscopic reading: if the swarm holds a tilted, off-axis
+   structure, its COM orbits the axis — the quadrant diffs + omega
+   measure that "gyroscopic" rotation. A balanced ring has COM on the
+   axis, omega undefined/zero. */
+const QS = { on: false, cut: 0.0, hist: [] };  /* cut = meridian plane angle */
+const QN = 64;
+let lastCOM = null;
+
+function torusXYZ(u, v){
+  const th=TAU*u, ph=TAU*v, R=1.0, r=0.45;
+  return [(R+r*Math.cos(ph))*Math.cos(th), (R+r*Math.cos(ph))*Math.sin(th), r*Math.sin(ph)];
+}
+
+function fieldCOM(){
+  let mx=0, my=0, mz=0, m=0;
+  for(let gy=0; gy<H; gy++) for(let gx=0; gx<W; gx++){
+    const g=grid[gy*W+gx]; if(g<=0) continue;
+    const xyz=torusXYZ(gx/W, gy/H);
+    mx+=g*xyz[0]; my+=g*xyz[1]; mz+=g*xyz[2]; m+=g;
+  }
+  if(m<=0) return null;
+  const C=[mx/m, my/m, mz/m];
+  const rho=Math.hypot(C[0], C[1]);
+  const theta=Math.atan2(C[1], C[0]);
+  let omega=null;
+  if(lastCOM){
+    let d=theta-lastCOM.theta;
+    while(d>Math.PI) d-=TAU; while(d<-Math.PI) d+=TAU;
+    omega=d;  /* per measure-step; the caller supplies dt */
+  }
+  const z=C[2];
+  lastCOM={theta, rho, z};
+  return { C, rho, theta, omega, mass: m, z };
+}
+
+function quadrantMasses(cut){
+  /* two meridian planes at angles cut and cut+PI/2 → four quarters.
+     A cell (theta) belongs to quarter k in [0..3] by its angular sector. */
+  const q=[0,0,0,0];
+  for(let gy=0; gy<H; gy++) for(let gx=0; gx<W; gx++){
+    const g=grid[gy*W+gx]; if(g<=0) continue;
+    const th=TAU*gx/W;
+    let a=th-cut; while(a<0) a+=TAU;
+    const k=Math.floor(a/(Math.PI/2))%4;
+    q[k]+=g;
+  }
+  const tot=q[0]+q[1]+q[2]+q[3]||1;
+  return q.map(x=>x/tot);
+}
+
+function drawQuadrant(){
+  const cv=document.getElementById('quadCv'); if(!cv) return;
+  const g=cv.getContext('2d'), w=cv.width, h=cv.height;
+  g.clearRect(0,0,w,h);
+  const com=fieldCOM(); if(!com) return;
+  const q=quadrantMasses(QS.cut);
+  const cx=w/2, cy=h/2, rad=Math.min(w,h)/2-18;
+  /* the torus ring, seen from above: circle + the two cutting planes */
+  g.strokeStyle='rgba(255,255,255,0.18)'; g.lineWidth=1;
+  g.beginPath(); g.arc(cx,cy,rad,0,TAU); g.stroke();
+  for(const a of [QS.cut, QS.cut+Math.PI/2, QS.cut+Math.PI, QS.cut+3*Math.PI/2]){
+    g.strokeStyle='rgba(224,176,79,0.5)';
+    g.beginPath(); g.moveTo(cx,cy);
+    g.lineTo(cx+rad*Math.cos(a), cy+rad*Math.sin(a)); g.stroke();
+  }
+  /* quarter masses as arc thickness */
+  const mx=Math.max(...q, 1e-9);
+  q.forEach((m,k)=>{
+    const a0=QS.cut+k*Math.PI/2;
+    g.strokeStyle='rgba(79,224,138,0.9)'; g.lineWidth=2+14*(m/mx);
+    g.beginPath(); g.arc(cx,cy,rad,a0+0.06,a0+Math.PI/2-0.06); g.stroke();
+  });
+  /* the COM as a marker, displaced by rho (scaled), with its precession trace */
+  QS.hist.push({theta:com.theta, rho:com.rho});
+  if(QS.hist.length>120) QS.hist.shift();
+  g.strokeStyle='rgba(224,176,79,0.7)'; g.lineWidth=1; g.beginPath();
+  QS.hist.forEach((p,i)=>{
+    const rr=rad*(0.25+0.7*(p.rho/(1.45)));  /* rho in [0, ~1.45] scaled */
+    const x=cx+rr*Math.cos(p.theta), y=cy+rr*Math.sin(p.theta);
+    i? g.lineTo(x,y) : g.moveTo(x,y);
+  });
+  g.stroke();
+  g.fillStyle='#e8e8ff';
+  const rr=rad*(0.25+0.7*(com.rho/1.45));
+  g.beginPath(); g.arc(cx+rr*Math.cos(com.theta), cy+rr*Math.sin(com.theta), 4, 0, TAU); g.fill();
+  /* the text: quadrant balance + gyroscopic scalars */
+  g.fillStyle='#e0b04f'; g.font='10px monospace';
+  const om = com.omega==null ? '–' : (com.omega*180/Math.PI).toFixed(1);
+  const imb = Math.max(...q)-Math.min(...q);
+  g.fillText(`quarters ${q.map(x=>(100*x).toFixed(0)).join('/')}%  imbalance ${(imb*100).toFixed(1)}`, 4, 12);
+  g.fillText(`COM \u03c1=${com.rho.toFixed(3)}  z=${com.z.toFixed(3)}  \u03c9=${om}\u00b0/step`, 4, h-6);
+}
+function stepQuadrant(){ if(QS.on) drawQuadrant(); }
+
+
+/* ── collector plates: the quarters as beam-position monitors ────────
+   Reframe (operator): the quadrant masses are collector plates in a
+   particle accelerator — pickup electrodes sampling a beam. A four-plate
+   BPM does NOT read raw charge; it reads the NORMALIZED DIFFERENCE,
+   which divides out total intensity:
+
+       x = (Q_R - Q_L) / (Q_R + Q_L)      horizontal steering
+       y = (Q_U - Q_D) / (Q_U + Q_D)      vertical steering
+
+   On the torus: the four quarters at meridian angle cut give a 2D
+   steering vector (bx, by) in [−1, 1]². |b| is how off-axis the field's
+   mass sits; atan2(by, bx) is its steering angle — the precession angle
+   in BPM dress. A centered beam reads (0,0) no matter how bright it is;
+   a beam hugging one plate reads toward ±1. The trace of (bx, by) over
+   time IS the gyroscopic precession plot — normalized, total-charge-
+   free, and directly comparable across runs. */
+function plateSignal(){
+  const q=quadrantMasses(QS.cut);
+  const sum=q[0]+q[1]+q[2]+q[3]||1;
+  const w=q.map(x=>x/sum);
+  /* quarters 0..3 at cut, cut+90, cut+180, cut+270 → right, up, left, down */
+  const bx=(w[0]-w[2]), by=(w[1]-w[3]);
+  const mag=Math.hypot(bx,by), ang=Math.atan2(by,bx);
+  return { w, bx, by, mag, ang };
+}
+let bpmHist=[];
+function drawPlates(){
+  const cv=document.getElementById('bpmCv'); if(!cv) return;
+  const g=cv.getContext('2d'), w=cv.width, h=cv.height;
+  g.clearRect(0,0,w,h);
+  const s=plateSignal();
+  const cx=w/2, cy=h/2, rad=Math.min(w,h)/2-14;
+  /* four collector plates at the rim, brightness = charge collected */
+  const mx=Math.max(...s.w, 1e-9);
+  s.w.forEach((m,k)=>{
+    const a=QS.cut+k*Math.PI/2 - Math.PI/2 + Math.PI/4;  /* plates sit at sector centers */
+    g.fillStyle='rgba(79,224,138,'+(0.15+0.75*m/mx).toFixed(2)+')';
+    g.beginPath();
+    const pr=12+10*(m/mx);
+    g.arc(cx+ (rad)*Math.cos(a), cy+(rad)*Math.sin(a), pr, 0, TAU); g.fill();
+    g.strokeStyle='rgba(79,224,138,0.5)'; g.lineWidth=1; g.stroke();
+  });
+  /* normalized steering vector + its trace (the precession plot) */
+  bpmHist.push({bx:s.bx, by:s.by});
+  if(bpmHist.length>180) bpmHist.shift();
+  g.strokeStyle='rgba(224,176,79,0.7)'; g.lineWidth=1; g.beginPath();
+  bpmHist.forEach((p,i)=>{
+    const x=cx+p.bx*rad*0.85, y=cy-p.by*rad*0.85;
+    i? g.lineTo(x,y) : g.moveTo(x,y);
+  });
+  g.stroke();
+  g.fillStyle='#e8e8ff';
+  g.beginPath(); g.arc(cx+s.bx*rad*0.85, cy-s.by*rad*0.85, 3.5, 0, TAU); g.fill();
+  /* crosshair */
+  g.strokeStyle='rgba(255,255,255,0.1)';
+  g.beginPath(); g.moveTo(cx-rad,cy); g.lineTo(cx+rad,cy); g.moveTo(cx,cy-rad); g.lineTo(cx,cy+rad); g.stroke();
+  g.fillStyle='#e0b04f'; g.font='10px monospace';
+  g.fillText(`b=[${s.bx.toFixed(2)}, ${s.by.toFixed(2)}]  |b|=${s.mag.toFixed(3)}  steer=${(s.ang*180/Math.PI).toFixed(0)}\u00b0`, 4, h-6);
+}
+function stepPlates(){ if(QS.on) drawPlates(); }
+
+/* ── Easter egg: the asteroids game, hidden ────────────────────────── */
+let egg = null;   // {x,y,vx,vy,a,hand,cool}
+window.addEventListener('keydown', e=>{
+  if (e.code==='KeyX' && !egg && B.b1>=42) {
+    egg = { x:W/2, y:H/2, vx:0, vy:0, a:-Math.PI/2, hand:1, cool:0, inv:2 };
+    toast('EASTER EGG — the ship rides the wind (β₁ '+B.b1+' ≥ 42). Arrows/WASD to fly.');
+  }
+  if (egg) {
+    if (e.code==='ArrowLeft'||e.code==='KeyA') egg._L=true;
+    if (e.code==='ArrowRight'||e.code==='KeyD') egg._R=true;
+    if (e.code==='ArrowUp'||e.code==='KeyW') egg._U=true;
+  }
+});
+window.addEventListener('keyup', e=>{
+  if (egg) {
+    if (e.code==='ArrowLeft'||e.code==='KeyA') egg._L=false;
+    if (e.code==='ArrowRight'||e.code==='KeyD') egg._R=false;
+    if (e.code==='ArrowUp'||e.code==='KeyW') egg._U=false;
+  }
+});
+function stepEgg(dt){
+  if (!egg) return;
+  const turn=(egg._R?1:0)-(egg._L?1:0);
+  egg.a += turn*4.2*dt*egg.hand;
+  if (egg._U) { egg.vx+=Math.cos(egg.a)*200*dt; egg.vy+=Math.sin(egg.a)*200*dt; }
+  const f=[0,0]; fieldAt(egg.x, egg.y, f);
+  egg.vx += f[0]*46*dt*Math.min(1, Math.hypot(f[0],f[1])*3);
+  egg.vy += f[1]*46*dt*Math.min(1, Math.hypot(f[0],f[1])*3);
+  const drag=Math.pow(0.35, dt); egg.vx*=drag; egg.vy*=drag;
+  const p={x:egg.x+egg.vx*dt, y:egg.y+egg.vy*dt, a:egg.a};
+  wrapPos(p); egg.x=p.x; egg.y=p.y; egg.a=p.a;
+  egg.inv=Math.max(0, egg.inv-dt);
+}
+function drawEgg(){
+  if (!egg) return;
+  octx.save(); octx.translate(egg.x*sx_, egg.y*sy_); octx.rotate(egg.a); octx.scale(1, egg.hand);
+  octx.lineWidth=2; octx.strokeStyle='#e8ecff';
+  octx.beginPath(); octx.moveTo(16,0); octx.lineTo(-12,-11); octx.lineTo(-7,0); octx.lineTo(-12,11); octx.closePath(); octx.stroke();
+  octx.fillStyle='#ff6b6b'; octx.beginPath(); octx.arc(-4,-7,2.6,0,7); octx.fill();
+  octx.fillStyle='#6bff9a'; octx.beginPath(); octx.arc(-4,7,2.6,0,7); octx.fill();
+  octx.restore();
+}
+let sx_=2, sy_=2;
+
+/* ── 3D export (surfaces from topo-asteroids, verbatim embeddings) ─── */
+const TAU=Math.PI*2, SQRT5=Math.sqrt(5);
+const SURFACES={
+  torus(u,v){ const th=TAU*u, ph=TAU*v, R=1.0, r=0.45;
+    return [(R+r*Math.cos(ph))*Math.cos(th), (R+r*Math.cos(ph))*Math.sin(th), r*Math.sin(ph)]; },
+  klein(u,v){ const ph=TAU*u, th=TAU*v, R=1.15, s=0.5;
+    const c=Math.cos(th/2), sn=Math.sin(th/2);
+    const w=c*Math.sin(ph)-sn*Math.sin(2*ph), z=sn*Math.sin(ph)+c*Math.sin(2*ph);
+    return [(R+s*w)*Math.cos(th)*0.9, (R+s*w)*Math.sin(th)*0.9, s*z]; },
+  mobius(u,v){ const th=TAU*u, s=(v-0.5)*0.9, R=1.0;
+    const c=Math.cos(th/2), sn=Math.sin(th/2);
+    return [(R+s*c)*Math.cos(th), (R+s*c)*Math.sin(th), s*sn]; },
+  projective(u,v){ const px=2*u-1, py=2*v-1;
+    return boy(px*Math.sqrt(1-py*py/2), py*Math.sqrt(1-px*px/2)); },
+};
+function boy(a,b){
+  const mul=(p,q)=>[p[0]*q[0]-p[1]*q[1], p[0]*q[1]+p[1]*q[0]];
+  const div=(p,q)=>{ const d=q[0]*q[0]+q[1]*q[1]; return [(p[0]*q[0]+p[1]*q[1])/d, (p[1]*q[0]-p[0]*q[1])/d]; };
+  const w=[a,b], w2=mul(w,w), w3=mul(w2,w), w4=mul(w2,w2), w6=mul(w3,w3);
+  const den=[w6[0]+SQRT5*w3[0]-1, w6[1]+SQRT5*w3[1]];
+  const g1=-1.5*div(mul(w,[1-w4[0],-w4[1]]),den)[1];
+  const g2=-1.5*div(mul(w,[1+w4[0], w4[1]]),den)[0];
+  const g3=div([1+w6[0],w6[1]],den)[1]-0.5;
+  const n=(g1*g1+g2*g2+g3*g3)/0.78;
+  return [g1/n, g2/n, g3/n];
+}
+/* square (x,y) → surface params, honoring the mirror so the texture reads
+   through the seam the same way the agents do */
+/* fold (u,v) in [0,1)² onto the fundamental square: the flip TYPE names
+   the axis that mirrors, so the texture/relief at every point of the
+   parametrization shows the pullback value the agents actually read */
+function foldUv(u, v){
+  /* IDENTITY — deliberately. The surface parametrization is already the
+     folded immersion: it IS the quotient map, so a parametrization point
+     (u,v) corresponds to the square cell (u*W, v*H) directly. Folding
+     again here (v0.22 guess) split the texture along a line the
+     geometry never folds — the operator's "left planes don't line up".
+     The gluing lives in SURFACES[..] and in the sim-side foldRead; the
+     texture/relief must not fold a second time. */
+  return [u, v];
+}
+function uvOf(x, y){
+  let u=((x%W)+W)%W / W, v=((y%H)+H)%H / H;
+  if (topo.y.flip && Math.floor((((y%H)+H)%H) / H) === 1) u = 1 - u;
+  if (topo.x.flip && Math.floor((((x%W)+W)%W) / W) === 1) v = 1 - v;
+  return [u, v];
+}
+function Pxyz(x, y){
+  const [u, v] = uvOf(x, y);
+  const base = SURFACES[topo.id](u, v);
+  /* ride the relief: numeric normal from the parametrization + same
+     folded height the mesh displaces by */
+  const e=0.004;
+  const pu=SURFACES[topo.id](Math.min(1, u+e), v), pv=SURFACES[topo.id](u, Math.min(1, v+e));
+  const du=[pu[0]-base[0], pu[1]-base[1], pu[2]-base[2]], dv=[pv[0]-base[0], pv[1]-base[1], pv[2]-base[2]];
+  let n=[du[1]*dv[2]-du[2]*dv[1], du[2]*dv[0]-du[0]*dv[2], du[0]*dv[1]-du[1]*dv[0]];
+  const nl=Math.hypot(...n)||1; n=n.map(c=>c/nl);
+  const [fx, fy]=foldUv(u, v);
+  const gx=Math.min(W-1, Math.floor(fx*W)), gy=Math.min(H-1, Math.floor(fy*H));
+  let h=Math.sqrt(grid[gy*W+gx]*(ref3d>0?1/ref3d:0)); if(h>1)h=1;
+  const s=P.relief*0.28*h;
+  return [base[0]+n[0]*s, base[1]+n[1]*s, base[2]+n[2]*s];
+}
+let ref3d=1;   /* updated by the 3D frame so entity heights match the mesh's normalization */
+
+/* ── three.js 3D panel ─────────────────────────────────────────────── */
+let view3d=true, renderer=null, T3=null, lastRun=null;
+function setView3d(on){
+  view3d = on && !!renderer;
+  document.getElementById('v3').style.display = view3d ? '' : 'none';
+  document.getElementById('btn3d').textContent = '3D: '+(view3d?'on':'off');
+  fitCanvases();
+}
+/* 3D init is DEFERRED on mobile: v2.9's tabbed stage hides #v3 (display:none)
+   while the sim tab is active, and iOS Safari / several Android browsers fail
+   WebGLRenderer construction on a hidden canvas — the backing store is never
+   allocated. Pre-v2.9 both panes were visible, which is why mobile worked
+   before the update. On mobile we wait for the first reveal (mobile-3d class),
+   then run the same ladder. */
+let start3D = async function(){
+  let THREE=null;
+  for (const src of ['./vendor/three.module.min.js', 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js']) {
+    try { THREE=await import(src); break; } catch(e){}
+  }
+  if (!THREE) { document.getElementById('hint3d').textContent='3D unavailable (no three.js)'; document.getElementById('btn3d').textContent='3D: unavailable'; document.getElementById('btn3d').disabled=true; return; }
+  T3=THREE;
+  const c3=document.getElementById('c3'), box=document.getElementById('v3');
+  /* renderer acquisition ladder:
+     1. r170 WebGL2 (the normal path). r163+ dropped WebGL1, so if the GPU
+        process is unavailable/crashed this throws even on machines with WebGL1.
+     2. r160 WebGL2/1 build (vendored) — covers WebGL1-only contexts.
+     3. r170 again with antialias off — some drivers reject MSAA on restore.
+     Each failed attempt may have poisoned the canvas context; reset it. */
+  let hint3dWhy='';
+  {
+    const attempts = [
+      {mod:THREE,                 opts:{antialias:true}},
+      {mod:THREE,                 opts:{antialias:false}},
+    ];
+    for (const a of attempts) {
+      try { renderer=new a.mod.WebGLRenderer({canvas:c3, failIfMajorPerformanceCaveat:false, ...a.opts}); break; }
+      catch(e){ hint3dWhy = e && e.message ? e.message : 'unknown'; renderer=null;
+        /* losing the context marks the canvas permanently failed in some browsers */
+        try { c3.getContext('webgl2'); } catch(_){}
+      }
+    }
+    if (!renderer) {
+      try {
+        const THREE160=await import('./vendor/three.module.r160.min.js');
+        renderer=new THREE160.WebGLRenderer({canvas:c3, antialias:true, failIfMajorPerformanceCaveat:false});
+        T3=THREE160;  /* remaining setup must use the same module revision */
+      } catch(e2){ renderer=null; if(!hint3dWhy) hint3dWhy=(e2&&e2.message)||'unknown'; }
+    }
+  }
+  if (!renderer) {
+    document.getElementById('hint3d').textContent='3D unavailable (no WebGL2/WebGL1 — GPU process down? reload or enable hardware acceleration)';
+    console.warn('[welded_asteroids] 3D disabled:', hint3dWhy);
+    return;
+  }
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  const scene=new THREE.Scene(); scene.background=new THREE.Color(0x000000);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const keyL=new THREE.DirectionalLight(0xbfd4ff, 1.1); keyL.position.set(3,5,4); scene.add(keyL);
+  const rimL=new THREE.DirectionalLight(0xa78bfa, 0.5); rimL.position.set(-4,-2,-3); scene.add(rimL);
+  const camera=new THREE.PerspectiveCamera(38,1,0.05,100); camera.up.set(0,0,1);
+  let theta=0.7, phi=1.05, dist=4.6, lastPtr=null;
+/* v2.11.4: expose the orbit state to the panel listener (top-down framing
+   when the map sheet is selected) and freeze auto-rotate in map mode */
+window.__weldedCam={ get:()=>({theta,phi,dist}), set:(o)=>{ if(o.theta!=null)theta=o.theta; if(o.phi!=null)phi=o.phi; if(o.dist!=null)dist=o.dist; } };
+  c3.addEventListener('pointerdown',e=>{lastPtr=[e.clientX,e.clientY];c3.setPointerCapture(e.pointerId);});
+  c3.addEventListener('pointermove',e=>{ if(!lastPtr) return;
+    theta-=(e.clientX-lastPtr[0])*0.008; phi=Math.min(Math.PI-0.15,Math.max(0.15,phi-(e.clientY-lastPtr[1])*0.008));
+    lastPtr=[e.clientX,e.clientY]; });
+  c3.addEventListener('pointerup',()=>{lastPtr=null;});
+  c3.addEventListener('wheel',e=>{e.preventDefault(); dist=Math.min(12,Math.max(0.3,dist*(1+e.deltaY*0.0012)));},{passive:false});
+  /* pinch zoom: two active pointers → distance delta drives dist */
+  const ptrs=new Map(); let pinchD=0;
+  c3.addEventListener('pointerdown',e=>{ ptrs.set(e.pointerId,[e.clientX,e.clientY]); if(ptrs.size===2){ const a=[...ptrs.values()]; pinchD=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]); } });
+  c3.addEventListener('pointermove',e=>{ if(!ptrs.has(e.pointerId)) return; ptrs.set(e.pointerId,[e.clientX,e.clientY]);
+    if(ptrs.size===2){ const a=[...ptrs.values()], d=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]);
+      if(pinchD>0) dist=Math.min(12,Math.max(1.6,dist*(pinchD/d))); pinchD=d; } });
+  for(const ev of ['pointerup','pointercancel']) c3.addEventListener(ev,e=>{ ptrs.delete(e.pointerId); pinchD=0; });
+
+  /* v2.11.4: pixel loupe — when zoomed into the map sheet, a hover tooltip
+     reads the EXACT grid cell under the cursor: trail amount, momentum
+     magnitude, agents in cell. The loupe only exists against a real
+     reference: it raycasts the sheet, inverts the map projection, and
+     reads grid[] — no proxy readouts. */
+  const loupe=document.createElement('div');
+  loupe.style.cssText='position:absolute;left:8px;top:8px;padding:6px 8px;background:rgba(6,10,8,0.92);border:1px solid #2a2340;border-radius:6px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#9fe8c0;pointer-events:none;display:none;z-index:5;white-space:pre;';
+  box.appendChild(loupe);
+  const rayc=new THREE.Raycaster();
+  const ndc=new THREE.Vector2();
+  c3.addEventListener('pointermove',e=>{
+    if(P.view3dmode!=='map' || dist>1.1 || !fieldMesh){ loupe.style.display='none'; return; }
+    const r=c3.getBoundingClientRect();
+    ndc.set(((e.clientX-r.left)/r.width)*2-1, -((e.clientY-r.top)/r.height)*2+1);
+    rayc.setFromCamera(ndc, camera);
+    const hit=rayc.intersectObject(fieldMesh)[0];
+    if(!hit || !hit.uv){ loupe.style.display='none'; return; }
+    const u=hit.uv.x, v=hit.uv.y;
+    const gx=Math.min(W-1, Math.floor(u*W)), gy=Math.min(H-1, Math.floor(v*H));
+    const cell=grid[gy*W+gx];
+    let mom=0, nA=0;
+    if (momX){ const mi=(Math.floor(v*mH))*mW + Math.floor(u*mW);
+      mom=Math.hypot(momX[mi]||0, momY[mi]||0); }
+    for(const p of parts){ const px=((p.x%W)+W)%W, py=((p.y%H)+H)%H;
+      if(Math.floor(px)===gx && Math.floor(py)===gy) nA++; }
+    loupe.textContent=`cell (${gx}, ${gy})\ntrail  ${cell.toFixed(2)}\nmomentum  ${mom.toFixed(3)}\nagents  ${nA}`;
+    loupe.style.display='block';
+  });
+  c3.addEventListener('pointerleave',()=>{ loupe.style.display='none'; });
+
+
+  /* field texture: grid → canvas → three texture, flipped per the rule */
+  const texCv=document.createElement('canvas'); texCv.width=W; texCv.height=H;
+  const texCx=texCv.getContext('2d');
+  let surfGroup=null, surfId=null, fieldTex=null, fieldMesh=null, seamGroup=null;
+  const GN=28;
+  /* v2.11.4: MAP mode — the quotient square drawn as a flat sheet with the
+     trail relief as a true heightmap. Same P (texture, contours, agents)
+     as the globe; only the vertex mapping changes, so seam gluings become
+     visible EDGES of the sheet instead of being hidden by the immersion. */
+  const MAPW=2.0, MAPH=2.0;
+  function mapPos(u, v){
+    return [(u-0.5)*MAPW, (v-0.5)*MAPH, 0];
+  }
+  /* which sheet edges are glued, and how (per the current surface's welds) */
+  function seamEdges(){
+    const t=topo;
+    return {
+      uSeam: !!t.x.wrap, uFlip: !!t.x.flip,
+      vSeam: !!t.y.wrap, vFlip: !!t.y.flip,
+    };
+  }
+  function buildSeams(){
+    if (seamGroup){ scene.remove(seamGroup); seamGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); }
+    seamGroup=null;
+    if (P.view3dmode!=='map') return;
+    seamGroup=new THREE.Group();
+    const se=seamEdges();
+    /* wrapped edges get a violet seam line; mirrored edges get red ticks
+       marking the flip axis. Label-free: the colors carry the meaning. */
+    const mk=(pts, color, w)=>{
+      const p=[]; for(let i=0;i+1<pts.length;i++){ p.push(...pts[i], ...pts[i+1]); }
+      const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p,3));
+      const l=new THREE.Line(g, new THREE.LineBasicMaterial({color, transparent:true, opacity:0.95}));
+      seamGroup.add(l);
+    };
+    const zs=0.002, x0=-MAPW/2, x1=MAPW/2, y0=-MAPH/2, y1=MAPH/2;
+    const n=64;
+    if (se.uSeam){ /* x-seam: vertical edges glued */
+      const pts=[]; for(let i=0;i<=n;i++) pts.push([x1, y0+(y1-y0)*i/n, zs]);
+      mk(pts, se.uFlip?0xff5a5a:0x9a7ff0);
+      const pts2=[]; for(let i=0;i<=n;i++) pts2.push([x0, y0+(y1-y0)*i/n, zs]);
+      mk(pts2, se.uFlip?0xff5a5a:0x9a7ff0);
+      if (se.uFlip) for(let i=0;i<=8;i++){ const y=y0+(y1-y0)*i/8;
+        mk([[x1-0.06,y,zs],[x1,y,zs]], 0xff5a5a); mk([[x0,y,zs],[x0+0.06,y,zs]], 0xff5a5a); }
+    }
+    if (se.vSeam){ /* y-seam: horizontal edges glued */
+      const pts=[]; for(let i=0;i<=n;i++) pts.push([x0+(x1-x0)*i/n, y1, zs]);
+      mk(pts, se.vFlip?0xff5a5a:0x9a7ff0);
+      const pts2=[]; for(let i=0;i<=n;i++) pts2.push([x0+(x1-x0)*i/n, y0, zs]);
+      mk(pts2, se.vFlip?0xff5a5a:0x9a7ff0);
+      if (se.vFlip) for(let i=0;i<=8;i++){ const x=x0+(x1-x0)*i/8;
+        mk([[x,y1-0.06,zs],[x,y1,zs]], 0xff5a5a); mk([[x,y0,zs],[x,y0+0.06,zs]], 0xff5a5a); }
+    }
+    scene.add(seamGroup);
+  }
+  function buildSurface(id){
+    if (surfGroup){ scene.remove(surfGroup); surfGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); }
+    surfGroup=new THREE.Group(); surfId=id;
+    for(let i=0;i<GN;i++){
+      const u=i/GN;
+      surfGroup.add(poly(samples(t=>[u,t]), 0x2a2340, 0.35));
+    }
+    for(let j=0;j<GN;j++){
+      const v=j/GN;
+      surfGroup.add(poly(samples(t=>[t,v]), 0x2a2340, 0.35));
+    }
+    surfGroup.add(poly(samples(t=>[0,t]), 0x9a7ff0, 1));
+    surfGroup.add(poly(samples(t=>[t,0]), 0x8a6fd8, 1));
+    /* the field texture itself */
+    fieldTex=new THREE.CanvasTexture(texCv);
+    fieldTex.flipY=false;  /* texture rows must match height-sampling rows — flipY default flipped the field vertically vs the relief */
+    fieldTex.colorSpace=THREE.SRGBColorSpace;
+    const SEG=64, pos=[], uvs=[], idx=[];
+    const isMap = P.view3dmode==='map';
+    for(let j=0;j<=SEG;j++) for(let i=0;i<=SEG;i++){
+      const p = isMap ? mapPos(i/SEG, j/SEG) : SURFACES[id](i/SEG, j/SEG);
+      pos.push(...p); uvs.push(i/SEG, j/SEG);
+    }
+    for(let j=0;j<SEG;j++) for(let i=0;i<SEG;i++){
+      const a=j*(SEG+1)+i, b=a+1, c=a+SEG+1, d=c+1;
+      idx.push(a,b,c, b,d,c);
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos.slice(),3));
+    g.setAttribute('basePos', new THREE.Float32BufferAttribute(pos.slice(),3));  /* undisplaced */
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
+    g.setIndex(idx); g.computeVertexNormals();
+    g.setAttribute('baseNrm', new THREE.Float32BufferAttribute(g.getAttribute('normal').array.slice(),3));
+    fieldMesh=new THREE.Mesh(g, new THREE.MeshStandardMaterial({map:fieldTex, side:THREE.DoubleSide, roughness:0.75, metalness:0.0, emissive:0x0d3320, emissiveIntensity:0.5}));
+    surfGroup.add(fieldMesh);
+    scene.add(surfGroup);
+    applyShell();   /* the mesh is rebuilt on every surface change */
+  }
+  /* A closed quotient surface occludes its own far side. Dropping depthWrite —
+     not merely lowering opacity — is what lets the back of the torus, and the
+     contours and agent points riding it, show through; with depth still
+     written the shell would hide them however transparent it looked. */
+  const SHELL={
+    translucent:{wireframe:false, transparent:true,  opacity:0.42, depthWrite:false},
+    wireframe:  {wireframe:true,  transparent:true,  opacity:0.85, depthWrite:false},
+    solid:      {wireframe:false, transparent:false, opacity:1.00, depthWrite:true },
+  };
+  applyShell=()=>{
+    if(!fieldMesh) return;
+    const m=fieldMesh.material, k=SHELL[P.shell]||SHELL.translucent;
+    m.wireframe=k.wireframe; m.transparent=k.transparent;
+    m.opacity=k.opacity; m.depthWrite=k.depthWrite; m.needsUpdate=true;
+  };
+  function poly(pts, color, opacity){
+    const useMap = (P.view3dmode==='map' && surfId);
+    const mapPt = (pt)=> useMap ? mapPos(pt[0], pt[1]) : SURFACES[surfId||topo.id](...pt);
+    const pos=[];
+    for(let i=0;i+1<pts.length;i++) pos.push(...mapPt(pts[i]), ...mapPt(pts[i+1]));
+    const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+    return new THREE.Line(g, new THREE.LineBasicMaterial({color, transparent:true, opacity}));
+  }
+  function samples(fn, n=96){ const out=[]; for(let i=0;i<=n;i++) out.push(fn(i/n)); return out; }
+
+  /* entities ride the ACTUAL displaced mesh, not the analytic surface:
+     barycentric interpolation on the displaced 64×64 grid, so contour
+     lines and agent points sit ON the rendered triangles (the analytic
+     projector floats/sinks between mesh vertices) */
+  function Pxyz(x, y){
+    const [u, v] = uvOf(x, y), g = fieldMesh.geometry;
+    const p = g.getAttribute('position'), n = Math.sqrt(p.count) - 1;
+    const U = u * n, V = v * n;
+    const i = Math.min(n - 1, Math.floor(U)), j = Math.min(n - 1, Math.floor(V));
+    const s = U - i, t = V - j, a = j * (n + 1) + i;
+    const ids = s + t <= 1 ? [a, a + 1, a + n + 1] : [a + 1, a + n + 2, a + n + 1];
+    const w = s + t <= 1 ? [1 - s - t, s, t] : [1 - t, s + t - 1, 1 - s];
+    return [0, 1, 2].map(c => ids.reduce((sum, k, q) => sum + w[q] * p.array[3 * k + c], 0));
+  }
+
+  /* contours + agent sparkline pushed through Pxyz */
+  const MAXV=30000;
+  const linePos=new Float32Array(MAXV*3), lineCol=new Float32Array(MAXV*3);
+  const lineGeo=new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos,3).setUsage(THREE.DynamicDrawUsage));
+  lineGeo.setAttribute('color', new THREE.BufferAttribute(lineCol,3).setUsage(THREE.DynamicDrawUsage));
+  scene.add(new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({vertexColors:true, transparent:true, opacity:0.85})));
+  const col=new THREE.Color();
+  function pushContours(){
+    let nl=0;
+    for (const {level, segs} of contourSegs){
+      col.set(`rgb(${156+level*90|0},${58+level*150|0},${42+level*140|0})`);
+      for (const s of segs){
+        if (nl+2>MAXV) break;
+        /* subdivide through the seam so lines cross welds continuously */
+        const ax=s[0], ay=s[1], bx=s[2], by=s[3];
+        const sub=Math.max(1, Math.ceil(Math.hypot(bx-ax, by-ay)/4));
+        for(let k=0;k<sub;k++){
+          const t0=k/sub, t1=(k+1)/sub;
+          const p0=Pxyz(ax+(bx-ax)*t0, ay+(by-ay)*t0);
+          const p1=Pxyz(ax+(bx-ax)*t1, ay+(by-ay)*t1);
+          linePos.set(p0, nl*3); lineCol.set([col.r,col.g,col.b], nl*3); nl++;
+          linePos.set(p1, nl*3); lineCol.set([col.r,col.g,col.b], nl*3); nl++;
+        }
+      }
+    }
+    lineGeo.setDrawRange(0, nl); lineGeo.attributes.position.needsUpdate=true; lineGeo.attributes.color.needsUpdate=true;
+  }
+  const ptPos=new Float32Array(4000*3), ptCol=new Float32Array(4000*3);
+  const ptGeo=new THREE.BufferGeometry();
+  ptGeo.setAttribute('position', new THREE.BufferAttribute(ptPos,3).setUsage(THREE.DynamicDrawUsage));
+  ptGeo.setAttribute('color', new THREE.BufferAttribute(ptCol,3).setUsage(THREE.DynamicDrawUsage));
+  scene.add(new THREE.Points(ptGeo, new THREE.PointsMaterial({vertexColors:true, size:4, sizeAttenuation:false})));
+  function pushAgents(){
+    const stride=Math.max(1, Math.floor(parts.length/3999));
+    let np=0;
+    for(let i=0;i<parts.length && np<4000;i+=stride){
+      const p=Pxyz(parts[i].x, parts[i].y);
+      ptPos.set(p, np*3); ptCol.set([0.75,1.0,1.0], np*3); np++;  /* cyan-white agents vs green chemical */
+    }
+    ptGeo.setDrawRange(0,np); ptGeo.attributes.position.needsUpdate=true; ptGeo.attributes.color.needsUpdate=true;
+  }
+  let last=performance.now();
+  let lastMapMode=null;  /* v2.11.4: rebuild the sheet on globe↔map flip */
+  function frame3d(now){
+    requestAnimationFrame(frame3d);
+    const dt=Math.min(0.05,(now-last)/1000); last=now;
+    if(!view3d) return;
+    const w=box.clientWidth, h=box.clientHeight;
+    if(w&&h&&(c3.width!==Math.round(w*renderer.getPixelRatio())||c3.height!==Math.round(h*renderer.getPixelRatio()))){
+      renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+    }
+    if (topo.id!==surfId) buildSurface(topo.id);
+    if (lastMapMode!==(P.view3dmode==='map')){ lastMapMode=(P.view3dmode==='map'); buildSurface(topo.id); buildSeams(); }
+    const {ref}=refs();
+    ref3d = ref;
+    /* repaint the texture from the live grid — texels folded so the
+       parametrization shows the pullback (mirror-correct at seams) */
+    const imgd=texCx.getImageData(0,0,W,H);
+    const dd=imgd.data, inv=ref>0?1/ref:0;
+    for(let j=0;j<H;j++) for(let i=0;i<W;i++){
+      const [fx, fy] = foldUv(i/W, j/H);
+      const src = (Math.min(H-1, Math.floor(fy*H)))*W + Math.min(W-1, Math.floor(fx*W));
+      let v=Math.sqrt(grid[src]*inv); if(v>1)v=1;
+      const px=(j*W+i)*4;
+      dd[px]=v*40; dd[px+1]=v*255; dd[px+2]=v*140; dd[px+3]=255;
+    }
+    texCx.putImageData(imgd,0,0);
+    fieldTex.needsUpdate=true;
+    /* RELIEF: displace vertices along their base normal by the folded
+       trail height — the topology is the terrain, the field is the
+       relief. Ridges = built loops riding the surface's curvature. */
+    const amp = P.relief * 0.28;
+    if (fieldMesh) {
+      const geo=fieldMesh.geometry;
+      const bp=geo.getAttribute('basePos'), bn=geo.getAttribute('baseNrm'),
+            uv=geo.getAttribute('uv'), posA=geo.getAttribute('position');
+      const n=bp.count;
+      for(let k=0;k<n;k++){
+        const u=uv.getX(k), v=uv.getY(k);
+        const [fx, fy]=foldUv(u, v);
+        const gx=Math.min(W-1, Math.floor(fx*W)), gy=Math.min(H-1, Math.floor(fy*H));
+        let h=Math.sqrt(grid[gy*W+gx]*inv); if(h>1)h=1;
+        const s=amp*h;
+        posA.setXYZ(k, bp.getX(k)+bn.getX(k)*s, bp.getY(k)+bn.getY(k)*s, bp.getZ(k)+bn.getZ(k)*s);
+      }
+      posA.needsUpdate=true;
+      geo.computeVertexNormals();
+    }
+    /* v2.11.6: auto-spin removed — orbit is fully drag-controlled */
+    camera.position.set(dist*Math.sin(phi)*Math.cos(theta), dist*Math.sin(phi)*Math.sin(theta), dist*Math.cos(phi));
+    camera.lookAt(0,0,0);
+    pushContours(); pushAgents();
+    renderer.render(scene, camera);
+  }
+  buildSurface(topo.id);
+  document.getElementById('hint3d').textContent='drag to orbit · wheel to zoom';
+  requestAnimationFrame(frame3d);
+  setView3d(true);
+};
+/* mobile: #v3 is display:none until the 3D tab is tapped (hidden-canvas WebGL
+   init fails on iOS Safari) — defer until first reveal. Desktop: #v3 is
+   visible from load, so start immediately. */
+if (document.body.classList.contains('mobile-sim')) {
+  document.getElementById('hint3d').textContent='tap the 3D tab to load the surface view';
+  const mo=new MutationObserver(()=>{
+    if (document.body.classList.contains('mobile-3d')) {
+      mo.disconnect();
+      start3D().catch(e=>console.warn('[welded_asteroids] 3D start failed:', e));
+    }
+  });
+  mo.observe(document.body, {attributes:true, attributeFilter:['class']});
+  /* belt-and-braces: if the class flips before the observer attaches */
+  if (document.body.classList.contains('mobile-3d')) { mo.disconnect(); start3D().catch(()=>{}); }
+} else {
+  start3D().catch(e=>console.warn('[welded_asteroids] 3D start failed:', e));
+}
+
+/* ── main loop ─────────────────────────────────────────────────────── */
+let R={ref:1, cut:Infinity, max:0};
+let lastT=performance.now();
+/* ── the simulation step, separated from the frame ──────────────────
+   The physics used to live inside the rAF callback, which made the sim
+   advance only while the page was being painted: a hidden tab froze it,
+   and a run's length was wall-clock, not step count. simStep() is the
+   unit of time; loop() is one simStep plus one paint. step()/run() drive
+   simStep directly, so a study runs at CPU speed and does not care
+   whether anything is on screen. */
+function simStep(dtReal){
+  applySchedule(frame);
+  time+=P.dr;
+  diffuseDecay();
+  if(P.mass>0) diffuseDecayMom();
+  /* v2.11.5: build lagged occupancy BEFORE stepAgents reads it.
+     Uses PREVIOUS frame positions (parts still hold last step's x,y at
+     this point). Gated: at exclR===0 the occ arrays are never touched
+     and the step is bit-identical to v2.11.4. */
+  if(P.exclR > 0 && P.exclK > 0){
+    exclSteps++;
+    occ.fill(0);
+    for(let i=0;i<parts.length;i++){
+      const [fx, fy] = foldRead(parts[i].x, parts[i].y);
+      const ci = (((Math.floor(fy)%H)+H)%H)*W + (((Math.floor(fx)%W))+W)%W;
+      occ[ci]++;
+      /* C1 fix: record own lagged cell so the stencil can skip SELF —
+         a lone agent's own previous cell otherwise reads as a neighbor
+         at offset -heading and exclusion becomes a speed multiplier. */
+      parts[i]._oc = ci;
+    }
+  }
+  stepAgents();
+  if (egg) stepEgg(dtReal||0);
+  if(frame%20===0){ measure(refs().cut); stepSlice(); stepQuadrant(); stepPlates(); stepVill(); confLedgerStep(); drawConf(); }
+  frame++;
+}
+
+/* Parameters are pinned to the timeline, not just set: a run is
+   (seed, spawn, params at t=0, {step: change}), and changing a slider
+   mid-run without recording the step is what makes a state
+   unreproducible. applySchedule fires each change exactly once, at its
+   step, and records what it did into the manifest. */
+let schedule=null, scheduleLog=[];
+function applySchedule(f){
+  if(!schedule) return;
+  const at=schedule[f];
+  if(!at) return;
+  Object.assign(P, normParams(at));
+  scheduleLog.push({step:f, set:{...at}});
+  syncControls();
+}
+/* the schedule speaks the panel's units (degrees, percent), not P's */
+function normParams(o){
+  const out={...o};
+  if('sa' in out) out.sa=out.sa*Math.PI/180;
+  if('ra' in out) out.ra=out.ra*Math.PI/180;
+  if('thr' in out) out.thr=out.thr/100;
+  return out;
+}
+let paused=false;
+/* v2.11.4: time speed — P.tspeed scales how many sim steps the frame loop
+   takes per paint (0 = paused without touching the paused probe; fractional
+   values accumulate so 0.1x is genuinely slow, not chopped). CPU-speed
+   step()/run() are unaffected — wall-clock instruments stay honest. */
+let tspeedAcc=0;
+function loop(now){
+  const dtReal=Math.min(0.05,(now-lastT)/1000); lastT=now;
+  if(paused){ R=refs(); render(R.ref); drawContours(R.ref); drawAgents2D();
+              sx_=ovSX; sy_=ovSY; requestAnimationFrame(loop); return; }
+  tspeedAcc += P.tspeed;
+  let nsteps=0;
+  while(tspeedAcc>=1){ tspeedAcc-=1; nsteps++; if(nsteps>=8) { tspeedAcc=0; break; } }
+  for(let i=0;i<nsteps;i++) simStep(dtReal);
+
+  R=refs();
+  render(R.ref);
+  drawContours(R.ref);
+  drawAgents2D();
+  if(frame%15===0){
+    const half=Math.log(0.5)/Math.log(P.dec);
+    const mhalf=Math.log(0.5)/Math.log(P.mdec);
+    document.getElementById('r-th').textContent=half.toFixed(0)+' f';
+    document.getElementById('r-tm').textContent=P.mass>0?mhalf.toFixed(1)+' f':'off';
+    document.getElementById('r-mratio').textContent=P.mass>0?(mhalf/half).toFixed(2)+'×':'–';
+  }
+  sx_=ovSX; sy_=ovSY;
+  drawEgg();
+  requestAnimationFrame(loop);
+}
+
+/* ── test port ─────────────────────────────────────────────────────── */
+window.__welded={
+  TOPOLOGIES, LEVELS, SURFACES, P, slice: () => sliceSample(), SL, com: () => fieldCOM(), quadrants: () => quadrantMasses(QS.cut), plates: () => plateSignal(), QS,
+  vill: () => villSample(), villSection, VLS,
+  conf: { CF, CLEDGER, confDir, qHist: () => qHistSample() },
+  get topo(){return topo;}, get grid(){return grid;}, get W(){return W;}, get H(){return H;},
+  get parts(){return parts;}, get B(){return B;}, get egg(){return egg;},
+  get frames(){return frame;}, get refsNow(){return R;},
+  get ovScale(){return [ovSX,ovSY,ov.width,ov.height,octx.getTransform().a];},
+  setSurface:(i)=>setSurface(i,false),
+  loadLevel:(i)=>loadLevel(i),
+  fold:(x,y)=>{ const p={x,y,a:0}; wrapPos(p); return [p.x,p.y]; },
+  fieldAt:(x,y)=>{ const o=[0,0,0]; fieldAt(x,y,o); return o; },
+  setShell:(m)=>{ P.shell=m; document.getElementById('shell').value=m; applyShell(); return P.shell; },
+
+  /* ── headless run control ────────────────────────────────────────
+     step(n)  advance n simulation steps now, at CPU speed, regardless
+              of whether the page is visible. Implicitly pauses the
+              frame loop so the live loop cannot also be advancing the
+              state you are measuring.
+     run(spec) a complete reproducible run:
+              {seed, surface, spawn:'disc'|'uniform', params:{...},
+               at:{<step>:{...}}, steps:<n>}
+              params and `at` are in PANEL units (degrees, percent).
+              Returns the manifest — feed it back to run() to replay.  */
+  pause(){ paused=true; return paused; },
+  resume(){ paused=false; return paused; },
+  get paused(){ return paused; },
+  step(n=1){ paused=true; for(let i=0;i<(n|0);i++) simStep(0); return frame; },
+  run(spec={}){
+    const sp={seed: spec.seed==null ? (Math.random()*1e9)|0 : spec.seed,
+              surface: spec.surface || topo.id,
+              spawn: spec.spawn || 'disc',
+              params: spec.params || {},
+              at: spec.at || null,
+              steps: spec.steps|0};
+    paused=true;
+    curSeed = sp.seed|0;
+    rnd=mulberry32(sp.seed); Noise.seed=rnd()*100;
+    setSurface(sp.surface, false);
+    Object.assign(P, normParams(sp.params)); syncControls();
+    frame=0; schedule=sp.at; scheduleLog=[];
+    resetField(sp.spawn);
+    for(let i=0;i<sp.steps;i++) simStep(0);
+    lastRun={spec:sp, applied:scheduleLog.slice(), endState:this.state()};
+    return lastRun;
+  },
+  manifest(){ return lastRun; },
+  /* ablation control for the seam study: 'named' honours topo.flip as the
+     axis that mirrors, 'legacy' reproduces the pre-fix sensing fold */
+  ablate(o={}){ if(o.seamFold) seamFold=o.seamFold; return {seamFold}; },
+  state(){ return { surface:topo.id, shell:P.shell, b0:B.b0, b1:B.b1, coverage:B.coverage,
+                    agents:parts.length, level:LEVELS[levelIdx].name,
+                    joinMax:JOIN_MAX, solved:levelSolved, egg:!!egg,
+                    exclReject:(exclReject||0),
+                    exclPins:(exclPins||0),
+                    exclSteps:(exclSteps||0) }; },
+  qhist(){ return qHistSample(); },
+  spawnEgg(){ if(!egg && B.b1>=42){ egg={x:W/2,y:H/2,vx:0,vy:0,a:-Math.PI/2,hand:1,cool:0,inv:2}; } return !!egg; },
+};
+
+/* boot */
+setSurface(0, false);
+resetField();
+fitCanvases();
+loadLevel(0);
+requestAnimationFrame(loop);
+</script>
+<script type="module" src="./vendor/three.module.min.js"></script>
+</body>
+</html>

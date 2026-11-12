@@ -66,9 +66,9 @@ All parameters are read/write via `controller.params` and updatable at runtime v
 - **Visual:** controls how hue cycles across the trail. The band is a fully configurable set of panel parameters — `hueStart` (0..360), `hueEnd` (0..360), `sat`, `light`, `lightEnd` — declared via `defineParams` in `src/params/define.js`-based pages (see `apps/mark`'s schema). `"spectrum"` (`hueStart:0, hueEnd:360, sat:70, light:60`) is the sole surviving named preset and is the default unless the values have been dialed away from it; see `api.md` for the full field reference. A figure spec (`exportSpec()`) captures the band's current values the same way it captures every other tunable — a locked or exported spec carries whatever the band was dialed to, clamped by construction, with nothing special-cased.
 
 ### `parallax` — hue-parallax strength
-- **Type:** number (0..1)
+- **Type:** number (>= 0; negative values are clamped to 0, since the hue period is period/(1 + parallax))
 - **Default:** `0`
-- **Range:** 0..1
+- **Range:** 0..4 in the panel
 - **Visual:** detunes the hue clock from the orbit clock. At 0, hue is perfectly locked to the orbital period — every position on the knot gets the same color on every pass. At parallax > 0, the hue clock runs faster than the orbital clock, so successive passes over the same point paint different hues. This creates visible "redshift/blueshift" bands in the accumulated trail — visual depth without 3D geometry.
 
 ## The host owns the ground
