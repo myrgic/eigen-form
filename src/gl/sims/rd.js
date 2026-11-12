@@ -25,8 +25,8 @@ let flower = null;                      // set by the action, drawn in the next 
 export default {
   id: 'rd', title: 'Reaction-diffusion', about: 'Gray-Scott (Pearson 1993)',
   schema: {
-    feed:    { type: 'number', min: 0.01,  max: 0.09,  step: 0.0005, default: 0.0367, group: 'chemistry', label: 'feed' },
-    kill:    { type: 'number', min: 0.045, max: 0.07,  step: 0.0002, default: 0.0649, group: 'chemistry', label: 'kill' },
+    feed:    { type: 'number', min: 0.01,  max: 0.09,  step: 0.0005, default: 0.03,   group: 'chemistry', label: 'feed' },
+    kill:    { type: 'number', min: 0.045, max: 0.07,  step: 0.0002, default: 0.055,  group: 'chemistry', label: 'kill' },
     spores:  { type: 'number', min: 0,     max: 1,     step: 0.01,   default: 0.25,   group: 'chemistry', label: 'spores' },
     stir:    { type: 'number', min: 0,     max: 1,     step: 0.01,   default: 0,      group: 'chemistry', label: 'stir' },
     wither:  { type: 'number', min: 0,     max: 1,     step: 0.01,   default: 0,      group: 'chemistry', label: 'wither' },
@@ -48,8 +48,11 @@ export default {
       { on: 'section',   action: 'flower',  amount: 1 }
     ],
     steps: [
-      // mitosis, coral, maze, spots, worms: Pearson's map, by section
-      { on: 'section', targets: ['feed', 'kill'], values: [[0.0367, 0.0649], [0.0545, 0.062], [0.029, 0.057], [0.035, 0.065], [0.046, 0.0632]] },
+      // Regimes by section, all from the fast side of Pearson's map (kill <= 0.058): a section is 8 or 16 bars
+      // and starts from one flower, so a regime has to cross the stage in seconds. The slow, pretty ones
+      // (mitosis 0.0367/0.0649, spots 0.035/0.065, worms 0.046/0.0632) left the stage near empty for a
+      // third of a full-song render.
+      { on: 'section', targets: ['feed', 'kill'], values: [[0.03, 0.055], [0.039, 0.058], [0.029, 0.057], [0.026, 0.051], [0.026, 0.055]] },
       HUE_STEP
     ]
   },
