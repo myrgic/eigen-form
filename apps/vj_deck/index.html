@@ -115,6 +115,7 @@ inst.onFrame((now, frame) => {
   signal.setTheme(themeFrom(inst.value('hue'), inst.value('spread')));
   runner.render(inst.value, signal.update(frame, dtMs / 1000, now), steps);
   state.frames = runner.frame;
+  const c = inst.source && inst.source.control; state.song = c ? c.position() : null;
 });
 </script>
 </body>

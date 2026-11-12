@@ -229,6 +229,26 @@ test('demoSource schedules ahead and feeds a router end to end', async () => {
   src.stop();
 });
 
+test('the song driver walks the sequence, wraps, and counts times round', async () => {
+  const { createSongDriver, startIndex } = await import(at('signal', 'embedded.js'));
+  const d = createSongDriver([0, 1, 1, 3]);
+  assert.strictEqual(d.slot, 0); assert.strictEqual(d.queued(), 1);
+  const played = [d.slot]; for (let i = 0; i < 8; i++) { d.crossed(); played.push(d.slot); }
+  assert.deepStrictEqual(played, [0, 1, 1, 3, 0, 1, 1, 3, 0], 'a repeated section repeats, and after the last comes the first');
+  assert.strictEqual(d.loops, 2);
+  assert.strictEqual(d.crossed(), 1, 'crossed() answers with the slot to queue next');     // now at index 1, next is index 2 (slot 1)
+  d.jumpTo(3); assert.strictEqual(d.queued(), 3); d.crossed(); assert.strictEqual(d.slot, 3, 'a jump lands at the next boundary');
+  d.jumpTo(-1); d.crossed(); assert.strictEqual(d.index, 3, 'jumps wrap');
+  const one = createSongDriver([5]); one.crossed(); assert.strictEqual(one.slot, 5, 'a one-section song just loops');
+  assert.strictEqual(createSongDriver(undefined).slot, 0);
+  const project = { song: [0, 1, 2, 6], slots: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, {}, {}, {}, { name: 'Drop' }] };
+  assert.strictEqual(startIndex(project, 'c'), 2);
+  assert.strictEqual(startIndex(project, 'drop'), 3);
+  assert.strictEqual(startIndex(project, '3'), 3);
+  assert.strictEqual(startIndex(project, 'zzz'), 0);
+  assert.strictEqual(startIndex(project, null), 0);
+});
+
 test('oscineSource: hello, frames and notes reach the callbacks; a closed socket retries', async () => {
   const { oscineSource } = await import(at('signal', 'sources.js'));
   const socks = [];
