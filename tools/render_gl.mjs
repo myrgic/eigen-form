@@ -11,7 +11,8 @@
    1/60 s and takes back the picture. Because the whole song is known,
    the router is given the schedule up front, so anticipation (leads,
    until.* sources, the bloom on the downbeat) plays as it does live
-   with the embedded song. Seeded: the same inputs give the same video
+   with the embedded song. The audio is the clock: the score is lined
+   up with it first (see alignScore). Seeded: the same inputs give the same video
    on the same GPU.
 
    Usage:
@@ -23,6 +24,7 @@
      --seed 1           seeds the actions' randomness
      --patch file.json  a patch saved from the deck instead of the sim's default
      --from S --to S    encode only this stretch (seconds); what comes before is still played
+     --align off        play the score as written instead of lining it up with the audio's transients
      --crf 17           x264 quality (lower = bigger and cleaner)
      --quality 0.95     JPEG quality of the frames handed from the page to ffmpeg
      --software         draw with SwiftShader instead of the GPU (slow; for machines without one)
@@ -99,6 +101,34 @@ const wav = readWav(audioPath);
 const audioSec = wav.samples.length / wav.rate;
 if (Math.abs(audioSec - songSec) > 3) console.error(`render_gl: warning: the audio is ${audioSec.toFixed(1)} s but the score is ${songSec.toFixed(1)} s. Is this the render of this project's song sequence?`);
 
+// ---- line the score up with the audio ---------------------------------------
+// The audio is what the viewer hears, so it is the clock. A render of the song need not run at exactly the
+// project's tempo or start at exactly zero (Oscine's own .wav of Storm runs 0.23% slow: a quarter second by
+// the end), and a picture that follows the score alone drifts ahead of the sound. Find the stretch and
+// offset that put the score's drum hits on the audio's transients, and play the score through that map.
+function alignScore() {
+  const hop = Math.round(wav.rate / 1000), n = Math.floor(wav.samples.length / hop), flux = new Float32Array(n);
+  let prev = 0, last = 0;
+  for (let i = 0; i < n; i++) {                                 // rise of the high-passed level, per ms
+    let e = 0; for (let j = i * hop; j < (i + 1) * hop; j++) { const d = wav.samples[j] - last; last = wav.samples[j]; e += d * d; }
+    const env = Math.sqrt(e / hop); flux[i] = Math.max(0, env - prev); prev = env;
+  }
+  for (let i = n - 1; i >= 2; i--) flux[i] = flux[i] + flux[i - 1] + flux[i - 2];   // a hit may land a ms or two either side
+  const hits = notes.filter((x) => x.kind === 'drum').map((x) => x.t * 1000);
+  if (hits.length < 32) return { k: 1, off: 0, why: 'too few drum hits to line up by' };
+  const score = (k, off) => { let c = 0; for (const h of hits) { const i = Math.round(h * k + off) + 1; if (i >= 0 && i < n) c += flux[i]; } return c; };
+  let best = { c: -1, k: 1, off: 0 }; const all = [];
+  for (let ki = -100; ki <= 100; ki++) for (let off = -60; off <= 160; off += 2) { const k = 1 + ki * 0.00005, c = score(k, off); all.push(c); if (c > best.c) best = { c, k, off }; }
+  for (let ki = -10; ki <= 10; ki++) for (let off = best.off - 3; off <= best.off + 3; off++) { const k = best.k + ki * 0.000005, c = score(k, off); if (c > best.c) best = { c, k, off }; }
+  all.sort((a, b) => a - b); const median = all[all.length >> 1];
+  if (!(best.c > median * 1.5)) return { k: 1, off: 0, why: `no clear fit (best ${(best.c / median).toFixed(2)}x the typical)` };
+  return { k: best.k, off: best.off / 1000, sharp: best.c / median, plain: score(1, 0) / median };
+}
+const fit = args.align === 'off' ? { k: 1, off: 0, why: '--align off' } : alignScore();
+const K = fit.k, OFF = fit.off, spbA = spb * K, songEnd = OFF + songSec * K;
+for (const x of notes) x.t = OFF + x.t * K;
+for (const x of sections) x.start = OFF + x.start * K;
+
 // AnalyserNode.getFloatFrequencyData, offline: Blackman window, FFT, |X|/N in dB.
 const N = 2048, HALF = N / 2;
 const win = Float32Array.from({ length: N }, (_, i) => 0.42 - 0.5 * Math.cos(2 * Math.PI * i / N) + 0.08 * Math.cos(4 * Math.PI * i / N));
@@ -137,10 +167,10 @@ await page.waitForFunction(() => window.__render);
 const T0 = 1_000_000;                                        // an arbitrary epoch: the router only needs a consistent clock
 // the whole song is known: hand the router its future once
 const ahead = {
-  section: { index: 0, name: sections[0].name, at: T0 },
+  section: { index: 0, name: sections[0].name, at: Math.round(T0 + sections[0].start * 1000) },
   sections: sections.slice(1).map((s, i) => ({ at: Math.round(T0 + s.start * 1000), index: i + 1, name: s.name })),
   notes: notes.map((n) => ({ ...n, at: Math.round(T0 + n.t * 1000) })),
-  until: Math.round(T0 + songSec * 1000)
+  until: Math.round(T0 + songEnd * 1000)
 };
 const patch = args.patch ? JSON.parse(readFileSync(resolve(args.patch), 'utf8')) : null;
 let info;
@@ -163,6 +193,7 @@ ff.stdin.on('error', () => { /* reported through the exit code */ });
 
 console.error(`render_gl: ${info.title} on ${info.renderer}`);
 console.error(`render_gl: ${sections.length} sections, ${notes.length} notes, ${songSec.toFixed(1)} s of score, ${audioSec.toFixed(1)} s of audio`);
+console.error(fit.why ? `render_gl: score played as written (${fit.why})` : `render_gl: score lined up with the audio: x${K.toFixed(5)}, ${OFF >= 0 ? '+' : ''}${Math.round(OFF * 1000)} ms (fit ${fit.sharp.toFixed(2)}x the typical; as written ${fit.plain.toFixed(2)}x)`);
 console.error(`render_gl: ${W}x${H} @ ${FPS} fps, ${totalFrames} frames, seed ${SEED}`);
 
 const tracker = new OnsetTracker();
@@ -175,12 +206,12 @@ for (let f = 0; f < firstStep + totalSteps && ffDone == null; f += BATCH) {
     const t = i / 60, now = T0 + t * 1000;
     // hand over notes the way a transport does: a little ahead of when they sound
     const batch = []; while (nextNote < notes.length && notes[nextNote].t <= t + 0.15) { const n = notes[nextNote++]; batch.push({ ...n, at: T0 + n.t * 1000 }); }
-    let sec = sections[sections.length - 1]; for (const s of sections) if (t < s.start + s.beats * spb) { sec = s; break; }
-    const playing = t < songSec, localBeat = Math.max(0, Math.min(sec.beats, (t - sec.start) / spb));
+    let sec = sections[sections.length - 1]; for (const s of sections) if (t < s.start + s.beats * spbA) { sec = s; break; }
+    const playing = t < songEnd, localBeat = Math.max(0, Math.min(sec.beats, (t - sec.start) / spbA));
     analyse(Math.round(t * wav.rate));
     const head = { slot: sec.name, bar: Math.floor(localBeat / 4) + 1, beat: Math.floor(localBeat % 4) + 1, bars: sec.beats / 4, sec: Math.round(t * 10) / 10 };
     // past the last bar the tail is still sounding: keep measuring it, with the playhead parked
-    const frame = buildSignalFrame({ seq: i, at: now, sampleRate: wav.rate, master: { freqDb, td }, head, pos: { localBeat: playing ? localBeat : 0 }, bpm: project.bpm, playing: true, tracker });
+    const frame = buildSignalFrame({ seq: i, at: now, sampleRate: wav.rate, master: { freqDb, td }, head, pos: { localBeat: playing ? localBeat : 0 }, bpm: project.bpm / K, playing: true, tracker });
     steps.push({ i: i - firstStep, skip: i < firstStep, now, notes: batch, frame });
   }
   let shots;
