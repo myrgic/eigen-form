@@ -1,0 +1,63 @@
+/* src/signal/instrument.css — the performance shell every live app shares
+ * (src/signal/instrument.js builds the markup). Layout only; color and
+ * type come from src/panel/tokens.css, which the page links first.
+ * The page owns .stage's CONTENTS; this file owns where the stage and
+ * the drawer sit, and how the drawer leaves (H) before a projector
+ * sees it. One accent, --live, which an app may override. */
+:root { --live: #ff5a4d; --drawer: 348px; }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: #000; color: var(--fg); font-family: var(--sans); overflow: hidden; }
+body.quiet { cursor: none; }
+
+.stage { position: fixed; inset: 0 var(--drawer) 0 0; display: grid; place-items: center; overflow: hidden; transition: inset 220ms ease; }
+body.quiet .stage { inset: 0; }
+
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: var(--drawer); background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; transition: transform 220ms ease; z-index: 2; }
+body.quiet .drawer { transform: translateX(100%); }
+.drawer section { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.drawer h2 { margin: 0 0 10px; font: 500 10px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); display: flex; justify-content: space-between; align-items: baseline; }
+.drawer h2 span { letter-spacing: 0.04em; text-transform: none; }
+.drawer .scroll { overflow-y: auto; flex: 1; min-height: 0; }
+
+.drawer .src { display: flex; gap: 6px; }
+.drawer .src button, .drawer .mini { flex: 1; background: transparent; color: var(--dim); border: 1px solid var(--line); border-radius: var(--radius-1); padding: 7px 8px; font: 11px var(--mono); letter-spacing: 0.04em; cursor: pointer; }
+.drawer .src button[aria-pressed="true"] { color: var(--fg); border-color: var(--live); }
+.drawer .src button:hover, .drawer .mini:hover { color: var(--fg); }
+.drawer .now { margin-top: 10px; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font: 11px var(--mono); color: var(--dim); }
+.drawer .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.drawer .dot.on { background: var(--live); box-shadow: 0 0 10px var(--live); }
+.drawer .where { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drawer .pos { color: var(--fg); font-variant-numeric: tabular-nums; }
+.drawer .meters { margin-top: 10px; display: grid; grid-template-columns: repeat(5, 1fr) 22px; gap: 4px; align-items: end; height: 34px; }
+.drawer .meters i { display: block; background: var(--line); height: 100%; position: relative; border-radius: 1px; overflow: hidden; }
+.drawer .meters i b { position: absolute; left: 0; right: 0; bottom: 0; background: var(--dim); height: 0; }
+.drawer .lamp { border-radius: 50%; height: 22px; align-self: center; background: var(--line); }
+.drawer .lamp.hit { background: var(--live); }
+.drawer .legend { display: grid; grid-template-columns: repeat(5, 1fr) 22px; gap: 4px; margin-top: 3px; font: 9px var(--mono); color: var(--faint); text-align: center; }
+
+.drawer .route { display: grid; grid-template-columns: 1fr 12px 1fr 18px; gap: 4px 6px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.drawer .route:first-child { border-top: 0; }
+.drawer .route select, .drawer .route input[type=number] { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: var(--radius-1); font: 10.5px var(--mono); padding: 3px 4px; min-width: 0; }
+.drawer .arrow { color: var(--faint); font: 11px var(--mono); text-align: center; }
+.drawer .x { background: none; border: 0; color: var(--faint); cursor: pointer; font: 13px var(--mono); padding: 0; }
+.drawer .x:hover { color: var(--live); }
+.drawer .amt { grid-column: 1 / 4; display: grid; grid-template-columns: 1fr 44px 44px; gap: 6px; align-items: center; }
+.drawer input[type=range] { width: 100%; accent-color: var(--live); }
+.drawer .lvl { grid-column: 1 / 5; height: 2px; background: var(--line); position: relative; }
+.drawer .lvl b { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--live); }
+.drawer .trig { display: grid; grid-template-columns: 1fr 96px; gap: 8px; align-items: center; font: 10.5px var(--mono); color: var(--dim); padding: 4px 0; }
+.drawer .trig em, .drawer .fixed em { color: var(--fg); font-style: normal; }
+.drawer .fixed { font: 10.5px var(--mono); color: var(--dim); line-height: 1.7; margin-top: 8px; }
+.drawer .row { display: flex; gap: 6px; margin-top: 10px; }
+.drawer .keys { font: 10px var(--mono); color: var(--faint); line-height: 1.9; }
+.drawer .keys kbd { color: var(--dim); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font: inherit; }
+.drawer .knobs { border: 0; padding: 0; }
+
+@media (max-width: 760px) {
+  :root { --drawer: 0px; }
+  .stage { inset: 0 0 55vh 0; }
+  .drawer { width: 100vw; top: 45vh; border-left: 0; border-top: 1px solid var(--line); }
+  body.quiet .drawer { transform: translateY(100%); }
+}
+@media (prefers-reduced-motion: reduce) { .stage, .drawer { transition: none; } }

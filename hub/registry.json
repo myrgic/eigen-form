@@ -59,6 +59,34 @@
       }
     },
     {
+      "id": "physarum_live",
+      "title": "Physarum, Live",
+      "description": "The slime mold played by music: Oscine's signal bends the colony's sensing and drops pulses, food and shocks into its field.",
+      "path": "../apps/physarum_live/index.html",
+      "kind": "sdk-page",
+      "provenance": {
+        "derivesFrom": "sha256:ce081b7b0c19f5af16b7d72a221a29c485af35ba0ff4ad3e916033fe3cdde391",
+        "changes": [
+          "Migrated, not edited: the steering rule (sense front/left/right, keep straight if front is strongest, turn at random if it is weakest, else turn toward the stronger side, step, deposit) moved unchanged into src/dynamics/physarum.js. This page is new and shares no bytes with the original.",
+          "Around the rule: agents in typed arrays with a sine table (110k by default, was 8k objects); edges wrap (the original teleported and reversed); diffusion is a separable 3-tap blur mixed in by a 'diffusion' knob (was a fixed 3x3 mean); the run is seeded; the model steps at a fixed 60 Hz.",
+          "Two additions that keep a dense colony a mesh under constant disturbance: a crowding limit (a ceiling on what a sensor reads, so agents walk out of over-full veins) and spores (a small fraction of agents relocating each step). Measured on 720x450 with 110k agents and events firing: without them the share of the stage holding a vein fell from 0.45 to 0.27 in 30 s; with them it holds near 0.7.",
+          "A second field, glow, which agents also sense. Nothing in the model writes it: it is the port events arrive through (pulse, seed), with scatter and respawn acting on the agents directly.",
+          "Every knob is declared with defineParams and the panel is generated; the hand-bound sliders are gone. Sensor reach, speed, wander, deposit, diffusion, pull of events, hue, hue spread, exposure and bloom are new knobs; sensor angle, turn angle and persistence are the original three.",
+          "Driven by src/signal: routes from band levels and drum hits onto the knobs, triggers from kick, snare, notes and section changes into the field. Colour is a hue-anchored ramp plus an accent for the glow field (was fixed green)."
+        ]
+      },
+      "pwa": {
+        "installable": false
+      },
+      "sdk": {
+        "eigen-form": ">=0.2.0"
+      },
+      "display": {
+        "order": 4,
+        "accent": "#3dffb4"
+      }
+    },
+    {
       "id": "ast_diffusion",
       "title": "AST Topological Convolution Kernel",
       "description": "A directed acyclic graph representing code, where clicking a node injects heat that a convolution kernel diffuses asymmetrically.",

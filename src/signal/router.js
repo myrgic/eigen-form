@@ -55,6 +55,14 @@
              number of bars at the current tempo, as the base its routes
              then ride on. Released when the tempo is unknown.
 
+   A trigger: { on, action, amount, every }
+             Knobs are continuous; music is mostly events. When the
+             impulse source `on` fires, call trigger(action, strength,
+             meta): strength = impulse x amount, meta = { pitch (0..1),
+             track, lane } of the note that fired it when there was one.
+             What an action DOES belongs to the simulation ("pulse",
+             "scatter", "seed"); the router only says when and how hard.
+
    A step:   { on, every, targets:[key,...], values:[[...],...] }
              on 'section' (slot or marker changed), 'bar', 'beat' or any
              impulse source, advance through `values` and SET the store
@@ -90,11 +98,11 @@ function quantize(def, v) {
   return Math.min(def.max, Math.max(def.min, v));
 }
 
-function createRouter({ store, apply, patch } = {}) {
+function createRouter({ store, apply, trigger, patch } = {}) {
   if (!store || typeof store.get !== 'function') throw new Error('router: needs a params store');
   if (typeof apply !== 'function') throw new Error('router: needs apply(key, value)');
 
-  let routes = [], syncs = [], steps = [];
+  let routes = [], syncs = [], steps = [], triggers = [];
   let offsetMs = 0;                     // + = act later (compensate a fast display), - = earlier
 
   let frame = null;
@@ -106,6 +114,7 @@ function createRouter({ store, apply, patch } = {}) {
   const pitches = new Map();            // track -> 0..1
   const applied = new Map();            // key -> last value handed to apply()
   let impulses = new Map();             // this tick only
+  let meta = new Map();                 // impulse name -> the note behind it, this tick only
 
   function validateRoute(r) {
     if (!r || typeof r.source !== 'string') throw new Error('router: a route needs a source');
@@ -130,6 +139,11 @@ function createRouter({ store, apply, patch } = {}) {
       for (const v of s.values) if (!Array.isArray(v) || v.length !== s.targets.length) throw new Error('router: each step value must give one entry per target');
       return { on: s.on || 'section', every: Math.max(1, Math.round(s.every || 1)), targets: [...s.targets], values: s.values.map((v) => [...v]), i: 0, count: 0, enabled: s.enabled !== false };
     });
+    const nextTriggers = (p.triggers || []).map((t) => {
+      if (!t || typeof t.on !== 'string' || typeof t.action !== 'string') throw new Error('router: a trigger needs on and action');
+      return { on: t.on, action: t.action, amount: t.amount == null ? 1 : Number(t.amount) || 0, every: Math.max(1, Math.round(t.every || 1)), count: 0, enabled: t.enabled !== false };
+    });
+    triggers = nextTriggers;
     // every key a patch stops driving goes back to where the performer left it
     const before = new Set([...routes.map((r) => r.target), ...syncs.map((s) => s.target)]);
     routes = nextRoutes; syncs = nextSyncs; steps = nextSteps;
@@ -149,7 +163,8 @@ function createRouter({ store, apply, patch } = {}) {
       offsetMs,
       routes: routes.map(({ source, target, amount, attack, release: rel, curve, on }) => ({ source, target, amount, attack, release: rel, curve, on })),
       syncs: syncs.map(({ target, bars, sign, on }) => ({ target, bars, sign, on })),
-      steps: steps.map(({ on, every, targets, values, enabled }) => ({ on, every, targets, values, enabled }))
+      steps: steps.map(({ on, every, targets, values, enabled }) => ({ on, every, targets, values, enabled })),
+      triggers: triggers.map(({ on, action, amount, every, enabled }) => ({ on, action, amount, every, enabled }))
     };
   }
 
@@ -168,9 +183,10 @@ function createRouter({ store, apply, patch } = {}) {
     if (queue.length > 4096) queue = queue.slice(-4096);
   }
 
-  function bump(name, v) {
+  function bump(name, v, note) {
     if (!(v > (impulses.get(name) || 0))) return;
     impulses.set(name, v);
+    if (note) meta.set(name, note);
   }
 
   function fireDue(now) {
@@ -183,13 +199,13 @@ function createRouter({ store, apply, patch } = {}) {
       const vel = clamp01(Number.isFinite(n.vel) ? n.vel : 1);
       lastNoteSeen = now;
       if (n.kind === 'drum') {
-        bump('hit.' + n.lane, vel); bump('hit.any', vel);
+        const m = { track: n.track, lane: n.lane };
+        bump('hit.' + n.lane, vel, m); bump('hit.any', vel, m);
       } else {
-        bump('note.' + n.track, vel); bump('note.any', vel);
-        if (Number.isFinite(n.pitch)) {
-          const pv = clamp01((n.pitch - PITCH_LO) / (PITCH_HI - PITCH_LO));
-          pitches.set(n.track, pv); pitches.set('*', pv);
-        }
+        const pv = Number.isFinite(n.pitch) ? clamp01((n.pitch - PITCH_LO) / (PITCH_HI - PITCH_LO)) : null;
+        const m = { track: n.track, pitch: pv };
+        bump('note.' + n.track, vel, m); bump('note.any', vel, m);
+        if (pv != null) { pitches.set(n.track, pv); pitches.set('*', pv); }
       }
     }
     if (i) queue = queue.slice(i);
@@ -213,7 +229,7 @@ function createRouter({ store, apply, patch } = {}) {
   function tick(now) {
     const dt = lastTick == null ? 16 : Math.min(250, Math.max(0, now - lastTick));
     lastTick = now;
-    impulses = new Map();
+    impulses = new Map(); meta = new Map();
 
     fireDue(now);
 
@@ -235,6 +251,16 @@ function createRouter({ store, apply, patch } = {}) {
       section = sec;
     } else {
       prevBeatPhase = prevBarPhase = null;
+    }
+
+    // triggers: events the simulation acts on directly
+    if (trigger) {
+      for (const t of triggers) {
+        const x = t.enabled ? readSource(t.on) : 0;
+        if (!(x > 0)) continue;
+        if (++t.count % t.every) continue;
+        trigger(t.action, x * t.amount, meta.get(t.on) || {});
+      }
     }
 
     // steps move the performer's hand: they write the store
@@ -300,6 +326,7 @@ function createRouter({ store, apply, patch } = {}) {
     get routes() { return routes; },
     get syncs() { return syncs; },
     get steps() { return steps; },
+    get triggers() { return triggers; },
     get offsetMs() { return offsetMs; },
     set offsetMs(v) { offsetMs = Number(v) || 0; },
     get queued() { return queue.length; },

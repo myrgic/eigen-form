@@ -169,8 +169,32 @@ test('a patch that cannot work is refused when it is set, not at 60 Hz', async (
   assert.throws(() => router.setPatch({ steps: [{ targets: ['p', 'q'], values: [[1]] }] }), /one entry per target/);
 });
 
+test('a trigger hands the simulation the event: when, how hard, and which note', async () => {
+  const { defineParams } = await import(at('params', 'define.js'));
+  const { createRouter } = await import(at('signal', 'router.js'));
+  const fired = [];
+  const router = createRouter({ store: defineParams(SCHEMA), apply: () => {}, trigger: (action, strength, meta) => fired.push([action, strength, meta]),
+    patch: { triggers: [{ on: 'hit.kick', action: 'pulse', amount: 0.5 }, { on: 'note.any', action: 'seed' }, { on: 'hit.snare', action: 'scatter', every: 2 }, { on: 'section', action: 'respawn' }] } });
+  router.frame(frame());
+  router.notes([{ track: 'Kit', kind: 'drum', lane: 'kick', vel: 0.8, at: 100 }, { track: 'Lead', kind: 'note', pitch: 66, vel: 0.6, at: 100 }, { track: 'Kit', kind: 'drum', lane: 'snare', vel: 1, at: 100 }, { track: 'Kit', kind: 'drum', lane: 'snare', vel: 1, at: 200 }]);
+  router.tick(50);
+  assert.strictEqual(fired.length, 0, 'nothing before its moment');
+  router.tick(100);
+  assert.deepStrictEqual(fired.map((f) => f[0]), ['pulse', 'seed'], 'kick and note fire; the first snare is skipped by every: 2');
+  assert.ok(Math.abs(fired[0][1] - 0.4) < 1e-9, 'strength = velocity x amount');
+  assert.deepStrictEqual(fired[0][2], { track: 'Kit', lane: 'kick' });
+  assert.deepStrictEqual(fired[1][2], { track: 'Lead', pitch: 0.5 });
+  router.tick(116);
+  assert.strictEqual(fired.length, 2, 'an impulse lasts one tick');
+  router.tick(200);
+  assert.strictEqual(fired.at(-1)[0], 'scatter', 'the second snare fires');
+  router.frame(frame({ slot: 'B' })); router.tick(216);
+  assert.strictEqual(fired.at(-1)[0], 'respawn', 'a section change is an impulse too');
+  assert.throws(() => router.setPatch({ triggers: [{ on: 'hit.kick' }] }), /needs on and action/);
+});
+
 test('serialize round-trips a patch', async () => {
-  const patch = { offsetMs: 12, routes: [{ source: 'hit.kick', target: 'width', amount: 0.4, attack: 0, release: 180, curve: 'sq', on: true }], syncs: [{ target: 'period', bars: 2, sign: 1, on: true }], steps: [{ on: 'section', every: 1, targets: ['p', 'q'], values: [[2, 3], [3, 4]], enabled: true }] };
+  const patch = { offsetMs: 12, routes: [{ source: 'hit.kick', target: 'width', amount: 0.4, attack: 0, release: 180, curve: 'sq', on: true }], syncs: [{ target: 'period', bars: 2, sign: 1, on: true }], steps: [{ on: 'section', every: 1, targets: ['p', 'q'], values: [[2, 3], [3, 4]], enabled: true }], triggers: [{ on: 'hit.kick', action: 'pulse', amount: 0.8, every: 1, enabled: true }] };
   const { router } = await setup(patch);
   assert.deepStrictEqual(router.serialize(), patch);
 });
