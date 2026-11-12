@@ -229,6 +229,110 @@ test('demoSource schedules ahead and feeds a router end to end', async () => {
   src.stop();
 });
 
+test('until.<event> rises into the event and is zero when nothing is known', async () => {
+  const { router, last } = await setup({ routes: [{ source: 'until.hit.kick', target: 'width', amount: 0.5, lead: 1000 }] });
+  router.frame(frame());
+  router.tick(0); assert.strictEqual(last('width'), 20, 'no schedule: the source reads zero and the knob sits where it was left');
+  router.ahead({ until: 60000, notes: [{ track: 'Kit', kind: 'drum', lane: 'snare', vel: 1, at: 500 }, { track: 'Kit', kind: 'drum', lane: 'kick', vel: 1, at: 3000 }] });
+  router.tick(1900); assert.strictEqual(last('width'), 20, 'more than the lead away: still zero (and the snare is not a kick)');
+  router.tick(2500); assert.strictEqual(last('width'), 45, 'halfway through the lead: half the amount');
+  router.tick(2999); assert.ok(last('width') > 69, 'full at the moment');
+  router.tick(3016); assert.strictEqual(last('width'), 20, 'past it with nothing else scheduled: back to zero');
+});
+
+test('a lead acts before the event, once, and falls back to acting on time when the future is not known', async () => {
+  const mk = () => setup({ routes: [{ source: 'hit.kick', target: 'width', amount: 0.5, lead: 300 }] });
+  const kick = { track: 'Kit', kind: 'drum', lane: 'kick', vel: 1, at: 2000 };
+  // known: fires 300 ms early, and NOT again when the note itself comes due
+  const a = await mk(); a.router.frame(frame()); a.router.tick(1000);
+  a.router.ahead({ until: 10000, notes: [kick] }); a.router.notes([kick]);
+  a.router.tick(1690); assert.strictEqual(a.last('width'), 20);
+  a.router.tick(1705); assert.strictEqual(a.last('width'), 70, 'acted 295 ms before the kick');
+  a.router.tick(1720); assert.strictEqual(a.last('width'), 20);
+  a.router.tick(2001); assert.strictEqual(a.last('width'), 20, 'the kick itself does not fire the leading route a second time');
+  // not known that far: acts when it happens
+  const b = await mk(); b.router.frame(frame()); b.router.tick(1000);
+  b.router.ahead({ until: 1900, notes: [kick] }); b.router.notes([kick]);
+  b.router.tick(1705); assert.strictEqual(b.last('width'), 20, 'the schedule ends before the kick: no early action');
+  b.router.tick(2001); assert.strictEqual(b.last('width'), 70, 'so it reacts, as it always did');
+  // a level cannot be known ahead: a lead on it is ignored, not turned into silence
+  const c = await setup({ routes: [{ source: 'band.bass', target: 'width', amount: 0.5, lead: 300 }] });
+  c.router.ahead({ until: 1e9, notes: [] }); c.router.frame(frame({ bands: [0, 1, 0, 0, 0] })); c.router.tick(0); c.router.tick(16);
+  assert.strictEqual(c.last('width'), 70);
+});
+
+test('leadBars follows the tempo, and a trigger gets the note behind an early event', async () => {
+  const { defineParams } = await import(at('params', 'define.js'));
+  const { createRouter } = await import(at('signal', 'router.js'));
+  const fired = [];
+  const router = createRouter({ store: defineParams(SCHEMA), apply() {}, trigger: (action, v, meta) => fired.push([action, v, meta]), patch: { triggers: [{ on: 'note.Lead', action: 'seed', leadBars: 1 }, { on: 'section', action: 'bloom', leadBars: 1 }] } });
+  router.frame(frame({ bpm: 120 })); router.tick(0);                                  // one bar = 2000 ms
+  router.ahead({ until: 60000, notes: [{ track: 'Lead', kind: 'note', pitch: 66, vel: 0.5, at: 5000 }], sections: [{ at: 8000, index: 3, name: 'D' }] });
+  router.tick(2990); assert.strictEqual(fired.length, 0);
+  router.tick(3005); assert.deepStrictEqual(fired[0], ['seed', 0.5, { track: 'Lead', lane: undefined, pitch: 0.5 }]);
+  router.tick(6005); assert.deepStrictEqual(fired[1], ['bloom', 1, { index: 3, name: 'D' }], 'a section change one bar out, with where the song is going');
+  assert.strictEqual(fired.length, 2);
+  assert.ok(router.knownAheadMs > 50000);
+});
+
+test('a section step goes where the song is going: early with a lead, and to the right entry from anywhere', async () => {
+  const { router, store } = await setup({ steps: [{ on: 'section', leadBars: 1, targets: ['p', 'q'], values: [[1, 2], [2, 3], [3, 4], [4, 5]] }] });
+  router.frame(frame({ bpm: 120, slot: 'C' })); router.tick(0);
+  router.ahead({ until: 60000, section: { index: 2 }, sections: [{ at: 10000, index: 3 }, { at: 20000, index: 0 }] });
+  assert.deepStrictEqual([store.get('p'), store.get('q')], [3, 4], 'starting in the third section selects the third entry at once');
+  router.tick(7990); assert.deepStrictEqual([store.get('p'), store.get('q')], [3, 4]);
+  router.tick(8005); assert.deepStrictEqual([store.get('p'), store.get('q')], [4, 5], 'one bar before the boundary the knobs are already the next section\'s');
+  // the boundary arrives: the source re-sends the schedule, the frame reports the new slot. Nothing moves twice.
+  router.ahead({ until: 70000, section: { index: 3 }, sections: [{ at: 20000, index: 0 }] });
+  router.frame(frame({ bpm: 120, slot: 'D' })); router.tick(10005);
+  assert.deepStrictEqual([store.get('p'), store.get('q')], [4, 5]);
+  router.tick(18005); assert.deepStrictEqual([store.get('p'), store.get('q')], [1, 2], 'and round to the first');
+  // the future is withdrawn (paused, or a live source): the step counts again, on time
+  const b = await setup({ steps: [{ on: 'section', leadBars: 1, targets: ['p'], values: [[1], [2], [3]] }] });
+  b.router.frame(frame({ slot: 'A' })); b.router.tick(0); b.router.frame(frame({ slot: 'B' })); b.router.tick(16);
+  assert.strictEqual(b.store.get('p'), 2, 'no schedule at all: the old behaviour');
+});
+
+test('with a schedule a section change is read from it even with no lead, including the section just starting', async () => {
+  const { defineParams } = await import(at('params', 'define.js'));
+  const { createRouter } = await import(at('signal', 'router.js'));
+  const fired = [];
+  const router = createRouter({ store: defineParams(SCHEMA), apply() {}, trigger: (action, v, meta) => fired.push([action, meta.index]), patch: { triggers: [{ on: 'section', action: 'bloom' }] } });
+  router.frame({ playing: true, bpm: 120, slot: 0 }); router.tick(1000);
+  router.ahead({ section: { index: 2, name: 'C', at: 1100 }, sections: [{ at: 3100, index: 3, name: 'D' }], notes: [], until: 9000 });
+  router.tick(1050); assert.deepStrictEqual(fired, [], 'published before it is heard: nothing yet');
+  router.tick(1110); assert.deepStrictEqual(fired, [['bloom', 2]], 'the section that was about to start');
+  router.frame({ playing: true, bpm: 120, slot: 5 }); router.tick(1500); assert.strictEqual(fired.length, 1, 'the slot changing in a frame adds nothing: the schedule is the authority');
+  router.tick(3090); router.tick(3105); assert.deepStrictEqual(fired[1], ['bloom', 3]);
+  router.ahead({ section: { index: 3, name: 'D', at: 3100 }, sections: [], notes: [], until: 9000 });
+  router.tick(3120); assert.strictEqual(fired.length, 2, 're-sending a start that has passed does not fire it again');
+});
+
+test('leads survive a save and reload of the patch, and are absent when not set', async () => {
+  const { router } = await setup({ routes: [{ source: 'until.section', target: 'width', amount: 0.3, leadBars: 2 }, { source: 'rms', target: 'width', amount: 0.1 }], triggers: [{ on: 'hit.kick', action: 'x', lead: 120 }], steps: [{ on: 'section', leadBars: 1, targets: ['p'], values: [[1], [2]] }] });
+  const out = router.serialize();
+  assert.strictEqual(out.routes[0].leadBars, 2); assert.ok(!('lead' in out.routes[1]) && !('leadBars' in out.routes[1]));
+  assert.strictEqual(out.triggers[0].lead, 120); assert.strictEqual(out.steps[0].leadBars, 1);
+});
+
+test('the schedule ahead: notes and section changes at their times, far enough, honouring a queued jump', async () => {
+  const { scheduleAhead } = await import(at('signal', 'embedded.js'));
+  const project = { bpm: 120, tracks: [{ id: 'k', name: 'Kit' }, { id: 'l', name: 'Lead' }],
+    slots: [{ name: 'A', bars: 1, patterns: { k: { steps: { kick: [1, 0, 0, 0, 0.5, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0] } }, l: { notes: [{ start: 1.5, pitch: 60, vel: 0.7 }, { start: 9, pitch: 61, vel: 0.7 }] } } },
+            { name: 'B', bars: 2, patterns: { k: { steps: { snare: [0, 0, 0, 0, 1] } } } }] };
+  const a = scheduleAhead(project, [0, 1], 0, 100000, 7000);
+  assert.deepStrictEqual(a.section, { index: 0, name: 'A', at: 100000 });
+  assert.deepStrictEqual(a.notes.filter((n) => n.lane === 'kick').map((n) => [n.at - 100000, n.vel]).slice(0, 4), [[0, 1], [500, 0.5], [1000, 1], [1500, 1]]);
+  assert.deepStrictEqual(a.notes.filter((n) => n.kind === 'note').map((n) => n.at - 100000)[0], 750, 'a note at beat 1.5 is 750 ms in at 120 bpm');
+  assert.ok(!a.notes.some((n) => n.pitch === 61 && n.at < 106000), 'a note past the end of a one-bar slot is not played in that pass');
+  assert.deepStrictEqual(a.sections.slice(0, 3).map((s) => [s.at - 100000, s.index, s.name]), [[2000, 1, 'B'], [6000, 0, 'A'], [8000, 1, 'B']], 'A is one bar, B is two, then round again');
+  assert.ok(a.until - 100000 >= 7000, 'it reaches at least the horizon');
+  assert.ok(a.notes.some((n) => n.lane === 'snare' && n.at === 102500), 'the next section\'s notes are in it');
+  const j = scheduleAhead(project, [0, 1], 0, 100000, 3000, 0);
+  assert.deepStrictEqual(j.sections[0], { at: 102000, index: 0, name: 'A' }, 'a queued jump changes what comes next');
+  for (let i = 1; i < a.notes.length; i++) assert.ok(a.notes[i].at >= a.notes[i - 1].at, 'sorted by time');
+});
+
 test('the song driver walks the sequence, wraps, and counts times round', async () => {
   const { createSongDriver, startIndex } = await import(at('signal', 'embedded.js'));
   const d = createSongDriver([0, 1, 1, 3]);

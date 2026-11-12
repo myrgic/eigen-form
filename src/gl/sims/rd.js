@@ -9,11 +9,19 @@
    Played: sections move (feed, kill) between regimes; every note seeds
    V at its place; the kick stirs V everywhere; the snare drops a
    scatter of seeds. `spores` keeps a trickle of V arriving so a regime
-   that would die out under the music never leaves the stage empty. */
+   that would die out under the music never leaves the stage empty.
+
+   Anticipated (needs a source that knows the future, i.e. the embedded
+   song): through the last bar before a section change `wither` rises,
+   the kill rate climbs with it and the stage empties; on the downbeat a
+   flower is drawn in V in one step and the new regime grows from it.
+   Without a schedule wither stays at zero and the flower still lands
+   on the change, as it is seen. */
 import { COLOR, HUE_STEP } from './common.js';
 import { placeNote } from '../runtime.js';
 
 const SIZE = [640, 360];
+let flower = null;                      // set by the action, drawn in the next step, then cleared
 export default {
   id: 'rd', title: 'Reaction-diffusion', about: 'Gray-Scott (Pearson 1993)',
   schema: {
@@ -21,6 +29,7 @@ export default {
     kill:    { type: 'number', min: 0.045, max: 0.07,  step: 0.0002, default: 0.0649, group: 'chemistry', label: 'kill' },
     spores:  { type: 'number', min: 0,     max: 1,     step: 0.01,   default: 0.25,   group: 'chemistry', label: 'spores' },
     stir:    { type: 'number', min: 0,     max: 1,     step: 0.01,   default: 0,      group: 'chemistry', label: 'stir' },
+    wither:  { type: 'number', min: 0,     max: 1,     step: 0.01,   default: 0,      group: 'chemistry', label: 'wither' },
     rate:    { type: 'number', min: 1,     max: 24,    step: 1,      default: 12,     group: 'time',      label: 'steps per frame' },
     relief:  { type: 'number', min: 0,     max: 1,     step: 0.01,   default: 0.6,    group: 'color',     label: 'relief' },
     ...COLOR
@@ -28,13 +37,15 @@ export default {
   patch: {
     routes: [
       { source: 'hit.kick',  target: 'stir',   amount: 0.5,  attack: 0,  release: 140 },
+      { source: 'until.section', target: 'wither', amount: 1, leadBars: 1, attack: 0, release: 120, curve: 'sq' },
       { source: 'band.bass', target: 'rate',   amount: 0.3,  attack: 20, release: 300 },
       { source: 'hit.snare', target: 'relief', amount: 0.35, attack: 0,  release: 200 },
       { source: 'rms',       target: 'gain',   amount: 0.12, attack: 100, release: 800 }
     ],
     triggers: [
       { on: 'note.any',  action: 'seed',    amount: 0.9 },
-      { on: 'hit.snare', action: 'scatter', amount: 0.6 }
+      { on: 'hit.snare', action: 'scatter', amount: 0.6 },
+      { on: 'section',   action: 'flower',  amount: 1 }
     ],
     steps: [
       // mitosis, coral, maze, spots, worms: Pearson's map, by section
@@ -42,6 +53,8 @@ export default {
       HUE_STEP
     ]
   },
+  extraUniforms: ['vec4 u_flower', 'vec2 u_petals'],
+  uniforms() { const f = flower; flower = null; return f ? { u_flower: [f.x, f.y, f.r, f.strength], u_petals: [f.petals, f.turn] } : { u_flower: [0, 0, 0, 0], u_petals: [5, 0] }; },
   buffers: { chem: { size: SIZE, wrap: 'repeat' } },
   init: { chem: `
     vec4 pass(vec2 uv) {
@@ -59,12 +72,18 @@ export default {
                + 0.05 * (texture(u_chem, uv + t).xy + texture(u_chem, uv - t).xy + texture(u_chem, uv + vec2(t.x, -t.y)).xy + texture(u_chem, uv + vec2(-t.x, t.y)).xy) - c;
       float a = c.x, b = c.y, r = a * b * b;
       a += lap.x - r + u_feed * (1.0 - a);
-      b += 0.5 * lap.y + r - (u_kill + u_feed) * b;
+      b += 0.5 * lap.y + r - (u_kill + 0.02 * u_wither + u_feed) * b;
       if (u_iter == 0) {
         for (int i = 0; i < u_splatCount; i++) b += u_splat[i].w * splatAt(uv, i);
         vec2 cell = floor(uv * u_chemRes / 3.0);
         b += 0.5 * u_spores * step(0.99985, hash21(cell + float(u_frame) * 17.0));       // a trickle of new V
-        b += 0.22 * u_stir * (vnoise(uv * vec2(u_aspect, 1.0) * 24.0 + float(u_frame) * 0.37) - 0.35);   // the kick stirs
+        // the kick stirs what is there: zero on average and in proportion, so it can neither flood nor empty the field
+        b *= 1.0 + 0.7 * u_stir * (vnoise(uv * vec2(u_aspect, 1.0) * 24.0 + float(u_frame) * 0.37) - 0.5);
+        if (u_flower.w > 0.0) {                                                           // petal outlines and a centre, in V
+          vec2 d = uv - u_flower.xy; d.x *= u_aspect;
+          float rr = length(d), edge = u_flower.z * (0.4 + 0.6 * abs(cos(0.5 * u_petals.x * atan(d.y, d.x) + u_petals.y)));
+          b += u_flower.w * (smoothstep(0.014, 0.004, abs(rr - edge)) + smoothstep(0.03, 0.015, rr));
+        }
       }
       return vec4(clamp(a, 0.0, 1.0), clamp(b, 0.0, 1.0), 0.0, 1.0);
     }`
@@ -87,6 +106,7 @@ export default {
     return (action, strength, meta) => {
       if (action === 'seed') { const [x, y] = placeNote(meta, rows, api.aspect()); api.splat({ x, y, r: 0.018 + 0.012 * strength, strength: 0.55 * strength }); }
       else if (action === 'scatter') { for (let i = 0; i < 6; i++) api.splat({ x: Math.random(), y: Math.random(), r: 0.02, strength: 0.6 * strength }); }
+      else if (action === 'flower') flower = { x: 0.5, y: 0.5, r: 0.36, strength: 0.9 * strength, petals: 5 + ((meta && Number.isInteger(meta.index) ? meta.index : 0) % 4), turn: Math.random() * 6.283 };
       else if (action === 'reset') api.reset();
     };
   }

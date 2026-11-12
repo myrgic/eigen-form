@@ -14,6 +14,9 @@
      - it taps the engine with Oscine's own SignalTap, so the frames and
        notes are the same ones the socket carries. No analysis lives
        here
+     - it knows the future: the whole song is in the project file, so
+       it publishes what is coming (onAhead: notes and section changes
+       for the next ~24 s) and the router can act before things happen
      - it walks the project's song sequence: Oscine's live transport
        loops one slot, so at every loop boundary the next section is
        queued, and after the last comes the first again
@@ -44,6 +47,34 @@ function createSongDriver(order, start = 0) {
   };
 }
 
+// What is coming, worked out from the project file: every note and section change from the start of the
+// section now playing (song position `index`, which began at epoch ms `startMs`) until at least `horizonMs`
+// later, assuming the song simply carries on (`nextIndex` overrides which section follows the current one,
+// for a jump that is already queued). Pure. Times are when things are HEARD: startMs must already include
+// the output latency. Swing is not applied.
+function scheduleAhead(project, order, index, startMs, horizonMs = 24000, nextIndex = null) {
+  const seq = Array.isArray(order) && order.length ? order : [0], spbMs = 60000 / project.bpm;
+  const nameOf = (si) => (project.slots[si] && project.slots[si].name) || 'ABCDEFGH'[si] || String(si);
+  const notes = [], sections = [];
+  let i = ((index % seq.length) + seq.length) % seq.length, t = startMs, first = true;
+  const out = { section: { index: i, name: nameOf(seq[i]), at: Math.round(startMs) } };
+  for (let guard = 0; guard < 64 && (first || t - startMs < horizonMs); guard++) {
+    const slot = project.slots[seq[i]]; if (!slot) break;
+    const beats = slot.bars * 4;
+    for (const tr of project.tracks) {
+      const pat = slot.patterns && slot.patterns[tr.id]; if (!pat) continue;
+      if (pat.steps) { for (const [lane, vels] of Object.entries(pat.steps)) for (let k = 0; k < vels.length && k < beats * 4; k++) if (vels[k] > 0) notes.push({ track: tr.name, kind: 'drum', lane, vel: vels[k], at: Math.round(t + (k / 4) * spbMs) }); }
+      else for (const n of pat.notes || []) if (n.start < beats) notes.push({ track: tr.name, kind: 'note', pitch: n.pitch, vel: n.vel, at: Math.round(t + n.start * spbMs) });
+    }
+    t += beats * spbMs;
+    i = first && nextIndex != null ? ((nextIndex % seq.length) + seq.length) % seq.length : (i + 1) % seq.length;
+    sections.push({ at: Math.round(t), index: i, name: nameOf(seq[i]) });
+    first = false;
+  }
+  notes.sort((a, b) => a.at - b.at);
+  return { ...out, notes, sections, until: Math.round(t) };
+}
+
 // `from` names where to start: a slot letter ("G"), a slot name, or a position in the song ("6").
 function startIndex(project, from) {
   const order = project.song && project.song.length ? project.song : [0];
@@ -54,7 +85,7 @@ function startIndex(project, from) {
   return at < 0 ? 0 : at;
 }
 
-function embeddedOscineSource({ base = '/oscine', songUrl, from, hz = 60, onFrame, onNotes, onStatus } = {}) {
+function embeddedOscineSource({ base = '/oscine', songUrl, from, hz = 60, onFrame, onNotes, onAhead, onStatus } = {}) {
   let stopped = false, connected = false, project = null, teardown = () => {}, control = null;
   const status = (detail) => onStatus && onStatus({ kind: 'song', label: 'Song', connected, project: project && project.name, detail });
   const root = String(base).replace(/\/+$/, '');
@@ -62,7 +93,7 @@ function embeddedOscineSource({ base = '/oscine', songUrl, from, hz = 60, onFram
   (async () => {
     status('loading Oscine');
     const mod = (p) => import(/* runtime URL: Oscine is not part of this library */ `${root}/src/${p}`);
-    const [{ EventBus }, { Store }, { validateProject }, { AudioEngine }, { Transport }, { getCtx, ensureRunning }, { SignalTap }] =
+    const [{ EventBus }, { Store }, { validateProject }, { AudioEngine }, { Transport }, { getCtx, ensureRunning }, { SignalTap, clockStamp, audioToEpoch }] =
       await Promise.all([mod('core/bus.js'), mod('core/store.js'), mod('core/schema.js'), mod('engine/engine.js'), mod('engine/transport.js'), mod('engine/context.js'), mod('engine/signal.js')]);
     status('loading the song');
     const res = await fetch(songUrl);
@@ -78,7 +109,16 @@ function embeddedOscineSource({ base = '/oscine', songUrl, from, hz = 60, onFram
 
     bus.on('signal:frame', (f) => { if (!stopped && onFrame) onFrame(f); });
     bus.on('signal:notes', (d) => { if (!stopped && onNotes) onNotes(d.notes || []); });
-    bus.on('transport:loop', () => { if (transport.playing) store.requestSlot(driver.crossed(), true); });
+    // The future, re-sent whenever it changes: at every boundary, on a jump, on pause. The section now playing
+    // began (or is about to: the scheduler runs ~120 ms ahead) at the transport's loop start.
+    let jumpIndex = null;
+    const publish = () => {
+      if (stopped || !onAhead) return;
+      if (!transport.playing || ctx.state !== 'running') { onAhead({ notes: [], sections: [], until: 0 }); return; }
+      const startMs = audioToEpoch(transport.beatToTime(transport.loopStartAbs), clockStamp(ctx));
+      onAhead(scheduleAhead(project, order, driver.index, startMs, 24000, jumpIndex));
+    };
+    bus.on('transport:loop', () => { if (!transport.playing) return; store.requestSlot(driver.crossed(), true); jumpIndex = null; publish(); });
 
     function play(at) {
       if (transport.playing) return;
@@ -86,8 +126,9 @@ function embeddedOscineSource({ base = '/oscine', songUrl, from, hz = 60, onFram
       store.requestSlot(driver.slot, false);             // not playing yet: this section becomes the active one
       transport.play();
       store.requestSlot(next, true);                     // and the one after it waits at the boundary
+      jumpIndex = null; publish();
     }
-    const say = () => status(ctx.state === 'running' ? (transport.playing ? 'playing' : 'paused') : 'click or press a key to start the sound');
+    const say = () => { status(ctx.state === 'running' ? (transport.playing ? 'playing' : 'paused') : 'click or press a key to start the sound'); publish(); };
     const unlock = () => { ensureRunning().then(say, say); };
     addEventListener('pointerdown', unlock); addEventListener('keydown', unlock);
     ctx.onstatechange = say;
@@ -100,8 +141,8 @@ function embeddedOscineSource({ base = '/oscine', songUrl, from, hz = 60, onFram
 
     control = {
       toggle() { if (transport.playing) transport.stop(); else play(driver.index); say(); },
-      next() { store.requestSlot(driver.jumpTo(driver.index + 1), true); },
-      prev() { store.requestSlot(driver.jumpTo(driver.index - 1), true); },
+      next() { jumpIndex = driver.index + 1; store.requestSlot(driver.jumpTo(jumpIndex), true); publish(); },
+      prev() { jumpIndex = driver.index - 1; store.requestSlot(driver.jumpTo(jumpIndex), true); publish(); },
       position() { const p = transport.getPosition(); return { playing: !!p.playing, audio: ctx.state, index: driver.index, of: driver.length, slot: 'ABCDEFGH'[driver.slot] ?? String(driver.slot), bar: Math.floor((p.localBeat || 0) / 4) + 1, beat: Math.floor((p.localBeat || 0) % 4) + 1, loops: driver.loops }; }
     };
     teardown = () => { try { tap.stop(); transport.stop(); } catch { /* already down */ } removeEventListener('pointerdown', unlock); removeEventListener('keydown', unlock); ctx.onstatechange = null; };
@@ -117,5 +158,5 @@ function embeddedOscineSource({ base = '/oscine', songUrl, from, hz = 60, onFram
   };
 }
 
-export { embeddedOscineSource, createSongDriver, startIndex };
-export default { embeddedOscineSource, createSongDriver, startIndex };
+export { embeddedOscineSource, createSongDriver, startIndex, scheduleAhead };
+export default { embeddedOscineSource, createSongDriver, startIndex, scheduleAhead };

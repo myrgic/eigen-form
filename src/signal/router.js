@@ -63,6 +63,31 @@
              What an action DOES belongs to the simulation ("pulse",
              "scatter", "seed"); the router only says when and how hard.
 
+   ANTICIPATION. When the source knows what is coming (a song played
+   from its project file does; a live socket knows ~100 ms), it hands
+   the schedule over with ahead({ notes, sections, until, section }):
+   the same note objects with their future `at`, section changes as
+   { at, index, name }, `until` = the epoch ms the schedule is good to,
+   and `section` = { index } playing now. Two things then become possible:
+
+     lead / leadBars   on a route, trigger or step whose source is an
+                       event (hit.*, note.*, section): act that long
+                       BEFORE the event. A slow simulation started a bar
+                       early arrives on the downbeat instead of after it.
+                       If the schedule does not reach that far, the
+                       event is acted on when it happens, as before:
+                       anticipation degrades to reaction, never to
+                       silence, and never fires twice.
+     until.<event>     a source that RISES into the event: 0 until
+                       lead (default 1 s) before it, 1 at the moment.
+                       until.section, until.hit.kick, until.note.Lead ...
+                       The wind-up; pair it with the event itself for
+                       the release.
+
+   A step on 'section' also follows the song: with a schedule, section n
+   of the song selects values[n % length], so starting mid-song or
+   skipping about lands on the right entry instead of counting from 0.
+
    A step:   { on, every, targets:[key,...], values:[[...],...] }
              on 'section' (slot or marker changed), 'bar', 'beat' or any
              impulse source, advance through `values` and SET the store
@@ -114,7 +139,50 @@ function createRouter({ store, apply, trigger, onNote, patch } = {}) {
   const pitches = new Map();            // track -> 0..1
   const applied = new Map();            // key -> last value handed to apply()
   let impulses = new Map();             // this tick only
+  let future = [], futureUntil = 0, sectionIndex = null, lastDue = null;   // what the source says is coming
   let meta = new Map();                 // impulse name -> the note behind it, this tick only
+
+  // lead (ms) and leadBars are kept only when given, so a patch without them serializes as it always did
+  const leads = (o) => ({ ...(o.lead > 0 ? { lead: Number(o.lead) } : {}), ...(o.leadBars > 0 ? { leadBars: Number(o.leadBars) } : {}) });
+  const barMs = () => (frame && frame.bpm > 0 ? 240000 / frame.bpm : 2000);
+  const leadOf = (o) => (o.lead || 0) + (o.leadBars || 0) * barMs();
+  const isEvent = (name) => name === 'section' || name.startsWith('hit.') || name.startsWith('note.');
+  function matches(name, e) {
+    if (name === 'section') return !!e.section;
+    if (e.section) return false;
+    if (name === 'hit.any') return e.kind === 'drum';
+    if (name === 'note.any') return e.kind !== 'drum';
+    if (name.startsWith('hit.')) return e.kind === 'drum' && e.lane === name.slice(4);
+    if (name.startsWith('note.')) return e.kind !== 'drum' && e.track === name.slice(5);
+    return false;
+  }
+  // The schedule replaces whatever was known before: the source re-sends it whenever the future changes.
+  function ahead(s) {
+    s = s || {};
+    const evs = [];
+    for (const n of s.notes || []) if (n && Number.isFinite(n.at)) evs.push(n);
+    for (const c of s.sections || []) if (c && Number.isFinite(c.at)) evs.push({ ...c, section: true });
+    // the section now playing may not have reached the speaker yet: its start is an event like any other
+    const starts = s.section && Number.isFinite(s.section.at) && (lastDue == null || s.section.at > lastDue);
+    if (starts) evs.push({ ...s.section, section: true });
+    future = evs.sort((a, b) => a.at - b.at);
+    futureUntil = Number.isFinite(s.until) ? s.until : 0;
+    if (s.section && Number.isInteger(s.section.index)) { sectionIndex = s.section.index; if (!starts) for (const st of steps) if (st.enabled && st.on === 'section') place(st, sectionIndex); }
+    else if (!s.section) sectionIndex = null;
+  }
+  function place(st, index) { st.i = ((index % st.values.length) + st.values.length) % st.values.length; st.targets.forEach((k, j) => { if (!store.locked(k) && store.get(k) !== st.values[st.i][j]) store.set(k, st.values[st.i][j]); }); }
+  function nextAt(name, t) { for (const e of future) if (e.at > t && matches(name, e)) return e.at; return null; }
+  // an event source, read `lead` ms early when the schedule reaches that far, else as it happens. With a
+  // schedule, section changes are always read from it (even with no lead): it has them to the millisecond
+  // and knows which section is next, where a frame only shows that the slot changed.
+  function sense(name, lead, due) {
+    if (isEvent(name) && lastDue != null && futureUntil >= due + lead && (lead > 0 || (name === 'section' && sectionIndex != null))) {
+      let v = 0, m = null;
+      for (const e of future) { const t = e.at - lead; if (t > due) break; if (t > lastDue && matches(name, e)) { const x = e.section ? 1 : clamp01(Number.isFinite(e.vel) ? e.vel : 1); if (x > v) { v = x; m = e; } } }
+      return { v, meta: m ? (m.section ? { index: m.index, name: m.name } : { track: m.track, lane: m.lane, pitch: Number.isFinite(m.pitch) ? clamp01((m.pitch - PITCH_LO) / (PITCH_HI - PITCH_LO)) : undefined }) : null };
+    }
+    return { v: readSource(name), meta: meta.get(name) || null };
+  }
 
   function validateRoute(r) {
     if (!r || typeof r.source !== 'string') throw new Error('router: a route needs a source');
@@ -123,7 +191,7 @@ function createRouter({ store, apply, trigger, onNote, patch } = {}) {
     if (def.type !== 'number' && def.type !== 'angle') throw new Error(`router: "${r.target}" is ${def.type}; routes drive numbers (use a step for discrete values)`);
     if (store.locked(r.target)) throw new Error(`router: "${r.target}" is preregistered and cannot be modulated`);
     if (r.curve && !CURVES[r.curve]) throw new Error(`router: unknown curve "${r.curve}"`);
-    return { source: r.source, target: r.target, amount: Number(r.amount) || 0, attack: Math.max(0, Number(r.attack) || 0), release: Math.max(0, Number(r.release) || 0), curve: r.curve || 'lin', y: 0, on: r.on !== false };
+    return { source: r.source, target: r.target, amount: Number(r.amount) || 0, attack: Math.max(0, Number(r.attack) || 0), release: Math.max(0, Number(r.release) || 0), curve: r.curve || 'lin', y: 0, on: r.on !== false, ...leads(r) };
   }
 
   function setPatch(p = {}) {
@@ -137,11 +205,11 @@ function createRouter({ store, apply, trigger, onNote, patch } = {}) {
       if (!Array.isArray(s.targets) || !Array.isArray(s.values) || !s.values.length) throw new Error('router: a step needs targets and values');
       for (const k of s.targets) if (!store.schema[k]) throw new Error(`router: step targets unknown param "${k}"`);
       for (const v of s.values) if (!Array.isArray(v) || v.length !== s.targets.length) throw new Error('router: each step value must give one entry per target');
-      return { on: s.on || 'section', every: Math.max(1, Math.round(s.every || 1)), targets: [...s.targets], values: s.values.map((v) => [...v]), i: 0, count: 0, enabled: s.enabled !== false };
+      return { on: s.on || 'section', every: Math.max(1, Math.round(s.every || 1)), targets: [...s.targets], values: s.values.map((v) => [...v]), i: 0, count: 0, enabled: s.enabled !== false, ...leads(s) };
     });
     const nextTriggers = (p.triggers || []).map((t) => {
       if (!t || typeof t.on !== 'string' || typeof t.action !== 'string') throw new Error('router: a trigger needs on and action');
-      return { on: t.on, action: t.action, amount: t.amount == null ? 1 : Number(t.amount) || 0, every: Math.max(1, Math.round(t.every || 1)), count: 0, enabled: t.enabled !== false };
+      return { on: t.on, action: t.action, amount: t.amount == null ? 1 : Number(t.amount) || 0, every: Math.max(1, Math.round(t.every || 1)), count: 0, enabled: t.enabled !== false, ...leads(t) };
     });
     triggers = nextTriggers;
     // every key a patch stops driving goes back to where the performer left it
@@ -161,10 +229,10 @@ function createRouter({ store, apply, trigger, onNote, patch } = {}) {
   function serialize() {
     return {
       offsetMs,
-      routes: routes.map(({ source, target, amount, attack, release: rel, curve, on }) => ({ source, target, amount, attack, release: rel, curve, on })),
+      routes: routes.map(({ source, target, amount, attack, release: rel, curve, on, ...r }) => ({ source, target, amount, attack, release: rel, curve, on, ...leads(r) })),
       syncs: syncs.map(({ target, bars, sign, on }) => ({ target, bars, sign, on })),
-      steps: steps.map(({ on, every, targets, values, enabled }) => ({ on, every, targets, values, enabled })),
-      triggers: triggers.map(({ on, action, amount, every, enabled }) => ({ on, action, amount, every, enabled }))
+      steps: steps.map(({ on, every, targets, values, enabled, ...r }) => ({ on, every, targets, values, enabled, ...leads(r) })),
+      triggers: triggers.map(({ on, action, amount, every, enabled, ...r }) => ({ on, action, amount, every, enabled, ...leads(r) }))
     };
   }
 
@@ -231,6 +299,7 @@ function createRouter({ store, apply, trigger, onNote, patch } = {}) {
     const dt = lastTick == null ? 16 : Math.min(250, Math.max(0, now - lastTick));
     lastTick = now;
     impulses = new Map(); meta = new Map();
+    const due = now - offsetMs;
 
     fireDue(now);
 
@@ -257,16 +326,22 @@ function createRouter({ store, apply, trigger, onNote, patch } = {}) {
     // triggers: events the simulation acts on directly
     if (trigger) {
       for (const t of triggers) {
-        const x = t.enabled ? readSource(t.on) : 0;
-        if (!(x > 0)) continue;
+        if (!t.enabled) continue;
+        const got = sense(t.on, leadOf(t), due);
+        if (!(got.v > 0)) continue;
         if (++t.count % t.every) continue;
-        trigger(t.action, x * t.amount, meta.get(t.on) || {});
+        trigger(t.action, got.v * t.amount, got.meta || {});
       }
     }
 
     // steps move the performer's hand: they write the store
     for (const s of steps) {
-      if (!s.enabled || !(readSource(s.on) > 0)) continue;
+      if (!s.enabled) continue;
+      const got = sense(s.on, leadOf(s), due);
+      if (!(got.v > 0)) continue;
+      // with a schedule, a section step goes where the SONG is going, not to "the next entry"
+      const to = s.on === 'section' ? (got.meta && Number.isInteger(got.meta.index) ? got.meta.index : sectionIndex) : null;
+      if (to != null) { place(s, to); continue; }
       if (++s.count % s.every) continue;
       s.i = (s.i + 1) % s.values.length;
       s.targets.forEach((k, j) => { if (!store.locked(k)) store.set(k, s.values[s.i][j]); });
@@ -285,7 +360,10 @@ function createRouter({ store, apply, trigger, onNote, patch } = {}) {
 
     const sums = new Map();
     for (const r of routes) {
-      const x = r.on ? clamp01(readSource(r.source)) : 0;
+      let x = 0;
+      if (!r.on) x = 0;
+      else if (r.source.startsWith('until.')) { const at = nextAt(r.source.slice(6), due), w = leadOf(r) || 1000; x = at == null ? 0 : clamp01(1 - (at - due) / w); }
+      else x = clamp01(sense(r.source, leadOf(r), due).v);
       r.y = follow(r.y, x, dt, r.attack, r.release);
       if (r.y < 1e-4 && x === 0) r.y = 0;
       sums.set(r.target, (sums.get(r.target) || 0) + r.amount * CURVES[r.curve](clamp01(r.y)));
@@ -306,6 +384,7 @@ function createRouter({ store, apply, trigger, onNote, patch } = {}) {
       out[key] = value;
       if (applied.get(key) !== value) { applied.set(key, value); apply(key, value); }
     }
+    lastDue = due;
     return out;
   }
 
@@ -320,6 +399,8 @@ function createRouter({ store, apply, trigger, onNote, patch } = {}) {
   return {
     frame: pushFrame,
     notes: pushNotes,
+    ahead,
+    get knownAheadMs() { return lastDue == null ? 0 : Math.max(0, futureUntil - lastDue); },
     tick,
     setPatch,
     serialize,

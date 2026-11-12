@@ -22,6 +22,8 @@
      --at  S:b[,S:b]     positions: section name (or letter) : bar. Each is reached by STARTING the
                          song at that section and waiting for the bar, so they need not be in order.
      --settle <ms>       extra time after the bar is reached (default 0)
+     --series <ms,ms>    after each stop, keep the page playing and shoot again this long after the bar was
+                         reached: the way to watch one moment arrive (a section change, a bloom)
      --size 1280x720     viewport
      --origin <url>      default http://127.0.0.1:8471
      --ui                keep the drawer in the picture
@@ -49,6 +51,7 @@ const [vw, vh] = String(args.size || '1280x720').split('x').map(Number);
 const sims = args.app ? [null] : (args.sim && args.sim !== true ? String(args.sim).split(',') : ['fluid', 'rd', 'feedback', 'warp', 'tunnel', 'chladni']);
 const stops = String(args.at && args.at !== true ? args.at : 'A:2').split(',').map((s) => { const [sec, bar] = s.split(':'); return { sec, bar: Math.max(1, Number(bar) || 1) }; });
 const settle = Number(args.settle) || 0;
+const series = args.series && args.series !== true ? String(args.series).split(',').map(Number).filter((n) => n > 0).sort((a, b) => a - b) : [];
 
 // --mute-audio silences the device, not the graph: the engine still plays and the tap still hears it,
 // so a shoot can run beside a window that is playing the same song out loud
@@ -77,6 +80,7 @@ try {
       if (st.song && st.song.playing && st.song.audio === 'running' && st.song.bar >= stop.bar) break;
       await page.waitForTimeout(40);
     }
+    const reachedAt = Date.now();
     if (settle) await page.waitForTimeout(settle);
     st = await pos();
     const file = join(out, `${sim || 'app'}-${stop.sec}${String(stop.bar).padStart(2, '0')}.png`);
@@ -84,6 +88,12 @@ try {
     const reached = !!(st.song && st.song.playing && st.song.bar >= stop.bar);
     if (!reached || st.error || errors.length) failed++;
     console.log(JSON.stringify({ sim, at: `${stop.sec}:${stop.bar}`, file, reached, song: st.song, frames: st.frames, renderer: await renderer(), error: st.error || errors[0] || null }));
+    for (const ms of series) {
+      await page.waitForTimeout(Math.max(0, reachedAt + ms - Date.now()));
+      const f = join(out, `${sim || 'app'}-${stop.sec}${String(stop.bar).padStart(2, '0')}+${String(ms).padStart(5, '0')}.png`);
+      await page.screenshot({ path: f }); const s2 = await pos();
+      console.log(JSON.stringify({ sim, at: `${stop.sec}:${stop.bar}+${ms}`, late: Date.now() - reachedAt - ms, file: f, song: s2.song, error: s2.error || errors[0] || null }));
+    }
     await page.close();
   }
 } finally { await browser.close(); }

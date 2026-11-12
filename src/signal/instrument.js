@@ -90,6 +90,7 @@ function mountInstrument({ store, defaultPatch, patchKey, trigger, onNote, onVal
   const hooks = {
     onFrame: (f) => { lastFrame = f; router.frame(f); },
     onNotes: (n) => router.notes(n),
+    onAhead: (a) => router.ahead(a),                      // only a source that knows the future calls this
     onStatus: (s) => {
       $('.dot').classList.toggle('on', !!s.connected);
       $('.where').textContent = s.kind === 'demo' ? `built-in loop, silent (${s.detail})`
@@ -100,7 +101,7 @@ function mountInstrument({ store, defaultPatch, patchKey, trigger, onNote, onVal
   };
   function use(kind) {
     if (source) source.stop();
-    lastFrame = null; router.frame({ playing: false });
+    lastFrame = null; router.frame({ playing: false }); router.ahead(null);
     for (const b of drawer.querySelectorAll('[data-src]')) b.setAttribute('aria-pressed', String(b.dataset.src === kind));
     source = (makers[kind] || makers.oscine)();
   }
