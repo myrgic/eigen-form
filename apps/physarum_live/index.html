@@ -31,60 +31,15 @@
 //   src/dynamics/physarum.js   the model (agents, trail, and the glow field events land in)
 //   src/params/define.js       its knobs
 //   src/signal/instrument.js   the shell: source, patch, router, loop
-// This page owns the schema, the default patch, what each event DOES to
-// the colony, and the drawing.
+// ./patch.js owns the schema, the default patch and what each event DOES
+// to the colony (shared with tools/render_physarum.mjs); this page owns
+// the stage and the drawing.
 import { defineParams } from '../../src/params/define.js';
 import { createPhysarum, buildLut, accentFor, SPAWNS } from '../../src/dynamics/physarum.js';
 import { mountInstrument } from '../../src/signal/instrument.js';
+import { schema, DEFAULT_PATCH, createActions, modelParams } from './patch.js';
 
-const schema = {
-  sensorAngle: { type: 'angle',  min: 5,    max: 90,    step: 1,     unit: 'deg', default: 33,   group: 'sense', label: 'sensor angle' },
-  sensorDist:  { type: 'number', min: 2,    max: 40,    step: 0.5,   unit: 'px',  default: 8,    group: 'sense', label: 'sensor reach' },
-  rotateAngle: { type: 'angle',  min: 5,    max: 90,    step: 1,     unit: 'deg', default: 28,   group: 'sense', label: 'turn angle' },
-  speed:       { type: 'number', min: 0.3,  max: 4,     step: 0.05,  unit: 'px',  default: 1.2,  group: 'move',  label: 'speed' },
-  wander:      { type: 'number', min: 0,    max: 1.5,   step: 0.01,  unit: 'rad', default: 0.06, group: 'move',  label: 'wander' },
-  deposit:     { type: 'number', min: 0.1,  max: 3,     step: 0.05,               default: 1,    group: 'trail', label: 'deposit' },
-  decay:       { type: 'number', min: 0.8,  max: 0.995, step: 0.001,              default: 0.9,  group: 'trail', label: 'persistence', scale: 'log-complement' },
-  diffuse:     { type: 'number', min: 0,    max: 1,     step: 0.01,               default: 0.7,  group: 'trail', label: 'diffusion' },
-  crowd:       { type: 'number', min: 1,    max: 60,    step: 0.5,                default: 10,   group: 'colony', label: 'crowding limit', scale: 'log' },
-  spores:      { type: 'number', min: 0,    max: 0.03,  step: 0.0005,             default: 0.005, group: 'colony', label: 'spores' },
-  attract:     { type: 'number', min: 0,    max: 10,    step: 0.1,                default: 1.2,  group: 'events', label: 'pull of events' },
-  hue:         { type: 'angle',  min: 0,    max: 360,   step: 1,     unit: 'deg', default: 165,  group: 'color', label: 'hue' },
-  spread:      { type: 'number', min: 0,    max: 180,   step: 1,     unit: 'deg', default: 70,   group: 'color', label: 'hue spread' },
-  gain:        { type: 'number', min: 0.03, max: 1,     step: 0.005,              default: 0.085, group: 'color', label: 'exposure', scale: 'log' },
-  bloom:       { type: 'number', min: 0,    max: 1,     step: 0.01,               default: 0.3,  group: 'stage', label: 'bloom' }
-};
 const store = defineParams(schema);
-
-// How the music plays the colony. Routes bend the model's own
-// parameters; triggers reach into its field.
-//   bass     lengthens the sensors: the network coarsens into thick veins
-//   sub      speeds the agents up
-//   highs    make them wander: fine structure frays
-//   kick     a ring of attractant expands from the centre; the colony chases it
-//   snare    a fraction of agents lose their heading: veins shatter and re-knit
-//   a note   food appears at a place set by its pitch (angle) and its track (radius)
-//   section  every agent loses its heading at once: the mesh dissolves and re-forms in place
-const DEFAULT_PATCH = {
-  offsetMs: 0,
-  routes: [
-    { source: 'band.bass', target: 'sensorDist',  amount: 0.26, attack: 30,  release: 320 },
-    { source: 'band.sub',  target: 'speed',       amount: 0.16, attack: 10,  release: 220 },
-    { source: 'band.high', target: 'wander',      amount: 0.22, attack: 20,  release: 300 },
-    { source: 'hit.snare', target: 'rotateAngle', amount: 0.30, attack: 0,   release: 260 },
-    { source: 'hit.kick',  target: 'bloom',       amount: 0.40, attack: 0,   release: 240 },
-    { source: 'rms',       target: 'gain',        amount: 0.08, attack: 120, release: 900 }
-  ],
-  triggers: [
-    { on: 'hit.kick',  action: 'pulse',   amount: 1 },
-    { on: 'hit.snare', action: 'scatter', amount: 0.22 },
-    { on: 'note.any',  action: 'seed',    amount: 0.8 },
-    { on: 'section',   action: 'scatter', amount: 1 }
-  ],
-  steps: [
-    { on: 'bar', every: 8, targets: ['hue'], values: [[165], [285], [35], [215]] }
-  ]
-};
 
 // ---- the colony -----------------------------------------------------
 const q = new URLSearchParams(location.search);
@@ -93,37 +48,19 @@ const AGENTS = Math.min(400000, Math.max(1000, +q.get('agents') || 110000));
 const stage = document.querySelector('.stage');
 const canvas = document.getElementById('sim'), ctx = canvas.getContext('2d');
 const bloomEl = document.getElementById('bloom'), bloomCtx = bloomEl.getContext('2d');
-let sim = null, image = null, spawnIndex = SPAWNS.indexOf('scatter');   // open with the colony everywhere: a mesh across the whole stage
-const trackRows = new Map();                                               // track name -> radius band, in order of first appearance
+let sim = null, image = null;
 
 function build() {
   const r = stage.getBoundingClientRect();
   const W = Math.min(1280, Math.max(160, Math.round(ROWS * (r.width || 16) / (r.height || 9))));
   if (sim && sim.width === W && sim.height === ROWS) return;
-  sim = createPhysarum({ width: W, height: ROWS, agents: AGENTS, seed: (Date.now() & 0xffff) || 1, spawn: SPAWNS[spawnIndex % SPAWNS.length] });
+  sim = createPhysarum({ width: W, height: ROWS, agents: AGENTS, seed: (Date.now() & 0xffff) || 1, spawn: 'scatter' });   // open with the colony everywhere: a mesh across the whole stage
   canvas.width = W; canvas.height = ROWS;
   bloomEl.width = Math.round(W / 3); bloomEl.height = Math.round(ROWS / 3);
   image = ctx.createImageData(W, ROWS);
 }
 
-// What each event does. `strength` is the router's (velocity x amount); `meta` is the note behind it.
-function trigger(action, strength, meta) {
-  if (!sim || !(strength > 0)) return;
-  const W = sim.width, H = sim.height, R = Math.min(W, H);
-  if (action === 'pulse') sim.pulse(Math.min(1.5, strength));
-  else if (action === 'scatter') sim.scatter(Math.min(1, strength));
-  else if (action === 'seed') {
-    let x, y;
-    if (meta && meta.pitch != null) {
-      // pitch winds twice around the centre across the playable range; each track keeps its own orbit
-      if (!trackRows.has(meta.track)) trackRows.set(meta.track, trackRows.size);
-      const band = trackRows.get(meta.track) % 5, a = meta.pitch * Math.PI * 4 - Math.PI / 2;
-      const rad = R * (0.14 + 0.075 * band);
-      x = W / 2 + rad * Math.cos(a) * (W / H > 1.4 ? 1.35 : 1); y = H / 2 + rad * Math.sin(a);
-    } else { x = Math.random() * W; y = Math.random() * H; }               // an onset with no score behind it
-    sim.seed(x, y, Math.min(1.5, strength));
-  } else if (action === 'respawn') { spawnIndex++; sim.respawn(SPAWNS[spawnIndex % SPAWNS.length]); }
-}
+const trigger = createActions(() => sim, { spawns: SPAWNS });
 
 const inst = mountInstrument({
   store, defaultPatch: DEFAULT_PATCH, patchKey: 'eigen-form.physarum_live.patch.v1', trigger,
@@ -136,15 +73,12 @@ let resizeTimer = null;
 addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(build, 200); });
 
 // ---- draw -------------------------------------------------------------
-const DEG = Math.PI / 180, STEP_MS = 1000 / 60;
+const STEP_MS = 1000 / 60;
 const params = {};
 let lut = buildLut(), lutKey = '', accent = accentFor(165), last = performance.now(), acc = 0;
 inst.onFrame(() => {
   const v = inst.value;
-  params.sa = v('sensorAngle') * DEG; params.ra = v('rotateAngle') * DEG; params.sensorDist = v('sensorDist');
-  params.speed = v('speed'); params.wander = v('wander'); params.deposit = v('deposit');
-  params.decay = v('decay'); params.diffuse = v('diffuse'); params.attract = v('attract');
-  params.crowd = v('crowd'); params.spores = v('spores');
+  modelParams(v, params);
 
   // the model runs at 60 steps a second whatever the display does (at most 3 per frame: a stalled tab does not sprint to catch up)
   const t = performance.now(); acc += Math.min(100, t - last); last = t;

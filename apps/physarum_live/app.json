@@ -15,7 +15,7 @@
       "Every knob is declared with defineParams and the panel is generated; the hand-bound sliders are gone. Sensor reach, speed, wander, deposit, diffusion, pull of events, hue, hue spread, exposure and bloom are new knobs; sensor angle, turn angle and persistence are the original three.",
       "Driven by src/signal: routes from band levels and drum hits onto the knobs, triggers from kick, snare, notes and section changes into the field. Colour is a hue-anchored ramp plus an accent for the glow field (was fixed green)."
     ],
-    "entryHash": "sha256:86e3a66c922ac4dcb86aadc220a9ef74dcf408af48255b23247a7b5592296e42"
+    "entryHash": "sha256:4ca9a6d5c44d4f96ee4a9f2936127227aab8fe1f930400b74714bc27b7597018"
   },
   "sdk": { "eigen-form": ">=0.2.0" },
   "capabilities": { "emits": [], "accepts": ["oscine.signal@1"] },
