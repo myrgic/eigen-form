@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Storm over the Lake: reaction-diffusion</title>
+<meta name="description" content="A full-song visual for Storm over the Lake: a Gray-Scott reaction-diffusion field played by the song's own score, blooming on each section's downbeat.">
+<meta property="og:title" content="Storm over the Lake: reaction-diffusion">
+<meta property="og:description" content="A reaction-diffusion field played by the song's own score. It knows what is coming: the stage empties through the last bar of each section and a flower opens on the downbeat.">
+<meta property="og:type" content="video.other">
+<meta property="og:image" content="https://myrgic.com/eigen-form/media/storm-over-the-lake/poster.jpg">
+<meta property="og:video" content="https://myrgic.com/eigen-form/media/storm-over-the-lake/storm-over-the-lake.reaction-diffusion.mp4">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #05060a; color: #d9dde6; font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 28px 16px 56px; }
+  h1 { font-size: clamp(22px, 4vw, 34px); line-height: 1.15; margin: 0 0 6px; font-weight: 650; letter-spacing: -0.01em; }
+  .sub { color: #8d95a6; margin: 0 0 20px; }
+  video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; }
+  .notes { max-width: 68ch; margin-top: 24px; }
+  .notes p { margin: 0 0 12px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 20px 0 0; color: #8d95a6; font-size: 14px; }
+  dt { color: #5f6779; } dd { margin: 0; }
+  a { color: #7fd6ff; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Storm over the Lake</h1>
+  <p class="sub">Reaction-diffusion, played by the score. Myrgic Labs.</p>
+  <video controls playsinline preload="metadata" poster="poster.jpg" src="storm-over-the-lake.reaction-diffusion.mp4"></video>
+  <div class="notes">
+    <p>The picture is a Gray-Scott reaction-diffusion field: two chemicals on a grid, and two numbers that decide whether they make mazes, holes or chaos. Nothing here follows the sound by listening to it. The song was written in Oscine, and the field is played by the same score the synths are: every note seeds the field where its pitch puts it, the kick stirs it, and each section of the song has its own chemistry.</p>
+    <p>Because the score is known ahead of time, the field can act before things happen. Through the last bar of every section the stage empties, and on the downbeat of the next one a flower is drawn and the new chemistry grows out of it.</p>
+  </div>
+  <dl>
+    <dt>Music</dt><dd>Storm over the Lake (v5), 174 bpm, made in Oscine</dd>
+    <dt>Model</dt><dd>Gray-Scott (Pearson, <i>Science</i> 261, 1993)</dd>
+    <dt>Render</dt><dd>1920×1080, 60 fps, offline and seeded, from <a href="https://github.com/myrgic/eigen-form">eigen-form</a></dd>
+  </dl>
+</main>
+</body>
+</html>
