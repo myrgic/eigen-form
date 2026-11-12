@@ -20,6 +20,12 @@
   video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; }
   .notes { max-width: 68ch; margin-top: 24px; }
   .notes p { margin: 0 0 12px; }
+  .live { margin-top: 28px; }
+  .live h2 { font-size: 18px; margin: 0 0 6px; font-weight: 650; }
+  .live p { margin: 0 0 12px; max-width: 68ch; }
+  .live ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .live a { display: block; padding: 8px 14px; border: 1px solid #2a3040; border-radius: 999px; text-decoration: none; color: #d9dde6; }
+  .live a:hover, .live a:focus-visible { border-color: #7fd6ff; color: #7fd6ff; }
   dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 20px 0 0; color: #8d95a6; font-size: 14px; }
   dt { color: #5f6779; } dd { margin: 0; }
   a { color: #7fd6ff; }
@@ -34,6 +40,19 @@
     <p>The picture is a Gray-Scott reaction-diffusion field: two chemicals on a grid, and two numbers that decide whether they make mazes, holes or chaos. Nothing here follows the sound by listening to it. The song was written in Oscine, and the field is played by the same score the synths are: every note seeds the field where its pitch puts it, the kick stirs it, and each section of the song has its own chemistry.</p>
     <p>Because the score is known ahead of time, the field can act before things happen. Through the last bar of every section the stage empties, and on the downbeat of the next one a flower is drawn and the new chemistry grows out of it.</p>
   </div>
+  <section class="live">
+    <h2>Play it live</h2>
+    <p>The same song, played in your browser by Oscine's engine, with the picture drawn from the score as it goes. Click the page once to start the sound. Space pauses, <kbd>,</kbd> and <kbd>.</kbd> step through the sections, and in the deck the number keys switch visual. The live sound uses Oscine's public instruments, so some voices differ from the mix in the video.</p>
+    <ul>
+      <li><a href="../../apps/vj_deck/index.html?sim=rd&amp;song=/eigen-form/media/storm-over-the-lake/storm-over-the-lake.oscine.json">Reaction-diffusion</a></li>
+      <li><a href="../../apps/vj_deck/index.html?sim=fluid&amp;song=/eigen-form/media/storm-over-the-lake/storm-over-the-lake.oscine.json">Fluid</a></li>
+      <li><a href="../../apps/vj_deck/index.html?sim=feedback&amp;song=/eigen-form/media/storm-over-the-lake/storm-over-the-lake.oscine.json">Video feedback</a></li>
+      <li><a href="../../apps/vj_deck/index.html?sim=warp&amp;song=/eigen-form/media/storm-over-the-lake/storm-over-the-lake.oscine.json">Warped noise</a></li>
+      <li><a href="../../apps/vj_deck/index.html?sim=tunnel&amp;song=/eigen-form/media/storm-over-the-lake/storm-over-the-lake.oscine.json">Tunnel</a></li>
+      <li><a href="../../apps/vj_deck/index.html?sim=chladni&amp;song=/eigen-form/media/storm-over-the-lake/storm-over-the-lake.oscine.json">Chladni figures</a></li>
+      <li><a href="../../apps/physarum_live/index.html?song=/eigen-form/media/storm-over-the-lake/storm-over-the-lake.oscine.json">Slime mold</a></li>
+    </ul>
+  </section>
   <dl>
     <dt>Music</dt><dd>Storm over the Lake (v5), 174 bpm, made in Oscine</dd>
     <dt>Model</dt><dd>Gray-Scott (Pearson, <i>Science</i> 261, 1993)</dd>

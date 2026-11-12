@@ -1,0 +1,48 @@
+<!doctype html>
+<!-- tools/render_gl.html — the page tools/render_gl.mjs drives. Not an app: it has no clock and no
+     source of its own. Each call to __render.frames() is handed signal frames and notes and returns
+     the pictures. Same router, patch, actions, signal texture and runtime as apps/vj_deck. -->
+<meta charset="utf-8"><title>render_gl</title>
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+<canvas id="gl"></canvas>
+<script type="module">
+import { defineParams } from '../src/params/define.js';
+import { createRouter } from '../src/signal/router.js';
+import { createRunner, themeFrom } from '../src/gl/runtime.js';
+import { createSignalTexture } from '../src/gl/signal-texture.js';
+import { byId } from '../src/gl/sims/index.js';
+
+window.__render = {
+  error: null,
+  init({ sim: id, width, height, seed = 1, patch, ahead, t0 }) {
+    // actions draw on Math.random (where a scatter lands, how a flower is turned): seed it, so a render repeats
+    let rs = (seed ^ 0x9e3779b9) >>> 0 || 1;
+    Math.random = () => { rs ^= rs << 13; rs >>>= 0; rs ^= rs >>> 17; rs ^= rs << 5; rs >>>= 0; return rs / 4294967296; };
+    const sim = byId(id); if (!sim) throw new Error(`no sim "${id}"`);
+    const canvas = document.getElementById('gl');
+    const runner = createRunner(canvas, sim); runner.resize(width, height);
+    const store = defineParams(sim.schema), signal = createSignalTexture(), eff = {};
+    const value = (k) => (k in eff ? eff[k] : store.get(k));
+    const clampTo = (k, v) => { const d = sim.schema[k]; return Math.min(d.max, Math.max(d.min, d.step ? d.min + Math.round((v - d.min) / d.step) * d.step : v)); };
+    const api = { splat: (s) => runner.splat(s), reset: () => runner.reset(), value, set: (k, v) => { if (sim.schema[k] && !store.locked(k)) store.set(k, clampTo(k, v)); }, aspect: () => width / height };
+    const router = createRouter({ store, apply: (k, v) => { eff[k] = v; }, trigger: sim.actions ? sim.actions(api) : undefined, onNote: (n) => signal.noteOn(n), patch: patch || sim.patch });
+    router.frame({ playing: false }); router.tick(t0 - 1000 / 60);          // the clock exists before the song does
+    if (ahead) router.ahead(ahead);
+    this.step = (f) => {
+      if (f.notes && f.notes.length) router.notes(f.notes);
+      router.frame(f.frame); router.tick(f.now);
+      signal.setTheme(themeFrom(value('hue'), value('spread')));
+      runner.render(value, signal.update(f.frame, 1 / 60, f.now), 1);
+    };
+    this.canvas = canvas;
+    const g = runner.gl, x = g.getExtension('WEBGL_debug_renderer_info');
+    return { renderer: x ? g.getParameter(x.UNMASKED_RENDERER_WEBGL) : 'webgl2', title: sim.title };
+  },
+  // steps: one per 1/60 s. keep: shoot every keep-th step (2 for a 30 fps video). Returns JPEG data URLs.
+  frames(steps, keep, quality) {
+    const out = [];
+    for (const f of steps) { this.step(f); if (f.i % keep === 0 && !f.skip) out.push(this.canvas.toDataURL('image/jpeg', quality)); }
+    return out;
+  }
+};
+</script>

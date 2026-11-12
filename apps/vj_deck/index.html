@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VJ Deck: eigen-form lab</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../src/panel/tokens.css">
+<link rel="stylesheet" href="../../src/panel/panel.css">
+<link rel="stylesheet" href="../../src/signal/instrument.css">
+<style>
+  /* One sim at a time, edge to edge. The drawer covers the right edge
+     (it never squeezes the stage, so hiding it never restarts a sim);
+     the deck strip along the top picks the sim and leaves with the
+     drawer on H. */
+  :root { --live: #ffb347; }
+  .stage, body.quiet .stage { inset: 0; }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .deck { position: fixed; top: 12px; left: 12px; display: flex; gap: 6px; flex-wrap: wrap; max-width: calc(100vw - var(--drawer) - 24px); z-index: 2; transition: opacity 200ms; }
+  body.quiet .deck { opacity: 0; pointer-events: none; }
+  .deck a { font: 11px var(--mono); letter-spacing: 0.04em; color: var(--dim); text-decoration: none; padding: 6px 9px; border: 1px solid var(--line); border-radius: var(--radius-1); background: rgba(5, 5, 5, 0.72); }
+  .deck a:hover, .deck a:focus-visible { color: var(--fg); }
+  .deck a[aria-current="page"] { color: var(--fg); border-color: var(--live); }
+  .deck a kbd { color: var(--faint); font: inherit; margin-right: 5px; }
+  .about { position: fixed; left: 14px; bottom: 12px; font: 10.5px var(--mono); color: var(--faint); z-index: 2; transition: opacity 200ms; }
+  body.quiet .about { opacity: 0; }
+  .msg { position: relative; max-width: 46ch; padding: 24px; font: 13px/1.6 var(--sans); color: var(--dim); text-align: center; white-space: pre-wrap; }
+  .msg strong { display: block; color: var(--fg); margin-bottom: 8px; font-weight: 500; }
+  @media (max-width: 760px) { .deck { max-width: calc(100vw - 24px); } .about { display: none; } }
+</style>
+</head>
+<body>
+  <div class="stage"><canvas id="gl" width="16" height="16"></canvas><div class="msg" id="msg" hidden></div></div>
+  <nav class="deck" id="deck" aria-label="Sims"></nav>
+  <div class="about" id="about"></div>
+
+<script type="module">
+// The deck: any sim from src/gl/sims, mounted in the shared instrument shell.
+//   src/gl/runtime.js          runs the sim's passes
+//   src/gl/signal-texture.js   the signal as an AudioLink-layout texture
+//   src/signal/instrument.js   source, patch, router, loop
+// A sim brings its own knobs, patch and event actions; this page only
+// joins the pieces and owns the picker. ?sim=<id> chooses; the number
+// keys switch (a switch is a page load: there is no crossfade yet).
+import { defineParams } from '../../src/params/define.js';
+import { mountInstrument } from '../../src/signal/instrument.js';
+import { createRunner, themeFrom } from '../../src/gl/runtime.js';
+import { createSignalTexture } from '../../src/gl/signal-texture.js';
+import { SIMS, byId } from '../../src/gl/sims/index.js';
+
+const q = new URLSearchParams(location.search);
+const sim = byId(q.get('sim')) || SIMS[0];
+const go = (id) => { const n = new URLSearchParams(location.search); n.set('sim', id); if (document.body.classList.contains('quiet')) n.set('ui', '0'); else n.delete('ui'); location.search = n.toString(); };
+document.title = `${sim.title}: VJ Deck`;
+document.getElementById('about').textContent = `${sim.title}: ${sim.about}`;
+const deck = document.getElementById('deck');
+SIMS.forEach((s, i) => {
+  const a = document.createElement('a'), k = document.createElement('kbd');
+  k.textContent = String(i + 1); a.append(k, s.title);
+  const n = new URLSearchParams(location.search); n.set('sim', s.id); a.href = '?' + n.toString();
+  if (s === sim) a.setAttribute('aria-current', 'page');
+  deck.appendChild(a);
+});
+
+const canvas = document.getElementById('gl');
+const store = defineParams(sim.schema);
+const signal = createSignalTexture();
+const state = { sim: sim.id, error: null, frames: 0 };
+window.__deck = state;                                    // what a headless check reads
+
+let runner = null;
+try { runner = createRunner(canvas, sim); }
+catch (err) {
+  state.error = err.message;
+  const m = document.getElementById('msg'), b = document.createElement('strong');
+  b.textContent = `${sim.title} could not start.`; m.append(b, err.message); m.hidden = false; canvas.hidden = true;
+  console.error('[vj_deck]', err.message);
+}
+
+let inst = null;
+const clampTo = (k, v) => { const d = sim.schema[k]; return Math.min(d.max, Math.max(d.min, d.step ? d.min + Math.round((v - d.min) / d.step) * d.step : v)); };
+const api = {
+  splat: (s) => runner && runner.splat(s),
+  reset: () => runner && runner.reset(),
+  value: (k) => inst.value(k),
+  set: (k, v) => { if (sim.schema[k] && !store.locked(k)) store.set(k, clampTo(k, v)); },
+  aspect: () => canvas.width / Math.max(1, canvas.height)
+};
+const trigger = sim.actions ? sim.actions(api) : undefined;
+const keys = { r: () => api.reset() };
+SIMS.forEach((s, i) => { keys[String(i + 1)] = () => { if (s !== sim) go(s.id); }; });
+
+inst = mountInstrument({
+  store, defaultPatch: sim.patch, patchKey: `eigen-form.vj_deck.${sim.id}.patch.v1`, trigger,
+  onNote: (n) => signal.noteOn(n),
+  keys, keyHelp: `R restart  1-${SIMS.length} switch sim`
+});
+
+function fit() {
+  if (!runner) return;
+  const r = canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.min(1920, Math.max(16, Math.round(r.width * dpr))), h = Math.max(16, Math.round(w * r.height / Math.max(1, r.width)));
+  runner.resize(w, h);
+}
+fit(); addEventListener('resize', fit);
+
+const STEP_MS = 1000 / 60;
+let last = performance.now(), acc = 0;
+inst.onFrame((now, frame) => {
+  if (!runner) return;
+  const t = performance.now(), dtMs = Math.min(100, t - last); last = t; acc += dtMs;
+  // the model steps at 60 a second whatever the display does (at most 3 a frame: a stalled tab does not sprint to catch up)
+  let steps = 0; while (acc >= STEP_MS && steps < 3) { acc -= STEP_MS; steps++; }
+  if (acc > STEP_MS * 3) acc = 0;
+  signal.setTheme(themeFrom(inst.value('hue'), inst.value('spread')));
+  runner.render(inst.value, signal.update(frame, dtMs / 1000, now), steps);
+  state.frames = runner.frame;
+  const c = inst.source && inst.source.control; state.song = c ? c.position() : null;
+});
+</script>
+</body>
+</html>

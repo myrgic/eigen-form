@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Physarum, Live: eigen-form lab</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../src/panel/tokens.css">
+<link rel="stylesheet" href="../../src/panel/panel.css">
+<link rel="stylesheet" href="../../src/signal/instrument.css">
+<style>
+  /* The stage is the simulation, edge to edge. The grid is drawn at its
+     own resolution and scaled up by the browser; the bloom layer is the
+     same picture, blurred and screened back over it. */
+  :root { --live: #3dffb4; }
+  /* Full window whether or not the drawer is open: the drawer covers the right edge instead of
+     squeezing the stage, so hiding it (H) never changes the grid's shape and never restarts the colony. */
+  .stage, body.quiet .stage { inset: 0; }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #bloom { filter: blur(14px) brightness(1.5) saturate(1.25); mix-blend-mode: screen; opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <canvas id="sim" width="16" height="16"></canvas>
+    <canvas id="bloom" width="16" height="16" aria-hidden="true"></canvas>
+  </div>
+
+<script type="module">
+// The slime mold as an instrument.
+//   src/dynamics/physarum.js   the model (agents, trail, and the glow field events land in)
+//   src/params/define.js       its knobs
+//   src/signal/instrument.js   the shell: source, patch, router, loop
+// ./patch.js owns the schema, the default patch and what each event DOES
+// to the colony (shared with tools/render_physarum.mjs); this page owns
+// the stage and the drawing.
+import { defineParams } from '../../src/params/define.js';
+import { createPhysarum, buildLut, accentFor, SPAWNS } from '../../src/dynamics/physarum.js';
+import { mountInstrument } from '../../src/signal/instrument.js';
+import { schema, DEFAULT_PATCH, createActions, modelParams } from './patch.js';
+
+const store = defineParams(schema);
+
+// ---- the colony -----------------------------------------------------
+const q = new URLSearchParams(location.search);
+const ROWS = Math.min(720, Math.max(120, +q.get('rows') || 450));          // grid height; width follows the stage's shape
+const AGENTS = Math.min(400000, Math.max(1000, +q.get('agents') || 110000));
+const stage = document.querySelector('.stage');
+const canvas = document.getElementById('sim'), ctx = canvas.getContext('2d');
+const bloomEl = document.getElementById('bloom'), bloomCtx = bloomEl.getContext('2d');
+let sim = null, image = null;
+
+function build() {
+  const r = stage.getBoundingClientRect();
+  const W = Math.min(1280, Math.max(160, Math.round(ROWS * (r.width || 16) / (r.height || 9))));
+  if (sim && sim.width === W && sim.height === ROWS) return;
+  sim = createPhysarum({ width: W, height: ROWS, agents: AGENTS, seed: (Date.now() & 0xffff) || 1, spawn: 'scatter' });   // open with the colony everywhere: a mesh across the whole stage
+  canvas.width = W; canvas.height = ROWS;
+  bloomEl.width = Math.round(W / 3); bloomEl.height = Math.round(ROWS / 3);
+  image = ctx.createImageData(W, ROWS);
+}
+
+const trigger = createActions(() => sim, { spawns: SPAWNS });
+
+const inst = mountInstrument({
+  store, defaultPatch: DEFAULT_PATCH, patchKey: 'eigen-form.physarum_live.patch.v1', trigger,
+  keys: { r: () => trigger('respawn', 1), k: () => trigger('pulse', 1), s: () => trigger('scatter', 0.3) },
+  keyHelp: 'R respawn  K pulse  S scatter'
+});
+
+build();
+let resizeTimer = null;
+addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(build, 200); });
+
+// ---- draw -------------------------------------------------------------
+const STEP_MS = 1000 / 60;
+const params = {};
+let lut = buildLut(), lutKey = '', accent = accentFor(165), last = performance.now(), acc = 0;
+inst.onFrame(() => {
+  const v = inst.value;
+  modelParams(v, params);
+
+  // the model runs at 60 steps a second whatever the display does (at most 3 per frame: a stalled tab does not sprint to catch up)
+  const t = performance.now(); acc += Math.min(100, t - last); last = t;
+  let n = 0; while (acc >= STEP_MS && n < 3) { sim.step(params); acc -= STEP_MS; n++; }
+  if (acc > STEP_MS * 3) acc = 0;
+
+  const hue = v('hue'), spread = v('spread'), key = hue + '|' + spread;
+  if (key !== lutKey) { lutKey = key; buildLut(hue, spread, lut); accent = accentFor(hue); }
+  sim.paint(image.data, lut, accent, v('gain'));
+  ctx.putImageData(image, 0, 0);
+  const b = v('bloom'); bloomEl.style.opacity = String(b);
+  if (b > 0.01) bloomCtx.drawImage(canvas, 0, 0, bloomEl.width, bloomEl.height);
+});
+</script>
+</body>
+</html>
